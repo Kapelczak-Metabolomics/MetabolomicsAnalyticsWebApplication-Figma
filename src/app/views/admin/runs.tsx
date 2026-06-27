@@ -1,0 +1,269 @@
+import { useState } from "react";
+import { useNavigate } from "react-router";
+import {
+  Search, Filter, Download, ChevronDown, CheckCircle2,
+  Loader2, AlertCircle, Clock, User, Database, RefreshCw,
+} from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { toast } from "sonner";
+
+type RunStatus = "completed" | "running" | "failed" | "queued";
+
+interface Run {
+  id: string;
+  name: string;
+  type: string;
+  project: string;
+  user: string;
+  userEmail: string;
+  status: RunStatus;
+  created: string;
+  started: string;
+  duration: string;
+  samples: number;
+  features: number;
+  cpuUsage: string;
+  memUsage: string;
+}
+
+const allRuns: Run[] = [
+  { id: "r1", name: "PCA - AD vs Control", type: "PCA", project: "ADNI Metabolomics Study", user: "Dr. Sarah Chen", userEmail: "sarah.chen@university.edu", status: "completed", created: "2025-06-27 09:14", started: "2025-06-27 09:14", duration: "2m 14s", samples: 342, features: 1247, cpuUsage: "42%", memUsage: "3.2 GB" },
+  { id: "r2", name: "Volcano Analysis - Plasma", type: "Volcano", project: "Cancer Biomarker Panel", user: "Dr. Michael Torres", userEmail: "m.torres@biotech.com", status: "completed", created: "2025-06-27 07:22", started: "2025-06-27 07:22", duration: "1m 47s", samples: 487, features: 2341, cpuUsage: "38%", memUsage: "4.8 GB" },
+  { id: "r3", name: "PLS-DA Classification", type: "PLS-DA", project: "ADNI Metabolomics Study", user: "Dr. Sarah Chen", userEmail: "sarah.chen@university.edu", status: "running", created: "2025-06-26 14:05", started: "2025-06-26 14:06", duration: "In progress", samples: 342, features: 1247, cpuUsage: "88%", memUsage: "5.1 GB" },
+  { id: "r4", name: "Pathway Enrichment - KEGG", type: "Pathway", project: "Diabetes Cohort 2024", user: "Dr. Emily Wang", userEmail: "emily.wang@lab.edu", status: "completed", created: "2025-06-25 11:30", started: "2025-06-25 11:31", duration: "3m 02s", samples: 156, features: 843, cpuUsage: "29%", memUsage: "2.1 GB" },
+  { id: "r5", name: "Hierarchical Clustering", type: "Clustering", project: "COVID-19 Severity Markers", user: "Michael Brown", userEmail: "m.brown@university.edu", status: "failed", created: "2025-06-23 16:44", started: "2025-06-23 16:44", duration: "0m 34s", samples: 8, features: 1247, cpuUsage: "12%", memUsage: "0.8 GB" },
+  { id: "r6", name: "PLS-DA Multi-class Cancer", type: "PLS-DA", project: "Cancer Biomarker Panel", user: "Dr. Emily Wang", userEmail: "emily.wang@lab.edu", status: "completed", created: "2025-06-25 09:15", started: "2025-06-25 09:17", duration: "8m 33s", samples: 487, features: 2341, cpuUsage: "91%", memUsage: "7.3 GB" },
+  { id: "r7", name: "Biomarker Candidates v3", type: "Biomarker", project: "Cancer Biomarker Panel", user: "Dr. Michael Torres", userEmail: "m.torres@biotech.com", status: "completed", created: "2025-06-23 13:22", started: "2025-06-23 13:23", duration: "4m 12s", samples: 487, features: 2341, cpuUsage: "47%", memUsage: "3.9 GB" },
+  { id: "r8", name: "PCA - Diabetes Groups", type: "PCA", project: "Diabetes Cohort 2024", user: "Dr. Sarah Chen", userEmail: "sarah.chen@university.edu", status: "completed", created: "2025-06-22 10:00", started: "2025-06-22 10:01", duration: "1m 52s", samples: 156, features: 843, cpuUsage: "35%", memUsage: "2.4 GB" },
+  { id: "r9", name: "Volcano - Treatment Response", type: "Volcano", project: "Microbiome-Metabolome Study", user: "Dr. Lisa Martinez", userEmail: "l.martinez@biotech.com", status: "completed", created: "2025-06-21 15:30", started: "2025-06-21 15:31", duration: "2m 08s", samples: 523, features: 3102, cpuUsage: "53%", memUsage: "5.7 GB" },
+  { id: "r10", name: "Clustering - Microbiome", type: "Clustering", project: "Microbiome-Metabolome Study", user: "Dr. Lisa Martinez", userEmail: "l.martinez@biotech.com", status: "queued", created: "2025-06-27 09:45", started: "—", duration: "—", samples: 523, features: 3102, cpuUsage: "—", memUsage: "—" },
+];
+
+const statusConfig: Record<RunStatus, { label: string; icon: typeof CheckCircle2; cls: string }> = {
+  completed: { label: "Completed", icon: CheckCircle2, cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+  running: { label: "Running", icon: Loader2, cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+  failed: { label: "Failed", icon: AlertCircle, cls: "bg-rose-500/10 text-rose-600 dark:text-rose-400" },
+  queued: { label: "Queued", icon: Clock, cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
+};
+
+const typeColors: Record<string, string> = {
+  PCA: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  "PLS-DA": "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
+  Volcano: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  Clustering: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  Pathway: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  Biomarker: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
+};
+
+export function AdminRuns() {
+  const navigate = useNavigate();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All Status");
+  const [typeFilter, setTypeFilter] = useState("All Types");
+  const [userFilter, setUserFilter] = useState("All Users");
+
+  const uniqueUsers = [...new Set(allRuns.map((r) => r.user))];
+  const uniqueTypes = [...new Set(allRuns.map((r) => r.type))];
+
+  const filtered = allRuns.filter((r) => {
+    const q = search.toLowerCase();
+    const matchSearch = r.name.toLowerCase().includes(q) || r.user.toLowerCase().includes(q) || r.project.toLowerCase().includes(q);
+    const matchStatus = statusFilter === "All Status" || r.status === statusFilter.toLowerCase();
+    const matchType = typeFilter === "All Types" || r.type === typeFilter;
+    const matchUser = userFilter === "All Users" || r.user === userFilter;
+    return matchSearch && matchStatus && matchType && matchUser;
+  });
+
+  const counts = {
+    total: allRuns.length,
+    completed: allRuns.filter((r) => r.status === "completed").length,
+    running: allRuns.filter((r) => r.status === "running").length,
+    failed: allRuns.filter((r) => r.status === "failed").length,
+    queued: allRuns.filter((r) => r.status === "queued").length,
+  };
+
+  return (
+    <div className="h-full overflow-auto bg-gradient-to-br from-background via-background to-muted/20 p-6">
+      <div className="mx-auto max-w-7xl space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">All Analysis Runs</h2>
+            <p className="text-sm text-muted-foreground">Every experiment run across all users and projects</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => toast.info("Refreshing run status...")}
+              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent">
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            </button>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent">
+                  <Download className="h-3.5 w-3.5" /> Export <ChevronDown className="h-3 w-3" />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content className="z-50 min-w-[150px] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg" sideOffset={4} align="end">
+                  {["CSV", "Excel (.xlsx)", "JSON"].map((fmt) => (
+                    <DropdownMenu.Item key={fmt} className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
+                      onSelect={() => toast.success(`Exported run log as ${fmt}`)}>
+                      {fmt}
+                    </DropdownMenu.Item>
+                  ))}
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          </div>
+        </div>
+
+        {/* KPI strip */}
+        <div className="grid grid-cols-5 gap-3">
+          {[
+            { label: "Total Runs", value: counts.total, cls: "text-foreground" },
+            { label: "Completed", value: counts.completed, cls: "text-emerald-600 dark:text-emerald-400" },
+            { label: "Running", value: counts.running, cls: "text-amber-600 dark:text-amber-400" },
+            { label: "Failed", value: counts.failed, cls: "text-rose-600 dark:text-rose-400" },
+            { label: "Queued", value: counts.queued, cls: "text-blue-600 dark:text-blue-400" },
+          ].map((s) => (
+            <div key={s.label} className="rounded-lg border border-border bg-card p-3 text-center">
+              <p className={`text-2xl font-semibold tabular-nums ${s.cls}`}>{s.value}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Filters */}
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by run name, user, or project..."
+              className="w-full rounded-lg border border-border bg-card pl-10 pr-4 py-2 text-sm outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20" />
+          </div>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+            className="rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none">
+            <option>All Status</option>
+            <option>Completed</option>
+            <option>Running</option>
+            <option>Failed</option>
+            <option>Queued</option>
+          </select>
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
+            className="rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none">
+            <option>All Types</option>
+            {uniqueTypes.map((t) => <option key={t}>{t}</option>)}
+          </select>
+          <select value={userFilter} onChange={(e) => setUserFilter(e.target.value)}
+            className="rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none">
+            <option>All Users</option>
+            {uniqueUsers.map((u) => <option key={u}>{u}</option>)}
+          </select>
+        </div>
+
+        {/* Table */}
+        <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="border-b border-border bg-muted/30">
+              <tr>
+                <th className="p-3 text-left text-xs font-medium">Run Name</th>
+                <th className="p-3 text-left text-xs font-medium">Type</th>
+                <th className="p-3 text-left text-xs font-medium">Project</th>
+                <th className="p-3 text-left text-xs font-medium">User</th>
+                <th className="p-3 text-left text-xs font-medium">Created</th>
+                <th className="p-3 text-left text-xs font-medium">Duration</th>
+                <th className="p-3 text-left text-xs font-medium">Resources</th>
+                <th className="p-3 text-left text-xs font-medium">Status</th>
+                <th className="p-3 text-right text-xs font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={9} className="p-8 text-center text-sm text-muted-foreground">No runs match your filters</td></tr>
+              ) : filtered.map((run) => {
+                const { icon: Icon, cls } = statusConfig[run.status];
+                return (
+                  <tr key={run.id} className="border-b border-border last:border-0 hover:bg-muted/40">
+                    <td className="p-3">
+                      <p className="font-medium text-sm">{run.name}</p>
+                      <p className="text-xs text-muted-foreground">{run.samples.toLocaleString()} samples · {run.features.toLocaleString()} features</p>
+                    </td>
+                    <td className="p-3">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${typeColors[run.type] ?? "bg-muted text-muted-foreground"}`}>{run.type}</span>
+                    </td>
+                    <td className="p-3">
+                      <p className="text-xs text-muted-foreground line-clamp-1 max-w-[160px]">{run.project}</p>
+                    </td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-1.5">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 text-[10px] font-semibold text-white flex-shrink-0">
+                          {run.user.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium leading-none">{run.user}</p>
+                          <p className="text-xs text-muted-foreground">{run.userEmail}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-3 text-xs text-muted-foreground tabular-nums whitespace-nowrap">{run.created}</td>
+                    <td className="p-3 text-xs tabular-nums text-muted-foreground">{run.duration}</td>
+                    <td className="p-3 text-xs text-muted-foreground">
+                      {run.cpuUsage !== "—" ? (
+                        <div className="space-y-0.5">
+                          <div>CPU {run.cpuUsage}</div>
+                          <div>MEM {run.memUsage}</div>
+                        </div>
+                      ) : <span>—</span>}
+                    </td>
+                    <td className="p-3">
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
+                        <Icon className={`h-2.5 w-2.5 ${run.status === "running" ? "animate-spin" : ""}`} />
+                        {statusConfig[run.status].label}
+                      </span>
+                    </td>
+                    <td className="p-3 text-right">
+                      <DropdownMenu.Root>
+                        <DropdownMenu.Trigger asChild>
+                          <button className="rounded border border-border bg-background px-2.5 py-1 text-xs hover:bg-accent">Actions ▾</button>
+                        </DropdownMenu.Trigger>
+                        <DropdownMenu.Portal>
+                          <DropdownMenu.Content className="z-50 min-w-[160px] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg" sideOffset={4} align="end">
+                            {run.status !== "queued" && (
+                              <DropdownMenu.Item className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
+                                onSelect={() => navigate(`/experiments/${run.id}`)}>
+                                View Results
+                              </DropdownMenu.Item>
+                            )}
+                            <DropdownMenu.Item className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
+                              onSelect={() => toast.info("Opening user profile...")}>
+                              View User Profile
+                            </DropdownMenu.Item>
+                            <DropdownMenu.Item className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
+                              onSelect={() => toast.success(`Run log downloaded for ${run.name}`)}>
+                              Download Log
+                            </DropdownMenu.Item>
+                            {run.status === "running" && (
+                              <>
+                                <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                                <DropdownMenu.Item className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-destructive/10 text-destructive"
+                                  onSelect={() => toast.success(`Run "${run.name}" cancelled`)}>
+                                  Cancel Run
+                                </DropdownMenu.Item>
+                              </>
+                            )}
+                          </DropdownMenu.Content>
+                        </DropdownMenu.Portal>
+                      </DropdownMenu.Root>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
+            Showing {filtered.length} of {allRuns.length} runs
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
