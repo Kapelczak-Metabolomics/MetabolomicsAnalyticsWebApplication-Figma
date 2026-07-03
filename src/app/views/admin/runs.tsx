@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import {
   Search, Filter, Download, ChevronDown, CheckCircle2,
@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
+import { api } from "../../../lib/api";
 
 type RunStatus = "completed" | "running" | "failed" | "queued";
 
@@ -26,18 +27,7 @@ interface Run {
   memUsage: string;
 }
 
-const allRuns: Run[] = [
-  { id: "r1", name: "PCA - AD vs Control", type: "PCA", project: "ADNI Metabolomics Study", user: "Dr. Sarah Chen", userEmail: "sarah.chen@university.edu", status: "completed", created: "2025-06-27 09:14", started: "2025-06-27 09:14", duration: "2m 14s", samples: 342, features: 1247, cpuUsage: "42%", memUsage: "3.2 GB" },
-  { id: "r2", name: "Volcano Analysis - Plasma", type: "Volcano", project: "Cancer Biomarker Panel", user: "Dr. Michael Torres", userEmail: "m.torres@biotech.com", status: "completed", created: "2025-06-27 07:22", started: "2025-06-27 07:22", duration: "1m 47s", samples: 487, features: 2341, cpuUsage: "38%", memUsage: "4.8 GB" },
-  { id: "r3", name: "PLS-DA Classification", type: "PLS-DA", project: "ADNI Metabolomics Study", user: "Dr. Sarah Chen", userEmail: "sarah.chen@university.edu", status: "running", created: "2025-06-26 14:05", started: "2025-06-26 14:06", duration: "In progress", samples: 342, features: 1247, cpuUsage: "88%", memUsage: "5.1 GB" },
-  { id: "r4", name: "Pathway Enrichment - KEGG", type: "Pathway", project: "Diabetes Cohort 2024", user: "Dr. Emily Wang", userEmail: "emily.wang@lab.edu", status: "completed", created: "2025-06-25 11:30", started: "2025-06-25 11:31", duration: "3m 02s", samples: 156, features: 843, cpuUsage: "29%", memUsage: "2.1 GB" },
-  { id: "r5", name: "Hierarchical Clustering", type: "Clustering", project: "COVID-19 Severity Markers", user: "Michael Brown", userEmail: "m.brown@university.edu", status: "failed", created: "2025-06-23 16:44", started: "2025-06-23 16:44", duration: "0m 34s", samples: 8, features: 1247, cpuUsage: "12%", memUsage: "0.8 GB" },
-  { id: "r6", name: "PLS-DA Multi-class Cancer", type: "PLS-DA", project: "Cancer Biomarker Panel", user: "Dr. Emily Wang", userEmail: "emily.wang@lab.edu", status: "completed", created: "2025-06-25 09:15", started: "2025-06-25 09:17", duration: "8m 33s", samples: 487, features: 2341, cpuUsage: "91%", memUsage: "7.3 GB" },
-  { id: "r7", name: "Biomarker Candidates v3", type: "Biomarker", project: "Cancer Biomarker Panel", user: "Dr. Michael Torres", userEmail: "m.torres@biotech.com", status: "completed", created: "2025-06-23 13:22", started: "2025-06-23 13:23", duration: "4m 12s", samples: 487, features: 2341, cpuUsage: "47%", memUsage: "3.9 GB" },
-  { id: "r8", name: "PCA - Diabetes Groups", type: "PCA", project: "Diabetes Cohort 2024", user: "Dr. Sarah Chen", userEmail: "sarah.chen@university.edu", status: "completed", created: "2025-06-22 10:00", started: "2025-06-22 10:01", duration: "1m 52s", samples: 156, features: 843, cpuUsage: "35%", memUsage: "2.4 GB" },
-  { id: "r9", name: "Volcano - Treatment Response", type: "Volcano", project: "Microbiome-Metabolome Study", user: "Dr. Lisa Martinez", userEmail: "l.martinez@biotech.com", status: "completed", created: "2025-06-21 15:30", started: "2025-06-21 15:31", duration: "2m 08s", samples: 523, features: 3102, cpuUsage: "53%", memUsage: "5.7 GB" },
-  { id: "r10", name: "Clustering - Microbiome", type: "Clustering", project: "Microbiome-Metabolome Study", user: "Dr. Lisa Martinez", userEmail: "l.martinez@biotech.com", status: "queued", created: "2025-06-27 09:45", started: "—", duration: "—", samples: 523, features: 3102, cpuUsage: "—", memUsage: "—" },
-];
+const allRuns: Run[] = [];
 
 const statusConfig: Record<RunStatus, { label: string; icon: typeof CheckCircle2; cls: string }> = {
   completed: { label: "Completed", icon: CheckCircle2, cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
@@ -59,13 +49,37 @@ export function AdminRuns() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Status");
+  const [runs, setRuns] = useState<Run[]>(allRuns);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.admin.getRuns()
+      .then((data) => setRuns(data.map((r) => ({
+        id: String(r.id),
+        name: String(r.name),
+        type: String(r.type),
+        project: String(r.project),
+        user: String(r.user ?? ""),
+        userEmail: String(r.userEmail ?? ""),
+        status: r.status as RunStatus,
+        created: String(r.created),
+        started: String(r.started ?? "—"),
+        duration: String(r.duration),
+        samples: Number(r.samples),
+        features: Number(r.features),
+        cpuUsage: String(r.cpuUsage ?? "—"),
+        memUsage: String(r.memUsage ?? "—"),
+      }))))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
   const [typeFilter, setTypeFilter] = useState("All Types");
   const [userFilter, setUserFilter] = useState("All Users");
 
-  const uniqueUsers = [...new Set(allRuns.map((r) => r.user))];
-  const uniqueTypes = [...new Set(allRuns.map((r) => r.type))];
+  const uniqueUsers = [...new Set(runs.map((r) => r.user))];
+  const uniqueTypes = [...new Set(runs.map((r) => r.type))];
 
-  const filtered = allRuns.filter((r) => {
+  const filtered = runs.filter((r) => {
     const q = search.toLowerCase();
     const matchSearch = r.name.toLowerCase().includes(q) || r.user.toLowerCase().includes(q) || r.project.toLowerCase().includes(q);
     const matchStatus = statusFilter === "All Status" || r.status === statusFilter.toLowerCase();
@@ -75,11 +89,11 @@ export function AdminRuns() {
   });
 
   const counts = {
-    total: allRuns.length,
-    completed: allRuns.filter((r) => r.status === "completed").length,
-    running: allRuns.filter((r) => r.status === "running").length,
-    failed: allRuns.filter((r) => r.status === "failed").length,
-    queued: allRuns.filter((r) => r.status === "queued").length,
+    total: runs.length,
+    completed: runs.filter((r) => r.status === "completed").length,
+    running: runs.filter((r) => r.status === "running").length,
+    failed: runs.filter((r) => r.status === "failed").length,
+    queued: runs.filter((r) => r.status === "queued").length,
   };
 
   return (
@@ -260,7 +274,7 @@ export function AdminRuns() {
             </tbody>
           </table>
           <div className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
-            Showing {filtered.length} of {allRuns.length} runs
+            Showing {filtered.length} of {runs.length} runs
           </div>
         </div>
       </div>

@@ -1,22 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search, Download, Filter, Info, AlertTriangle, XCircle, Activity } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
+import { api } from "../../../lib/api";
 
-const logs = [
-  { id: 1, timestamp: "2025-06-27 14:23:15", level: "info", user: "sarah.chen@university.edu", action: "Project created", details: "Created project 'ADNI Metabolomics Study'", ip: "192.168.1.45" },
-  { id: 2, timestamp: "2025-06-27 14:18:42", level: "info", user: "system", action: "Backup completed", details: "Database backup completed successfully (42.8 GB)", ip: "127.0.0.1" },
-  { id: 3, timestamp: "2025-06-27 13:56:23", level: "warning", user: "john.smith@research.org", action: "Failed login attempt", details: "Incorrect password (3/5 attempts)", ip: "203.45.67.89" },
-  { id: 4, timestamp: "2025-06-27 13:42:11", level: "info", user: "emily.wang@lab.edu", action: "Analysis completed", details: "PCA analysis completed for dataset 'Plasma Samples'", ip: "192.168.1.78" },
-  { id: 5, timestamp: "2025-06-27 12:34:56", level: "error", user: "system", action: "Analysis failed", details: "PLS-DA analysis failed: Out of memory (8 GB limit)", ip: "127.0.0.1" },
-  { id: 6, timestamp: "2025-06-27 11:23:45", level: "info", user: "sarah.chen@university.edu", action: "Settings updated", details: "Updated email notification preferences", ip: "192.168.1.45" },
-  { id: 7, timestamp: "2025-06-27 10:15:32", level: "info", user: "m.brown@university.edu", action: "Data exported", details: "Exported volcano plot results (CSV, 1247 features)", ip: "192.168.1.92" },
-  { id: 8, timestamp: "2025-06-27 09:47:18", level: "warning", user: "system", action: "High CPU usage", details: "CPU usage exceeded 85% for 5 minutes", ip: "127.0.0.1" },
-  { id: 9, timestamp: "2025-06-27 09:14:32", level: "info", user: "sarah.chen@university.edu", action: "Run started", details: "Started PCA run on Plasma Samples (n=342, p=1247)", ip: "192.168.1.45" },
-  { id: 10, timestamp: "2025-06-26 23:00:00", level: "info", user: "system", action: "Scheduled backup", details: "Nightly S3 backup initiated", ip: "127.0.0.1" },
-  { id: 11, timestamp: "2025-06-26 17:22:14", level: "warning", user: "admin@metaboanalytics.com", action: "Config changed", details: "S3 bucket updated to production endpoint", ip: "10.0.0.1" },
-  { id: 12, timestamp: "2025-06-26 16:44:09", level: "error", user: "m.brown@university.edu", action: "Run failed", details: "Clustering failed: insufficient samples after QC (n=8, min=10)", ip: "172.16.0.88" },
-];
+const logs: Array<{ id: number; timestamp: string; level: string; user: string; action: string; details: string; ip: string }> = [];
 
 const levelConfig: Record<string, { icon: typeof Info; cls: string; dot: string }> = {
   info:    { icon: Info,          cls: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",   dot: "bg-cyan-500" },
@@ -28,17 +16,32 @@ export function AdminLogs() {
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState("All Levels");
   const [timeFilter, setTimeFilter] = useState("Last 24 hours");
+  const [logData, setLogData] = useState(logs);
 
-  const filtered = logs.filter((log) => {
+  useEffect(() => {
+    api.admin.getLogs()
+      .then((data) => setLogData(data.map((l) => ({
+        id: Number(l.id),
+        timestamp: String(l.timestamp),
+        level: String(l.level),
+        user: String(l.user ?? "system"),
+        action: String(l.action),
+        details: String(l.details),
+        ip: String(l.ip ?? ""),
+      }))))
+      .catch(console.error);
+  }, []);
+
+  const filtered = logData.filter((log) => {
     const q = search.toLowerCase();
     const matchSearch = log.action.toLowerCase().includes(q) || log.user.toLowerCase().includes(q) || log.details.toLowerCase().includes(q);
     const matchLevel = levelFilter === "All Levels" || log.level === levelFilter.toLowerCase();
     return matchSearch && matchLevel;
   });
 
-  const infoCount    = logs.filter((l) => l.level === "info").length;
-  const warnCount    = logs.filter((l) => l.level === "warning").length;
-  const errorCount   = logs.filter((l) => l.level === "error").length;
+  const infoCount    = logData.filter((l) => l.level === "info").length;
+  const warnCount    = logData.filter((l) => l.level === "warning").length;
+  const errorCount   = logData.filter((l) => l.level === "error").length;
 
   return (
     <div className="h-full overflow-auto bg-gradient-to-br from-background via-background to-muted/20 p-6">

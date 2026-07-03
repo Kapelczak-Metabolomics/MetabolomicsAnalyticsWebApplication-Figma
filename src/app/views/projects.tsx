@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import {
   Plus,
@@ -17,6 +17,7 @@ import { Link } from "react-router";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
+import { api } from "../../lib/api";
 
 const colorMap: Record<string, string> = {
   violet: "from-violet-500 to-violet-600",
@@ -26,23 +27,10 @@ const colorMap: Record<string, string> = {
   rose: "from-rose-500 to-rose-600",
 };
 
-const initialProjects = [
-  { id: 1, name: "ADNI Metabolomics Study", description: "Alzheimer's Disease Neuroimaging Initiative metabolomics analysis", datasets: 3, samples: 342, lastModified: "2 hours ago", status: "active", color: "violet" },
-  { id: 2, name: "Cancer Biomarker Panel", description: "Multi-cancer detection using plasma metabolite signatures", datasets: 5, samples: 487, lastModified: "1 day ago", status: "active", color: "cyan" },
-  { id: 3, name: "Diabetes Cohort 2024", description: "Type 2 diabetes progression metabolic profiling", datasets: 2, samples: 156, lastModified: "3 days ago", status: "active", color: "emerald" },
-  { id: 4, name: "COVID-19 Severity Markers", description: "Metabolomic predictors of COVID-19 disease severity", datasets: 4, samples: 289, lastModified: "1 week ago", status: "archived", color: "amber" },
-  { id: 5, name: "Microbiome-Metabolome Study", description: "Integrated analysis of gut microbiome and metabolome", datasets: 6, samples: 523, lastModified: "2 weeks ago", status: "active", color: "rose" },
-];
+type Project = Awaited<ReturnType<typeof api.getProjects>>[number];
+type Experiment = Awaited<ReturnType<typeof api.getExperiments>>[number];
 
-const experiments = [
-  { id: "1", name: "PCA - AD vs Control", project: "ADNI Metabolomics Study", type: "PCA", created: "3 hours ago", status: "completed" },
-  { id: "2", name: "Volcano Analysis - Plasma", project: "Cancer Biomarker Panel", type: "Volcano", created: "5 hours ago", status: "completed" },
-  { id: "3", name: "PLS-DA Classification", project: "ADNI Metabolomics Study", type: "PLS-DA", created: "1 day ago", status: "running" },
-  { id: "4", name: "Pathway Enrichment - KEGG", project: "Diabetes Cohort 2024", type: "Pathway", created: "2 days ago", status: "completed" },
-  { id: "5", name: "Hierarchical Clustering", project: "COVID-19 Severity Markers", type: "Clustering", created: "4 days ago", status: "failed" },
-];
-
-function NewProjectDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (name: string) => void }) {
+function NewProjectDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (project: Project) => void }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [type, setType] = useState("metabolomics");
@@ -52,10 +40,24 @@ function NewProjectDialog({ open, onClose, onCreated }: { open: boolean; onClose
       toast.error("Project name is required");
       return;
     }
-    onCreated(name);
-    setName("");
-    setDescription("");
-    onClose();
+    api.createProject({ name, description, type })
+      .then((project) => {
+        onCreated({
+          id: project.id,
+          name: project.name,
+          description: description || "New project",
+          datasets: 0,
+          samples: 0,
+          lastModified: "just now",
+          status: "active",
+          color: project.color,
+        });
+        setName("");
+        setDescription("");
+        onClose();
+        toast.success(`Project "${name}" created successfully`);
+      })
+      .catch(() => toast.error("Failed to create project"));
   }
 
   return (
@@ -154,44 +156,51 @@ function NewProjectDialog({ open, onClose, onCreated }: { open: boolean; onClose
 
 export function ProjectsView() {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
-  const [projects, setProjects] = useState(initialProjects);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [experiments, setExperiments] = useState<Experiment[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
 
-  function handleCreated(name: string) {
-    setProjects((prev) => [
-      {
-        id: Date.now(),
-        name,
-        description: "New project",
-        datasets: 0,
-        samples: 0,
-        lastModified: "just now",
-        status: "active",
-        color: "violet",
-      },
-      ...prev,
-    ]);
-    toast.success(`Project "${name}" created successfully`);
+  useEffect(() => {
+    Promise.all([api.getProjects(), api.getExperiments()])
+      .then(([p, e]) => {
+        setProjects(p);
+        setExperiments(e);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  function handleCreated(project: Project) {
+    setProjects((prev) => [project, ...prev]);
   }
 
   function archiveProject(id: number, name: string) {
-    setProjects((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, status: "archived" } : p))
-    );
-    toast.success(`"${name}" archived`);
+    api.updateProject(id, { status: "archived" })
+      .then(() => {
+        setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, status: "archived" } : p)));
+        toast.success(`"${name}" archived`);
+      })
+      .catch(() => toast.error("Failed to archive project"));
   }
 
   function restoreProject(id: number, name: string) {
-    setProjects((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, status: "active" } : p))
-    );
-    toast.success(`"${name}" restored`);
+    api.updateProject(id, { status: "active" })
+      .then(() => {
+        setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, status: "active" } : p)));
+        toast.success(`"${name}" restored`);
+      })
+      .catch(() => toast.error("Failed to restore project"));
   }
 
   function deleteProject(id: number, name: string) {
-    setProjects((prev) => prev.filter((p) => p.id !== id));
-    toast.success(`"${name}" deleted`);
+    api.deleteProject(id)
+      .then(() => {
+        setProjects((prev) => prev.filter((p) => p.id !== id));
+        toast.success(`"${name}" deleted`);
+      })
+      .catch(() => toast.error("Failed to delete project"));
   }
 
   const filtered = projects.filter(
@@ -202,6 +211,14 @@ export function ProjectsView() {
 
   const activeProjects = filtered.filter((p) => p.status === "active");
   const archivedProjects = filtered.filter((p) => p.status === "archived");
+
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-full overflow-auto bg-gradient-to-br from-background via-background to-muted/20 p-6">

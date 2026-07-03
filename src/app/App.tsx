@@ -27,6 +27,7 @@ import { AdminSystem } from "./views/admin/system";
 import { AdminLogs } from "./views/admin/logs";
 import { AdminRuns } from "./views/admin/runs";
 import { AdminAudit } from "./views/admin/audit";
+import { AuthProvider, ProtectedRoute, AdminRoute } from "../contexts/auth-context";
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -40,196 +41,62 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+function ProtectedLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <ProtectedRoute>
+      <AppLayout>{children}</AppLayout>
+    </ProtectedRoute>
+  );
+}
+
+function AdminLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <ProtectedRoute>
+      <AdminRoute>
+        <AppLayout>{children}</AppLayout>
+      </AdminRoute>
+    </ProtectedRoute>
+  );
+}
+
 export default function App() {
   return (
     <ThemeProvider>
       <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginView />} />
-          <Route path="/forgot-password" element={<ForgotPasswordView />} />
-          <Route
-            path="/"
-            element={
-              <AppLayout>
-                <Dashboard />
-              </AppLayout>
-            }
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<LoginView />} />
+            <Route path="/forgot-password" element={<ForgotPasswordView />} />
+            <Route path="/" element={<ProtectedLayout><Dashboard /></ProtectedLayout>} />
+            <Route path="/pca" element={<ProtectedLayout><PCAView /></ProtectedLayout>} />
+            <Route path="/plsda" element={<ProtectedLayout><PLSDAView /></ProtectedLayout>} />
+            <Route path="/volcano" element={<ProtectedLayout><VolcanoView /></ProtectedLayout>} />
+            <Route path="/clustering" element={<ProtectedLayout><ClusteringView /></ProtectedLayout>} />
+            <Route path="/pathway" element={<ProtectedLayout><PathwayView /></ProtectedLayout>} />
+            <Route path="/biomarker" element={<ProtectedLayout><BiomarkerView /></ProtectedLayout>} />
+            <Route path="/data" element={<ProtectedLayout><DataTableView /></ProtectedLayout>} />
+            <Route path="/data/import" element={<ProtectedLayout><DataImportView /></ProtectedLayout>} />
+            <Route path="/projects" element={<ProtectedLayout><ProjectsView /></ProtectedLayout>} />
+            <Route path="/projects/:id" element={<ProtectedLayout><ProjectDetailView /></ProtectedLayout>} />
+            <Route path="/experiments/:id" element={<ProtectedLayout><ExperimentDetailView /></ProtectedLayout>} />
+            <Route path="/notifications" element={<ProtectedLayout><NotificationsView /></ProtectedLayout>} />
+            <Route path="/help" element={<ProtectedLayout><HelpView /></ProtectedLayout>} />
+            <Route path="/profile" element={<ProtectedLayout><ProfileView /></ProtectedLayout>} />
+            <Route path="/settings" element={<ProtectedLayout><SettingsView /></ProtectedLayout>} />
+            <Route path="/admin" element={<AdminLayout><AdminDashboard /></AdminLayout>} />
+            <Route path="/admin/users" element={<AdminLayout><AdminUsers /></AdminLayout>} />
+            <Route path="/admin/system" element={<AdminLayout><AdminSystem /></AdminLayout>} />
+            <Route path="/admin/logs" element={<AdminLayout><AdminLogs /></AdminLayout>} />
+            <Route path="/admin/runs" element={<AdminLayout><AdminRuns /></AdminLayout>} />
+            <Route path="/admin/audit" element={<AdminLayout><AdminAudit /></AdminLayout>} />
+          </Routes>
+          <Toaster
+            position="bottom-right"
+            toastOptions={{
+              style: { fontSize: "12px" },
+            }}
           />
-          <Route
-            path="/pca"
-            element={
-              <AppLayout>
-                <PCAView />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/plsda"
-            element={
-              <AppLayout>
-                <PLSDAView />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/volcano"
-            element={
-              <AppLayout>
-                <VolcanoView />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/clustering"
-            element={
-              <AppLayout>
-                <ClusteringView />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/pathway"
-            element={
-              <AppLayout>
-                <PathwayView />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/biomarker"
-            element={
-              <AppLayout>
-                <BiomarkerView />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/data"
-            element={
-              <AppLayout>
-                <DataTableView />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/data/import"
-            element={
-              <AppLayout>
-                <DataImportView />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/projects"
-            element={
-              <AppLayout>
-                <ProjectsView />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/projects/:id"
-            element={
-              <AppLayout>
-                <ProjectDetailView />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/experiments/:id"
-            element={
-              <AppLayout>
-                <ExperimentDetailView />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/notifications"
-            element={
-              <AppLayout>
-                <NotificationsView />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/help"
-            element={
-              <AppLayout>
-                <HelpView />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/profile"
-            element={
-              <AppLayout>
-                <ProfileView />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              <AppLayout>
-                <SettingsView />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/admin"
-            element={
-              <AppLayout>
-                <AdminDashboard />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/admin/users"
-            element={
-              <AppLayout>
-                <AdminUsers />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/admin/system"
-            element={
-              <AppLayout>
-                <AdminSystem />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/admin/logs"
-            element={
-              <AppLayout>
-                <AdminLogs />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/admin/runs"
-            element={
-              <AppLayout>
-                <AdminRuns />
-              </AppLayout>
-            }
-          />
-          <Route
-            path="/admin/audit"
-            element={
-              <AppLayout>
-                <AdminAudit />
-              </AppLayout>
-            }
-          />
-        </Routes>
-        <Toaster
-          position="bottom-right"
-          toastOptions={{
-            style: { fontSize: "12px" },
-          }}
-        />
+        </AuthProvider>
       </BrowserRouter>
     </ThemeProvider>
   );

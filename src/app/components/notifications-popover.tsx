@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router";
 import * as Popover from "@radix-ui/react-popover";
 import { Bell, CheckCircle2, AlertCircle, Info, Check, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "../../lib/api";
 
 type NotifType = "success" | "warning" | "info" | "error";
 
@@ -23,69 +24,30 @@ const iconMap: Record<NotifType, { icon: typeof CheckCircle2; color: string; bg:
   info: { icon: Info, color: "text-blue-500", bg: "bg-blue-500/10" },
 };
 
-const initialNotifications: Notification[] = [
-  {
-    id: 1,
-    type: "success",
-    title: "Analysis Complete",
-    message: "PCA - AD vs Control finished successfully. 342 samples processed.",
-    time: "2 min ago",
-    read: false,
-    link: "/experiments/1",
-  },
-  {
-    id: 2,
-    type: "success",
-    title: "Dataset Imported",
-    message: "Plasma Samples (ADNI v3) imported — 1,247 features ready.",
-    time: "1 hr ago",
-    read: false,
-    link: "/data",
-  },
-  {
-    id: 3,
-    type: "warning",
-    title: "Missing Values Detected",
-    message: "Serum Samples dataset has 8.4% missing values.",
-    time: "3 hr ago",
-    read: false,
-    link: "/data",
-  },
-  {
-    id: 4,
-    type: "info",
-    title: "New Project Shared",
-    message: "Dr. Torres shared Cancer Biomarker Panel with you.",
-    time: "5 hr ago",
-    read: true,
-    link: "/projects",
-  },
-  {
-    id: 5,
-    type: "error",
-    title: "Analysis Failed",
-    message: "Hierarchical Clustering failed — insufficient samples after QC.",
-    time: "4 days ago",
-    read: true,
-    link: "/experiments/5",
-  },
-];
-
 export function NotificationsPopover() {
-  const [notifications, setNotifications] = useState(initialNotifications);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      api.getNotifications().then(setNotifications).catch(console.error);
+    }
+  }, [open]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   function markAllRead() {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    toast.success("All notifications marked as read");
+    api.markAllNotificationsRead()
+      .then(() => {
+        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+        toast.success("All notifications marked as read");
+      })
+      .catch(() => toast.error("Failed to mark notifications as read"));
   }
 
   function markRead(id: number) {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
+    api.markNotificationRead(id)
+      .then(() => setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n))));
   }
 
   const preview = notifications.slice(0, 4);
@@ -113,7 +75,6 @@ export function NotificationsPopover() {
           sideOffset={8}
           className="z-50 w-[380px] overflow-hidden rounded-xl border border-border bg-card shadow-xl animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-150"
         >
-          {/* Header */}
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-semibold">Notifications</h3>
@@ -124,25 +85,19 @@ export function NotificationsPopover() {
               )}
             </div>
             {unreadCount > 0 && (
-              <button
-                onClick={markAllRead}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-              >
+              <button onClick={markAllRead} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                 <Check className="h-3 w-3" />
                 Mark all read
               </button>
             )}
           </div>
 
-          {/* Notification list */}
           <div className="divide-y divide-border">
             {preview.map((notif) => {
-              const { icon: Icon, color, bg } = iconMap[notif.type];
+              const { icon: Icon, color, bg } = iconMap[notif.type] ?? iconMap.info;
               const content = (
                 <div
-                  className={`flex items-start gap-3 px-4 py-3 transition-colors hover:bg-muted/40 ${
-                    !notif.read ? "bg-primary/[0.03]" : ""
-                  }`}
+                  className={`flex items-start gap-3 px-4 py-3 transition-colors hover:bg-muted/40 ${!notif.read ? "bg-primary/[0.03]" : ""}`}
                   onClick={() => markRead(notif.id)}
                 >
                   <div className={`mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg ${bg}`}>
@@ -151,13 +106,9 @@ export function NotificationsPopover() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <p className="text-xs font-medium leading-snug">{notif.title}</p>
-                      {!notif.read && (
-                        <div className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-violet-500" />
-                      )}
+                      {!notif.read && <div className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-violet-500" />}
                     </div>
-                    <p className="mt-0.5 text-xs text-muted-foreground leading-snug line-clamp-2">
-                      {notif.message}
-                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground leading-snug line-clamp-2">{notif.message}</p>
                     <p className="mt-1 text-xs text-muted-foreground/70">{notif.time}</p>
                   </div>
                 </div>
@@ -180,7 +131,6 @@ export function NotificationsPopover() {
             )}
           </div>
 
-          {/* Footer */}
           <div className="border-t border-border p-2">
             <Link
               to="/notifications"

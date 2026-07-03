@@ -1,11 +1,13 @@
+import { useEffect, useState } from "react";
 import { Users, Database, Activity, AlertCircle, Play, ClipboardList, Settings, ScrollText, TrendingUp } from "lucide-react";
 import { Link } from "react-router";
+import { api } from "../../../lib/api";
 
 const stats = [
-  { label: "Total Users", value: "1,247", change: "+12 this week", color: "violet", icon: Users },
-  { label: "Active Projects", value: "342", change: "23 running", color: "cyan", icon: Database },
-  { label: "Server Uptime", value: "99.8%", change: "45 days", color: "emerald", icon: Activity },
-  { label: "System Alerts", value: "3", change: "Requires attention", color: "amber", icon: AlertCircle },
+  { label: "Total Users", value: "—", change: "—", color: "violet", icon: Users, key: "totalUsers" },
+  { label: "Active Projects", value: "—", change: "—", color: "cyan", icon: Database, key: "activeProjects" },
+  { label: "Server Uptime", value: "—", change: "—", color: "emerald", icon: Activity, key: "uptime" },
+  { label: "System Alerts", value: "—", change: "—", color: "amber", icon: AlertCircle, key: "systemAlerts" },
 ];
 
 const colorMap: Record<string, { border: string; bg: string; icon: string; text: string }> = {
@@ -28,16 +30,17 @@ const iconColorMap: Record<string, string> = {
   emerald: "text-emerald-500", amber: "text-amber-500",
 };
 
-const recentActivity = [
-  { user: "Dr. Sarah Chen",  action: "Created new project",          time: "5 min ago" },
-  { user: "System Admin",    action: "Updated S3 configuration",     time: "1 hr ago" },
-  { user: "Dr. John Smith",  action: "Ran PCA analysis",             time: "2 hr ago" },
-  { user: "System",          action: "Backup completed (42.8 GB)",   time: "3 hr ago" },
-  { user: "Dr. Emily Wang",  action: "Exported PLS-DA results",      time: "4 hr ago" },
-  { user: "Michael Brown",   action: "Invited new researcher",       time: "6 hr ago" },
-];
+const recentActivity: Array<{ user: string; action: string; time: string }> = [];
 
 export function AdminDashboard() {
+  const [statData, setStatData] = useState<Record<string, string | number>>({});
+  const [activity, setActivity] = useState(recentActivity);
+
+  useEffect(() => {
+    api.admin.getStats().then((s) => setStatData(s as unknown as Record<string, string | number>)).catch(console.error);
+    api.admin.getActivity().then(setActivity).catch(console.error);
+  }, []);
+
   return (
     <div className="h-full overflow-auto bg-gradient-to-br from-background via-background to-muted/20 p-6">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -56,8 +59,9 @@ export function AdminDashboard() {
 
         {/* KPI cards */}
         <div className="grid grid-cols-4 gap-4">
-          {stats.map(({ label, value, change, color, icon: Icon }) => {
+          {stats.map(({ label, change, color, icon: Icon, key }) => {
             const c = colorMap[color];
+            const value = statData[key] ?? "—";
             return (
               <div key={label} className={`rounded-lg border ${c.border} bg-gradient-to-br ${c.bg} p-4`}>
                 <div className="flex items-center justify-between">
@@ -98,7 +102,7 @@ export function AdminDashboard() {
               <Link to="/admin/audit" className="text-xs text-primary hover:underline">View audit trail →</Link>
             </div>
             <div className="divide-y divide-border">
-              {recentActivity.map((a, i) => (
+              {activity.map((a, i) => (
                 <div key={i} className="flex items-center justify-between px-4 py-3 hover:bg-muted/40">
                   <div className="flex items-center gap-3">
                     <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 text-[10px] font-semibold text-white">
