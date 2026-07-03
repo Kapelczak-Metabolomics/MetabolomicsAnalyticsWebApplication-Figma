@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Search, Download, ChevronDown, Shield, Info,
   AlertTriangle, CheckCircle2, LogIn, LogOut, Settings,
@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
+import { api } from "../../../lib/api";
 
 type AuditSeverity = "info" | "warning" | "critical" | "success";
 type AuditCategory = "auth" | "data" | "analysis" | "admin" | "export";
@@ -24,23 +25,7 @@ interface AuditEvent {
   userAgent: string;
 }
 
-const events: AuditEvent[] = [
-  { id: "a1", timestamp: "2025-06-27 09:14:32", user: "Dr. Sarah Chen", userEmail: "sarah.chen@university.edu", action: "RUN_ANALYSIS", category: "analysis", severity: "info", resource: "Experiment: PCA - AD vs Control", details: "Initiated PCA run on Plasma Samples (n=342, p=1247). Pareto scaling, KNN impute.", ip: "192.168.1.42", userAgent: "Chrome/126 macOS" },
-  { id: "a2", timestamp: "2025-06-27 08:55:10", user: "Dr. Sarah Chen", userEmail: "sarah.chen@university.edu", action: "DATASET_IMPORT", category: "data", severity: "info", resource: "Dataset: Plasma Samples (ADNI v3)", details: "Imported 342 samples, 1247 features from plasma_metabolomics_ADNI_v3.csv (12.4 MB).", ip: "192.168.1.42", userAgent: "Chrome/126 macOS" },
-  { id: "a3", timestamp: "2025-06-27 08:30:00", user: "Dr. Sarah Chen", userEmail: "sarah.chen@university.edu", action: "LOGIN", category: "auth", severity: "success", resource: "Session", details: "Successful login via password. MFA verified.", ip: "192.168.1.42", userAgent: "Chrome/126 macOS" },
-  { id: "a4", timestamp: "2025-06-26 17:22:14", user: "System Admin", userEmail: "admin@metaboanalytics.com", action: "SETTINGS_CHANGE", category: "admin", severity: "warning", resource: "System: S3 Config", details: "S3 bucket endpoint changed from metaboanalytics-data-staging to metaboanalytics-data-prod.", ip: "10.0.0.1", userAgent: "Chrome/126 Windows" },
-  { id: "a5", timestamp: "2025-06-26 14:05:18", user: "Dr. Sarah Chen", userEmail: "sarah.chen@university.edu", action: "RUN_ANALYSIS", category: "analysis", severity: "info", resource: "Experiment: PLS-DA Classification", details: "Initiated PLS-DA run (7-fold CV, 1000 permutations). Still running.", ip: "192.168.1.42", userAgent: "Chrome/126 macOS" },
-  { id: "a6", timestamp: "2025-06-26 12:44:00", user: "Michael Brown", userEmail: "m.brown@university.edu", action: "EXPORT_DATA", category: "export", severity: "info", resource: "Dataset: COVID-19 Severity Markers", details: "Exported full dataset as CSV. File size: 28.7 MB.", ip: "172.16.0.88", userAgent: "Firefox/127 Linux" },
-  { id: "a7", timestamp: "2025-06-26 11:30:45", user: "System Admin", userEmail: "admin@metaboanalytics.com", action: "USER_ROLE_CHANGE", category: "admin", severity: "warning", resource: "User: Michael Brown → Analyst", details: "Role changed from Viewer to Analyst by System Admin.", ip: "10.0.0.1", userAgent: "Chrome/126 Windows" },
-  { id: "a8", timestamp: "2025-06-25 16:44:09", user: "Michael Brown", userEmail: "m.brown@university.edu", action: "RUN_ANALYSIS", category: "analysis", severity: "critical", resource: "Experiment: Hierarchical Clustering (FAILED)", details: "Run failed after 34s. Cause: Insufficient samples after QC (n=8, minimum=10).", ip: "172.16.0.88", userAgent: "Firefox/127 Linux" },
-  { id: "a9", timestamp: "2025-06-25 15:10:22", user: "Dr. Emily Wang", userEmail: "emily.wang@lab.edu", action: "DATASET_DELETE", category: "data", severity: "warning", resource: "Dataset: Pilot Study v1 (archived)", details: "Dataset soft-deleted. Retained in S3 per retention policy (7 years).", ip: "192.168.2.15", userAgent: "Safari/17 macOS" },
-  { id: "a10", timestamp: "2025-06-25 09:15:30", user: "Dr. Emily Wang", userEmail: "emily.wang@lab.edu", action: "RUN_ANALYSIS", category: "analysis", severity: "info", resource: "Experiment: PLS-DA Multi-class Cancer", details: "Completed in 8m 33s. Accuracy: 91.2%. AUC: 0.957.", ip: "192.168.2.15", userAgent: "Safari/17 macOS" },
-  { id: "a11", timestamp: "2025-06-25 08:00:00", user: "System", userEmail: "system@metaboanalytics.com", action: "BACKUP_COMPLETED", category: "admin", severity: "success", resource: "Database Backup", details: "Scheduled daily backup completed. Size: 42.8 GB. Stored to S3: s3://metaboanalytics-data-prod/backups/2025-06-25.tar.gz", ip: "internal", userAgent: "cron/system" },
-  { id: "a12", timestamp: "2025-06-24 18:30:11", user: "Dr. Lisa Martinez", userEmail: "l.martinez@biotech.com", action: "LOGIN_FAILED", category: "auth", severity: "warning", resource: "Session", details: "Failed login attempt (incorrect password). Account not locked.", ip: "203.0.113.45", userAgent: "Chrome/126 iOS" },
-  { id: "a13", timestamp: "2025-06-24 18:31:05", user: "Dr. Lisa Martinez", userEmail: "l.martinez@biotech.com", action: "LOGIN", category: "auth", severity: "success", resource: "Session", details: "Successful login after failed attempt. MFA verified.", ip: "203.0.113.45", userAgent: "Chrome/126 iOS" },
-  { id: "a14", timestamp: "2025-06-24 10:22:44", user: "System Admin", userEmail: "admin@metaboanalytics.com", action: "USER_INVITE", category: "admin", severity: "info", resource: "User: new.researcher@lab.edu", details: "Invitation email sent. Role: Researcher. Project: ADNI Metabolomics Study.", ip: "10.0.0.1", userAgent: "Chrome/126 Windows" },
-  { id: "a15", timestamp: "2025-06-23 14:00:00", user: "System Admin", userEmail: "admin@metaboanalytics.com", action: "SETTINGS_CHANGE", category: "admin", severity: "critical", resource: "System: Maintenance Mode", details: "Maintenance mode ENABLED. All users notified via email. Scheduled 2hr window.", ip: "10.0.0.1", userAgent: "Chrome/126 Windows" },
-];
+const events: AuditEvent[] = [];
 
 const severityConfig: Record<AuditSeverity, { icon: typeof Info; cls: string; dot: string }> = {
   info: { icon: Info, cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400", dot: "bg-blue-500" },
@@ -70,10 +55,29 @@ export function AdminAudit() {
   const [categoryFilter, setCategoryFilter] = useState("All Categories");
   const [userFilter, setUserFilter] = useState("All Users");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>(events);
 
-  const uniqueUsers = [...new Set(events.map((e) => e.user))];
+  useEffect(() => {
+    api.admin.getAudit()
+      .then((data) => setAuditEvents(data.map((e) => ({
+        id: String(e.id),
+        timestamp: String(e.timestamp),
+        user: String(e.user),
+        userEmail: String(e.userEmail),
+        action: String(e.action),
+        category: e.category as AuditCategory,
+        severity: e.severity as AuditSeverity,
+        resource: String(e.resource),
+        details: String(e.details),
+        ip: String(e.ip),
+        userAgent: String(e.userAgent),
+      }))))
+      .catch(console.error);
+  }, []);
 
-  const filtered = events.filter((e) => {
+  const uniqueUsers = [...new Set(auditEvents.map((e) => e.user))];
+
+  const filtered = auditEvents.filter((e) => {
     const q = search.toLowerCase();
     const matchSearch = e.action.toLowerCase().includes(q) || e.user.toLowerCase().includes(q) || e.resource.toLowerCase().includes(q) || e.details.toLowerCase().includes(q);
     const matchSeverity = severityFilter === "All Severity" || e.severity === severityFilter.toLowerCase();
@@ -83,9 +87,9 @@ export function AdminAudit() {
   });
 
   const counts = {
-    critical: events.filter((e) => e.severity === "critical").length,
-    warning: events.filter((e) => e.severity === "warning").length,
-    total: events.length,
+    critical: auditEvents.filter((e) => e.severity === "critical").length,
+    warning: auditEvents.filter((e) => e.severity === "warning").length,
+    total: auditEvents.length,
   };
 
   return (
@@ -169,7 +173,7 @@ export function AdminAudit() {
         <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
           <div className="border-b border-border bg-muted/30 px-4 py-2.5 flex items-center justify-between">
             <p className="text-xs font-medium text-muted-foreground">
-              Showing {filtered.length} of {events.length} events — most recent first
+              Showing {filtered.length} of {auditEvents.length} events — most recent first
             </p>
             <p className="text-xs text-muted-foreground">Click a row to expand details</p>
           </div>

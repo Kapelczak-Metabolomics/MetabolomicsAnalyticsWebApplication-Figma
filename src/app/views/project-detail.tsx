@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import * as Tabs from "@radix-ui/react-tabs";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -10,60 +10,8 @@ import {
   X, UserPlus, Shield, Mail, Edit3, Archive,
 } from "lucide-react";
 import { toast } from "sonner";
-
-// ─── shared data ────────────────────────────────────────────────────────────
-
-const projectsData: Record<string, {
-  id: string; name: string; description: string; color: string;
-  type: string; created: string; owner: string; visibility: string;
-  datasets: { id: string; name: string; type: string; samples: number; features: number; created: string; status: string }[];
-  experiments: { id: string; name: string; type: string; status: string; created: string; user: string; duration: string }[];
-  members: { id: number; name: string; email: string; role: string; joined: string; avatar: string }[];
-}> = {
-  "1": {
-    id: "1", name: "ADNI Metabolomics Study", description: "Alzheimer's Disease Neuroimaging Initiative metabolomics analysis of plasma and serum samples from AD patients and age-matched controls.",
-    color: "from-violet-500 to-violet-600", type: "Metabolomics", created: "Jan 12, 2025", owner: "Dr. Sarah Chen", visibility: "Team",
-    datasets: [
-      { id: "d1", name: "Plasma Samples (ADNI v3)", type: "Plasma LC-MS", samples: 342, features: 1247, created: "Jan 15, 2025", status: "ready" },
-      { id: "d2", name: "Serum Samples (ADNI v2)", type: "Serum GC-MS", samples: 287, features: 843, created: "Feb 3, 2025", status: "ready" },
-      { id: "d3", name: "Urine Samples (Pilot)", type: "Urine NMR", samples: 156, features: 412, created: "Mar 1, 2025", status: "processing" },
-    ],
-    experiments: [
-      { id: "1", name: "PCA - AD vs Control", type: "PCA", status: "completed", created: "3 hours ago", user: "Dr. Sarah Chen", duration: "2m 14s" },
-      { id: "3", name: "PLS-DA Classification", type: "PLS-DA", status: "running", created: "1 day ago", user: "Dr. Sarah Chen", duration: "—" },
-      { id: "e3", name: "Volcano Analysis v2", type: "Volcano", status: "completed", created: "3 days ago", user: "Dr. John Smith", duration: "1m 47s" },
-      { id: "e4", name: "Pathway Enrichment - Plasma", type: "Pathway", status: "completed", created: "1 week ago", user: "Dr. Sarah Chen", duration: "3m 02s" },
-    ],
-    members: [
-      { id: 1, name: "Dr. Sarah Chen", email: "sarah.chen@university.edu", role: "Owner", joined: "Jan 12, 2025", avatar: "SC" },
-      { id: 2, name: "Dr. John Smith", email: "john.smith@research.org", role: "Researcher", joined: "Jan 18, 2025", avatar: "JS" },
-      { id: 3, name: "Michael Brown", email: "m.brown@university.edu", role: "Analyst", joined: "Feb 5, 2025", avatar: "MB" },
-    ],
-  },
-  "2": {
-    id: "2", name: "Cancer Biomarker Panel", description: "Multi-cancer detection using plasma metabolite signatures from matched cases and controls across 5 cancer types.",
-    color: "from-cyan-500 to-cyan-600", type: "Lipidomics", created: "Nov 3, 2024", owner: "Dr. Michael Torres", visibility: "Private",
-    datasets: [
-      { id: "d1", name: "Plasma LC-MS Positive", type: "Plasma LC-MS", samples: 487, features: 2341, created: "Nov 5, 2024", status: "ready" },
-      { id: "d2", name: "Plasma LC-MS Negative", type: "Plasma LC-MS", samples: 487, features: 1876, created: "Nov 5, 2024", status: "ready" },
-      { id: "d3", name: "Validation Cohort", type: "Serum LC-MS", samples: 198, features: 1203, created: "Jan 8, 2025", status: "ready" },
-      { id: "d4", name: "External Replication", type: "Plasma NMR", samples: 312, features: 564, created: "Feb 20, 2025", status: "ready" },
-      { id: "d5", name: "Pilot Study (archive)", type: "Plasma GC-MS", samples: 89, features: 423, created: "Aug 12, 2024", status: "archived" },
-    ],
-    experiments: [
-      { id: "2", name: "Volcano Analysis - Plasma", type: "Volcano", status: "completed", created: "5 hours ago", user: "Dr. Michael Torres", duration: "1m 47s" },
-      { id: "e2", name: "PLS-DA Multi-class", type: "PLS-DA", status: "completed", created: "2 days ago", user: "Dr. Emily Wang", duration: "8m 33s" },
-      { id: "e3", name: "Biomarker Candidates", type: "Biomarker", status: "completed", created: "4 days ago", user: "Dr. Michael Torres", duration: "4m 12s" },
-    ],
-    members: [
-      { id: 1, name: "Dr. Michael Torres", email: "m.torres@biotech.com", role: "Owner", joined: "Nov 3, 2024", avatar: "MT" },
-      { id: 2, name: "Dr. Emily Wang", email: "emily.wang@lab.edu", role: "Researcher", joined: "Nov 10, 2024", avatar: "EW" },
-      { id: 3, name: "Dr. Sarah Chen", email: "sarah.chen@university.edu", role: "Viewer", joined: "Jan 22, 2025", avatar: "SC" },
-    ],
-  },
-};
-
-const fallbackProject = projectsData["1"];
+import { api } from "../../lib/api";
+import { useAuth } from "../../contexts/auth-context";
 
 const colorMap: Record<string, string> = {
   violet: "from-violet-500 to-violet-600",
@@ -154,14 +102,31 @@ function AddMemberDialog({ open, onClose, onAdd }: {
 export function ProjectDetailView() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const project = projectsData[id ?? "1"] ?? fallbackProject;
-
-  const [datasets, setDatasets] = useState(project.datasets);
-  const [experiments] = useState(project.experiments);
-  const [members, setMembers] = useState(project.members);
+  const { user } = useAuth();
+  const [project, setProject] = useState<Awaited<ReturnType<typeof api.getProject>> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [datasets, setDatasets] = useState<Array<{ id: string; name: string; type: string; samples: number; features: number; created: string; status: string }>>([]);
+  const [experiments, setExperiments] = useState<Array<{ id: string; name: string; type: string; status: string; created: string }>>([]);
+  const [members, setMembers] = useState([
+    { id: 1, name: user?.name ?? "Owner", email: user?.email ?? "", role: "Owner", joined: "Project start", avatar: (user?.name ?? "U").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() },
+  ]);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
-  const [projectName, setProjectName] = useState(project.name);
-  const [projectDesc, setProjectDesc] = useState(project.description);
+  const [projectName, setProjectName] = useState("");
+  const [projectDesc, setProjectDesc] = useState("");
+
+  useEffect(() => {
+    if (!id) return;
+    api.getProject(id)
+      .then((p) => {
+        setProject(p);
+        setDatasets(p.datasets);
+        setExperiments(p.experiments);
+        setProjectName(p.name);
+        setProjectDesc(p.description);
+      })
+      .catch(() => navigate("/projects"))
+      .finally(() => setLoading(false));
+  }, [id, navigate]);
 
   function removeDataset(did: string) {
     setDatasets((prev) => prev.filter((d) => d.id !== did));
@@ -172,6 +137,16 @@ export function ProjectDetailView() {
     setMembers((prev) => prev.filter((m) => m.id !== mid));
     toast.success("Member removed");
   }
+
+  if (loading || !project) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  const gradientColor = colorMap[project.color] ?? colorMap.violet;
 
   return (
     <div className="h-full overflow-auto bg-gradient-to-br from-background via-background to-muted/20">
@@ -186,20 +161,20 @@ export function ProjectDetailView() {
               className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-md border border-border hover:bg-accent">
               <ArrowLeft className="h-4 w-4" />
             </button>
-            <div className={`mt-0.5 h-10 w-10 flex-shrink-0 rounded-lg bg-gradient-to-br ${project.color} flex items-center justify-center`}>
+            <div className={`mt-0.5 h-10 w-10 flex-shrink-0 rounded-lg bg-gradient-to-br ${gradientColor} flex items-center justify-center`}>
               <Database className="h-5 w-5 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-semibold">{project.name}</h2>
-                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{project.type}</span>
-                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{project.visibility}</span>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">Metabolomics</span>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{project.status}</span>
               </div>
               <p className="mt-0.5 max-w-2xl text-xs text-muted-foreground line-clamp-1">{project.description}</p>
               <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />Created {project.created}</span>
+                <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />Project #{project.id}</span>
                 <span>·</span>
-                <span>Owner: {project.owner}</span>
+                <span>Owner: {user?.name}</span>
               </div>
             </div>
           </div>
@@ -331,9 +306,9 @@ export function ProjectDetailView() {
                     <td className="p-3">
                       <span className="rounded-full bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-600 dark:text-violet-400">{exp.type}</span>
                     </td>
-                    <td className="p-3 text-xs text-muted-foreground">{exp.user}</td>
+                    <td className="p-3 text-xs text-muted-foreground">{user?.name}</td>
                     <td className="p-3 text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" />{exp.created}</td>
-                    <td className="p-3 text-xs tabular-nums text-muted-foreground">{exp.duration}</td>
+                    <td className="p-3 text-xs tabular-nums text-muted-foreground">—</td>
                     <td className="p-3"><StatusChip status={exp.status} /></td>
                     <td className="p-3 text-right">
                       <button onClick={() => navigate(`/experiments/${exp.id}`)}
@@ -419,13 +394,13 @@ export function ProjectDetailView() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-medium">Study Type</label>
-                  <select defaultValue={project.type} className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none">
+                  <select defaultValue="metabolomics" className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none">
                     <option>Metabolomics</option><option>Lipidomics</option><option>Proteomics</option><option>Multi-omics</option>
                   </select>
                 </div>
                 <div>
                   <label className="text-xs font-medium">Visibility</label>
-                  <select defaultValue={project.visibility} className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none">
+                  <select defaultValue="team" className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none">
                     <option>Private</option><option>Team</option><option>Organization</option>
                   </select>
                 </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Search, Plus, MoreVertical, Shield, Mail, Calendar,
   X, UserCog, KeyRound, Ban, Trash2, Send, CheckCircle2,
@@ -6,6 +6,7 @@ import {
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
+import { api } from "../../../lib/api";
 
 type Role = "Administrator" | "Researcher" | "Analyst" | "Viewer";
 type Status = "active" | "inactive";
@@ -20,13 +21,7 @@ interface User {
   projects: number;
 }
 
-const initialUsers: User[] = [
-  { id: 1, name: "Dr. Sarah Chen", email: "sarah.chen@university.edu", role: "Administrator", status: "active", lastActive: "2 minutes ago", projects: 12 },
-  { id: 2, name: "Dr. John Smith", email: "john.smith@research.org", role: "Researcher", status: "active", lastActive: "1 hour ago", projects: 8 },
-  { id: 3, name: "Dr. Emily Wang", email: "emily.wang@lab.edu", role: "Researcher", status: "active", lastActive: "3 hours ago", projects: 5 },
-  { id: 4, name: "Michael Brown", email: "m.brown@university.edu", role: "Analyst", status: "active", lastActive: "1 day ago", projects: 3 },
-  { id: 5, name: "Dr. Lisa Martinez", email: "l.martinez@biotech.com", role: "Researcher", status: "inactive", lastActive: "2 weeks ago", projects: 15 },
-];
+const initialUsers: User[] = [];
 
 const roleColors: Record<Role, string> = {
   Administrator: "text-violet-600 dark:text-violet-400",
@@ -307,6 +302,22 @@ export function AdminUsers() {
   const [addOpen, setAddOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.admin.getUsers()
+      .then((data) => setUsers(data.map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: u.role as Role,
+        status: u.status as Status,
+        lastActive: u.lastActive,
+        projects: u.projects,
+      }))))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
 
   const filtered = users.filter((u) => {
     const matchSearch =
@@ -321,12 +332,18 @@ export function AdminUsers() {
   });
 
   function handleAdd(newUser: User) {
-    setUsers((prev) => [newUser, ...prev]);
+    api.admin.createUser({ name: newUser.name, email: newUser.email, role: newUser.role })
+      .then(() => setUsers((prev) => [newUser, ...prev]))
+      .catch(() => toast.error("Failed to create user"));
   }
 
   function handleRoleChange(id: number, role: Role) {
-    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
-    toast.success("Role updated successfully");
+    api.admin.updateUser(id, { role })
+      .then(() => {
+        setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
+        toast.success("Role updated successfully");
+      })
+      .catch(() => toast.error("Failed to update role"));
   }
 
   function handleStatusToggle(id: number) {

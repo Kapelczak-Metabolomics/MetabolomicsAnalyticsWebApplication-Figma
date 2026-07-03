@@ -1,9 +1,28 @@
 import { Link } from "react-router";
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
+import { useAuth, ApiError } from "../../contexts/auth-context";
+import { toast } from "sonner";
 
 export function LoginView() {
   const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState("sarah.chen@university.edu");
+  const [password, setPassword] = useState("password123");
+  const [loading, setLoading] = useState(false);
+  const { login } = useAuth();
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await login(email, password);
+      toast.success("Welcome back!");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-muted/20 to-background p-4">
@@ -21,12 +40,15 @@ export function LoginView() {
         </div>
 
         <div className="rounded-xl border border-border bg-card p-6 shadow-lg">
-          <form className="space-y-4">
+          <form className="space-y-4" onSubmit={handleSubmit}>
             <div>
               <label className="text-sm font-medium">Email</label>
               <input
                 type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="scientist@university.edu"
+                required
                 className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
               />
             </div>
@@ -36,7 +58,10 @@ export function LoginView() {
               <div className="relative mt-1.5">
                 <input
                   type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
+                  required
                   className="w-full rounded-lg border border-border bg-background px-3 py-2 pr-10 text-sm outline-none transition-colors focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
                 />
                 <button
@@ -71,18 +96,16 @@ export function LoginView() {
 
             <button
               type="submit"
-              className="w-full rounded-lg bg-gradient-to-r from-violet-500 to-cyan-500 px-4 py-2.5 text-sm font-medium text-white shadow-md transition-all hover:shadow-lg"
+              disabled={loading}
+              className="w-full rounded-lg bg-gradient-to-r from-violet-500 to-cyan-500 px-4 py-2.5 text-sm font-medium text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50"
             >
-              Sign In
+              {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-muted-foreground">
-            Don't have an account?{" "}
-            <Link to="/signup" className="font-medium text-primary hover:underline">
-              Sign up
-            </Link>
-          </div>
+          <p className="mt-4 text-center text-xs text-muted-foreground">
+            Demo: sarah.chen@university.edu / password123
+          </p>
         </div>
 
         <p className="mt-8 text-center text-xs text-muted-foreground">
