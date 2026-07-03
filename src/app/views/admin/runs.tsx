@@ -7,6 +7,7 @@ import {
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
 import { api } from "../../../lib/api";
+import { downloadFromApi } from "../../../lib/export";
 
 type RunStatus = "completed" | "running" | "failed" | "queued";
 
@@ -52,7 +53,8 @@ export function AdminRuns() {
   const [runs, setRuns] = useState<Run[]>(allRuns);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  function loadRuns() {
+    setLoading(true);
     api.admin.getRuns()
       .then((data) => setRuns(data.map((r) => ({
         id: String(r.id),
@@ -72,7 +74,9 @@ export function AdminRuns() {
       }))))
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { loadRuns(); }, []);
   const [typeFilter, setTypeFilter] = useState("All Types");
   const [userFilter, setUserFilter] = useState("All Users");
 
@@ -106,7 +110,7 @@ export function AdminRuns() {
             <p className="text-sm text-muted-foreground">Every experiment run across all users and projects</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => toast.info("Refreshing run status...")}
+            <button onClick={loadRuns}
               className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent">
               <RefreshCw className="h-3.5 w-3.5" /> Refresh
             </button>
@@ -252,14 +256,14 @@ export function AdminRuns() {
                               View User Profile
                             </DropdownMenu.Item>
                             <DropdownMenu.Item className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-                              onSelect={() => toast.success(`Run log downloaded for ${run.name}`)}>
+                              onSelect={() => downloadFromApi(`/experiments/${String(run.id).replace(/^r/, "")}/export?format=csv`, `${run.name}.csv`)}>
                               Download Log
                             </DropdownMenu.Item>
                             {run.status === "running" && (
                               <>
                                 <DropdownMenu.Separator className="my-1 h-px bg-border" />
                                 <DropdownMenu.Item className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-destructive/10 text-destructive"
-                                  onSelect={() => toast.success(`Run "${run.name}" cancelled`)}>
+                                  onSelect={() => api.cancelExperiment(parseInt(String(run.id).replace(/^r/, ""), 10)).then(() => { toast.success(`Run "${run.name}" cancelled`); loadRuns(); }).catch(() => toast.error("Cancel failed"))}>
                                   Cancel Run
                                 </DropdownMenu.Item>
                               </>

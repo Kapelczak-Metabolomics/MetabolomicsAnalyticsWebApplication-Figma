@@ -28,6 +28,7 @@ import { AdminLogs } from "./views/admin/logs";
 import { AdminRuns } from "./views/admin/runs";
 import { AdminAudit } from "./views/admin/audit";
 import { AuthProvider, ProtectedRoute, AdminRoute } from "../contexts/auth-context";
+import { AppProvider } from "../contexts/app-context";
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -64,6 +65,7 @@ export default function App() {
     <ThemeProvider>
       <BrowserRouter>
         <AuthProvider>
+          <AppProvider>
           <Routes>
             <Route path="/login" element={<LoginView />} />
             <Route path="/forgot-password" element={<ForgotPasswordView />} />
@@ -90,6 +92,7 @@ export default function App() {
             <Route path="/admin/runs" element={<AdminLayout><AdminRuns /></AdminLayout>} />
             <Route path="/admin/audit" element={<AdminLayout><AdminAudit /></AdminLayout>} />
           </Routes>
+          </AppProvider>
           <Toaster
             position="bottom-right"
             toastOptions={{

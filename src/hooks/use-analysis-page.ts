@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { useAppOptional } from "../contexts/app-context";
 
 export interface ActiveDataset {
   id: number;
@@ -10,7 +11,15 @@ export interface ActiveDataset {
   features_count: number;
 }
 
+function parseLens(lens: string): { groupA?: string; groupB?: string } {
+  if (!lens || lens === "All groups") return {};
+  const vs = lens.match(/^(.+?)\s+vs\s+(.+)$/i);
+  if (vs) return { groupA: vs[1].trim(), groupB: vs[2].trim() };
+  return {};
+}
+
 export function useAnalysisPage(analysisType: string) {
+  const app = useAppOptional();
   const [dataset, setDataset] = useState<ActiveDataset | null>(null);
   const [results, setResults] = useState<Record<string, unknown> | null>(null);
   const [experimentId, setExperimentId] = useState<number | null>(null);
@@ -18,11 +27,12 @@ export function useAnalysisPage(analysisType: string) {
   const [error, setError] = useState<string | null>(null);
 
   const loadResults = useCallback(async (datasetId: number) => {
-    const data = await api.getAnalysisResults(datasetId, analysisType);
+    const groups = parseLens(app?.selectedLens ?? "");
+    const data = await api.getAnalysisResults(datasetId, analysisType, groups);
     setResults(data.results as Record<string, unknown>);
     setExperimentId(data.experimentId);
     return data;
-  }, [analysisType]);
+  }, [analysisType, app?.selectedLens]);
 
   const refresh = useCallback(async () => {
     if (!dataset) return;
@@ -42,7 +52,10 @@ export function useAnalysisPage(analysisType: string) {
     (async () => {
       try {
         const datasets = await api.getDatasets();
-        const ready = datasets.find((d) => d.status === "ready");
+        const selectedId = app?.selectedDatasetId;
+        const ready = selectedId
+          ? datasets.find((d) => d.id === selectedId && d.status === "ready")
+          : datasets.find((d) => d.status === "ready");
         if (!ready) {
           if (!cancelled) setError("No ready dataset found. Import data first.");
           return;
@@ -57,7 +70,7 @@ export function useAnalysisPage(analysisType: string) {
             features_count: ready.features_count,
           });
         }
-        const data = await api.getAnalysisResults(ready.id, analysisType);
+        const data = await api.getAnalysisResults(ready.id, analysisType, parseLens(app?.selectedLens ?? ""));
         if (!cancelled) {
           setResults(data.results as Record<string, unknown>);
           setExperimentId(data.experimentId);
@@ -70,21 +83,29 @@ export function useAnalysisPage(analysisType: string) {
       }
     })();
     return () => { cancelled = true; };
-  }, [analysisType, loadResults]);
+  }, [analysisType, app?.selectedDatasetId, app?.selectedLens, loadResults]);
 
-  const runAnalysis = useCallback(async (name: string) => {
+  const runAnalysis = useCallback(async (name: string, config?: Record<string, unknown>) => {
     if (!dataset) throw new Error("No dataset selected");
+    const groups = parseLens(app?.selectedLens ?? "");
+    const mergedConfig = { ...groups, ...(config ?? app?.getAnalysisConfig(analysisType) ?? {}) };
     const { id } = await api.runAnalysis({
       projectId: dataset.project_id,
       datasetId: dataset.id,
       name,
       type: analysisType,
+      config: mergedConfig,
     });
     setExperimentId(id);
-    await new Promise((r) => setTimeout(r, 2500));
+
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const exp = await api.getExperiment(id);
+      if (exp.status === "completed" || exp.status === "failed") break;
+    }
     await loadResults(dataset.id);
     return id;
-  }, [dataset, analysisType, loadResults]);
+  }, [dataset, analysisType, app, loadResults]);
 
   return { dataset, results, experimentId, loading, error, refresh, runAnalysis };
 }

@@ -7,6 +7,8 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
 import { useAnalysisPage } from "../../hooks/use-analysis-page";
 import { api } from "../../lib/api";
+import { useApp } from "../../contexts/app-context";
+import { downloadFromApi } from "../../lib/export";
 
 const clusteringStages = [
   "Loading & scaling dataset",
@@ -43,28 +45,19 @@ const clusteringConfig = [
   },
 ];
 
-function ExportMenu() {
+function ExportMenu({ experimentId }: { experimentId?: number | null }) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
         <button className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-          <Download className="h-3.5 w-3.5" />
-          Export
-          <ChevronDown className="h-3 w-3" />
+          <Download className="h-3.5 w-3.5" /> Export <ChevronDown className="h-3 w-3" />
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          className="z-50 min-w-[140px] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg"
-          sideOffset={4}
-          align="end"
-        >
-          {["PNG (high-res)", "SVG (vector)", "PDF", "CSV (data)"].map((fmt) => (
-            <DropdownMenu.Item
-              key={fmt}
-              className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-              onSelect={() => toast.success(`Exported as ${fmt.split(" ")[0]}`)}
-            >
+        <DropdownMenu.Content className="z-50 min-w-[140px] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg" sideOffset={4} align="end">
+          {["CSV", "JSON"].map((fmt) => (
+            <DropdownMenu.Item key={fmt} className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
+              onSelect={() => experimentId ? downloadFromApi(`/experiments/${experimentId}/export?format=${fmt.toLowerCase()}`, `clustering.${fmt.toLowerCase()}`) : toast.error("Run analysis first")}>
               {fmt}
             </DropdownMenu.Item>
           ))}
@@ -77,18 +70,21 @@ function ExportMenu() {
 export function ClusteringView() {
   const [runOpen, setRunOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
-  const { dataset, results, loading, error, refresh } = useAnalysisPage("Clustering");
-  const [heatmap, setHeatmap] = useState<{ matrix: (number | null)[][]; sampleLabels: string[]; featureLabels: string[] } | null>(null);
+  const { saveAnalysisConfig, getAnalysisConfig } = useApp();
+  const { dataset, results, loading, error, refresh, experimentId } = useAnalysisPage("Clustering");
+  const [heatmap, setHeatmap] = useState<{ matrix: (number | null)[][]; sampleLabels: string[]; featureLabels: string[]; dendrogram?: unknown[]; silhouette?: number } | null>(null);
 
   const clusters = (results?.clusters as Array<{ name: string; count: number; color: string }>) ?? [];
+  const dendrogram = (results?.dendrogram as Array<{ left: string; right: string; height: number }>) ?? heatmap?.dendrogram as Array<{ left: string; right: string; height: number }> ?? [];
+  const silhouette = (results?.silhouette as number) ?? heatmap?.silhouette;
   const samplesProcessed = (results?.samplesProcessed as number) ?? dataset?.samples_count ?? 0;
 
   useEffect(() => {
     if (!dataset) return;
-    api.getDatasetMatrix(dataset.id)
-      .then((data) => setHeatmap({ matrix: data.matrix, sampleLabels: data.sampleLabels, featureLabels: data.featureLabels }))
+    api.getDatasetMatrix(dataset.id, true)
+      .then(setHeatmap)
       .catch(() => setHeatmap(null));
-  }, [dataset?.id]);
+  }, [dataset?.id, results]);
 
   if (loading) {
     return <div className="flex h-full items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div>;
@@ -111,6 +107,7 @@ export function ClusteringView() {
         onClose={() => setConfigOpen(false)}
         title="Configure Clustering"
         groups={clusteringConfig}
+        onSave={(config) => saveAnalysisConfig("Clustering", config)}
       />
 
       <div className="flex-1 overflow-auto p-6 space-y-4">
@@ -165,23 +162,23 @@ export function ClusteringView() {
             <h3 className="text-sm">Heatmap with Dendrograms</h3>
             <ExportMenu />
           </div>
-          <ChartPlaceholder type="Clustered Heatmap" height="550px" heatmap={heatmap ?? undefined} />
+          <ChartPlaceholder type="Clustered Heatmap" height="550px" heatmap={heatmap ? { matrix: heatmap.matrix, sampleLabels: heatmap.sampleLabels, featureLabels: heatmap.featureLabels } : undefined} />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm">Sample Dendrogram</h3>
-              <ExportMenu />
+              <ExportMenu experimentId={experimentId} />
             </div>
-            <ChartPlaceholder type="Hierarchical Tree" height="250px" />
+            <ChartPlaceholder type="Hierarchical Tree" height="250px" dendrogram={dendrogram} />
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm">Silhouette Analysis</h3>
-              <ExportMenu />
+              <ExportMenu experimentId={experimentId} />
             </div>
-            <ChartPlaceholder type="Cluster Quality" height="250px" />
+            <ChartPlaceholder type="Cluster Quality" height="250px" silhouette={silhouette} />
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { CheckCircle2, Loader2, Zap } from "lucide-react";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ interface RunAnalysisDialogProps {
   analysisType?: string;
   projectId?: number;
   datasetId?: number;
+  config?: Record<string, unknown>;
   stages?: string[];
   onComplete?: () => void;
 }
@@ -30,53 +31,75 @@ export function RunAnalysisDialog({
   analysisType = "PCA",
   projectId,
   datasetId,
+  config,
   stages = defaultStages,
   onComplete,
 }: RunAnalysisDialogProps) {
   const [currentStage, setCurrentStage] = useState(-1);
   const [completed, setCompleted] = useState(false);
-
-  const handleClose = useCallback(() => {
-    onClose();
-    onComplete?.();
-    toast.success(`${analysisName} completed`, {
-      description: "Results updated from database",
-    });
-  }, [onClose, analysisName, onComplete]);
+  const [failed, setFailed] = useState(false);
+  const experimentIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!open) {
       setCurrentStage(-1);
       setCompleted(false);
+      setFailed(false);
+      experimentIdRef.current = null;
       return;
     }
 
-    if (projectId && datasetId) {
-      api.runAnalysis({ projectId, datasetId, name: analysisName, type: analysisType })
-        .catch(() => toast.error("Failed to start analysis"));
-    }
+    let cancelled = false;
 
-    const durations = [600, 900, 1400, 800, 500];
-    const timeouts: ReturnType<typeof setTimeout>[] = [];
-    let elapsed = 100;
+    (async () => {
+      if (projectId && datasetId) {
+        try {
+          const { id } = await api.runAnalysis({ projectId, datasetId, name: analysisName, type: analysisType, config });
+          experimentIdRef.current = id;
+        } catch {
+          toast.error("Failed to start analysis");
+          setFailed(true);
+          return;
+        }
+      }
 
-    stages.forEach((_, idx) => {
-      const t = setTimeout(() => setCurrentStage(idx), elapsed);
-      timeouts.push(t);
-      elapsed += durations[idx] ?? 700;
-    });
+      for (let i = 0; i < stages.length && !cancelled; i++) {
+        setCurrentStage(i);
+        await new Promise((r) => setTimeout(r, 400));
+      }
 
-    const completeT = setTimeout(() => {
-      setCompleted(true);
-      const closeT = setTimeout(handleClose, 1000);
-      timeouts.push(closeT);
-    }, elapsed + 200);
-    timeouts.push(completeT);
+      if (experimentIdRef.current) {
+        for (let i = 0; i < 60 && !cancelled; i++) {
+          const exp = await api.getExperiment(experimentIdRef.current);
+          if (exp.status === "completed") {
+            setCompleted(true);
+            break;
+          }
+          if (exp.status === "failed") {
+            setFailed(true);
+            toast.error(String(exp.errorMessage ?? "Analysis failed"));
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 500));
+        }
+      } else {
+        setCompleted(true);
+      }
 
-    return () => timeouts.forEach(clearTimeout);
-  }, [open, stages, handleClose, projectId, datasetId, analysisName, analysisType]);
+      if (!cancelled && !failed) {
+        setCompleted(true);
+        setTimeout(() => {
+          onClose();
+          onComplete?.();
+          toast.success(`${analysisName} completed`, { description: "Results updated from database" });
+        }, 800);
+      }
+    })();
 
-  const progress = completed ? 100 : currentStage < 0 ? 0 : Math.round(((currentStage + 1) / stages.length) * 90);
+    return () => { cancelled = true; };
+  }, [open, projectId, datasetId, analysisName, analysisType, config, stages, onClose, onComplete, failed]);
+
+  const progress = failed ? 0 : completed ? 100 : currentStage < 0 ? 5 : Math.round(((currentStage + 1) / stages.length) * 90);
 
   return (
     <Dialog.Root open={open}>
@@ -91,7 +114,7 @@ export function RunAnalysisDialog({
               <div>
                 <Dialog.Title className="text-sm font-semibold">{analysisName}</Dialog.Title>
                 <Dialog.Description className="text-xs text-muted-foreground">
-                  {completed ? "Analysis complete" : "Analysis in progress · please wait"}
+                  {failed ? "Analysis failed" : completed ? "Analysis complete" : "Analysis in progress · please wait"}
                 </Dialog.Description>
               </div>
             </div>
@@ -109,24 +132,17 @@ export function RunAnalysisDialog({
             <div className="space-y-2.5">
               {stages.map((stage, idx) => {
                 const isDone = currentStage > idx || completed;
-                const isActive = currentStage === idx && !completed;
+                const isActive = currentStage === idx && !completed && !failed;
                 return (
                   <div key={stage} className="flex items-center gap-3">
                     <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
                       {isDone ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : isActive ? <Loader2 className="h-4 w-4 animate-spin text-violet-500" /> : <div className="h-3.5 w-3.5 rounded-full border-2 border-border" />}
                     </div>
                     <span className={`text-xs transition-colors ${isDone ? "text-foreground" : isActive ? "font-medium text-foreground" : "text-muted-foreground"}`}>{stage}</span>
-                    {isDone && <span className="ml-auto text-xs text-emerald-500">done</span>}
                   </div>
                 );
               })}
             </div>
-
-            {completed && (
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-700 dark:text-emerald-400">
-                Analysis complete — results saved to database
-              </div>
-            )}
           </div>
         </Dialog.Content>
       </Dialog.Portal>

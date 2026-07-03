@@ -6,6 +6,7 @@ import { ConfigureDialog } from "../components/configure-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
 import { useAnalysisPage } from "../../hooks/use-analysis-page";
+import { useApp } from "../../contexts/app-context";
 
 const plsdaStages = [
   "Loading dataset into memory",
@@ -76,11 +77,18 @@ function ExportMenu() {
 export function PLSDAView() {
   const [runOpen, setRunOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
+  const { saveAnalysisConfig } = useApp();
   const { dataset, results, loading, error, refresh } = useAnalysisPage("PLS-DA");
 
   const scores = (results?.scores as Array<{ comp1: number; comp2: number; group: string }>) ?? [];
+  const vipFeatures = (results?.vipFeatures as Array<{ name: string; vip: number }>) ?? [];
+  const permScores = (results?.permScores as Array<{ iteration: number; r2: number; q2: number }>) ?? [];
   const accuracy = (results?.accuracy as number) ?? 0;
   const auc = (results?.auc as number) ?? 0;
+  const sensitivity = (results?.sensitivity as number) ?? 0;
+  const specificity = (results?.specificity as number) ?? 0;
+  const r2 = (results?.r2 as number) ?? 0;
+  const q2 = (results?.q2 as number) ?? 0;
   const folds = (results?.folds as number) ?? 7;
   const samplesProcessed = (results?.samplesProcessed as number) ?? dataset?.samples_count ?? 0;
 
@@ -100,12 +108,7 @@ export function PLSDAView() {
         stages={plsdaStages}
         onComplete={refresh}
       />
-      <ConfigureDialog
-        open={configOpen}
-        onClose={() => setConfigOpen(false)}
-        title="Configure PLS-DA"
-        groups={plsdaConfig}
-      />
+      <ConfigureDialog open={configOpen} onClose={() => setConfigOpen(false)} title="Configure PLS-DA" groups={plsdaConfig} onSave={(c) => saveAnalysisConfig("PLS-DA", c)} />
 
       <div className="flex-1 overflow-auto p-6 space-y-4">
         <div className="flex items-center justify-between">
@@ -168,14 +171,14 @@ export function PLSDAView() {
               <h3 className="text-sm">VIP Scores</h3>
               <ExportMenu />
             </div>
-            <ChartPlaceholder type="Variable Importance in Projection" height="280px" />
+            <ChartPlaceholder type="Variable Importance in Projection" height="280px" vipFeatures={vipFeatures} />
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm">Permutation Test</h3>
               <ExportMenu />
             </div>
-            <ChartPlaceholder type="Model Validation" height="280px" />
+            <ChartPlaceholder type="Model Validation" height="280px" permScores={permScores} />
           </div>
         </div>
       </div>
@@ -186,15 +189,23 @@ export function PLSDAView() {
           <div className="space-y-2 text-xs">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Sensitivity</span>
-              <span className="tabular-nums">89.2%</span>
+              <span className="tabular-nums">{sensitivity}%</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Specificity</span>
-              <span className="tabular-nums">85.4%</span>
+              <span className="tabular-nums">{specificity}%</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">AUC</span>
-              <span className="tabular-nums">0.923</span>
+              <span className="tabular-nums">{auc.toFixed(3)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">R²</span>
+              <span className="tabular-nums">{r2.toFixed(3)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Q²</span>
+              <span className="tabular-nums">{q2.toFixed(3)}</span>
             </div>
           </div>
         </div>
@@ -202,24 +213,15 @@ export function PLSDAView() {
         <div>
           <h3 className="text-xs text-muted-foreground mb-2">Top VIP Features</h3>
           <div className="space-y-1.5">
-            {[
-              { name: "Glutamate", vip: 2.34 },
-              { name: "Leucine", vip: 2.12 },
-              { name: "Phenylalanine", vip: 1.89 },
-              { name: "Valine", vip: 1.76 },
-              { name: "Isoleucine", vip: 1.68 },
-            ].map((feature) => (
-              <div
-                key={feature.name}
-                className="rounded-md bg-card p-2 text-xs hover:bg-accent cursor-pointer"
-                onClick={() => toast.info(`${feature.name} — VIP: ${feature.vip}`)}
-              >
+            {(vipFeatures.length ? vipFeatures.slice(0, 5) : []).map((feature) => (
+              <div key={feature.name} className="rounded-md bg-card p-2 text-xs hover:bg-accent cursor-pointer">
                 <div className="flex justify-between">
                   <span>{feature.name}</span>
                   <span className="tabular-nums text-muted-foreground">{feature.vip}</span>
                 </div>
               </div>
             ))}
+            {!vipFeatures.length && <p className="text-xs text-muted-foreground">Run PLS-DA to see VIP features</p>}
           </div>
         </div>
 

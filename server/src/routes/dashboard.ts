@@ -7,9 +7,16 @@ const router = Router();
 
 router.get("/", authMiddleware, async (req: Request, res: Response) => {
   const projectId = req.query.projectId ? parseInt(req.query.projectId as string, 10) : null;
+  const datasetIdParam = req.query.datasetId ? parseInt(req.query.datasetId as string, 10) : null;
 
   let datasetQuery;
-  if (projectId) {
+  if (datasetIdParam) {
+    datasetQuery = await query<{ id: number; name: string; samples_count: number; features_count: number; project_name: string }>(
+      `SELECT d.id, d.name, d.samples_count, d.features_count, p.name AS project_name
+       FROM datasets d JOIN projects p ON p.id = d.project_id WHERE d.id = $1`,
+      [datasetIdParam]
+    );
+  } else if (projectId) {
     datasetQuery = await query<{ id: number; name: string; samples_count: number; features_count: number; project_name: string }>(
       `SELECT d.id, d.name, d.samples_count, d.features_count, p.name AS project_name
        FROM datasets d JOIN projects p ON p.id = d.project_id
@@ -26,18 +33,26 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
 
   const dataset = datasetQuery.rows[0];
 
-  const experiments = await query<{ type: string; completed_at: Date | null; created_at: Date }>(
-    `SELECT type, completed_at, created_at FROM experiments WHERE status = 'completed' ORDER BY completed_at DESC NULLS LAST LIMIT 6`
+  const experiments = await query<{ type: string; completed_at: Date | null; created_at: Date; results: unknown }>(
+    `SELECT type, completed_at, created_at, results FROM experiments WHERE status = 'completed' ORDER BY completed_at DESC NULLS LAST LIMIT 20`
   );
 
-  const sigResult = dataset
-    ? await query<{ count: string }>(
-        `SELECT COUNT(DISTINCT f.id)::text AS count FROM features f WHERE f.dataset_id = $1`,
-        [dataset.id]
-      )
-    : { rows: [{ count: "0" }] };
+  let significantFeatures = 0;
+  let modelAccuracy = 0;
 
-  const significantFeatures = Math.floor(parseInt(sigResult.rows[0].count, 10) * 0.15);
+  const volcanoExp = experiments.rows.find((e) => e.type === "Volcano");
+  if (volcanoExp?.results && typeof volcanoExp.results === "object") {
+    const r = volcanoExp.results as { significantCount?: number };
+    significantFeatures = r.significantCount ?? 0;
+  } else if (dataset) {
+    significantFeatures = Math.floor(dataset.features_count * 0.15);
+  }
+
+  const plsdaExp = experiments.rows.find((e) => e.type === "PLS-DA");
+  if (plsdaExp?.results && typeof plsdaExp.results === "object") {
+    const r = plsdaExp.results as { accuracy?: number };
+    modelAccuracy = r.accuracy ?? 0;
+  }
 
   const analysisTypes = ["PCA", "PLS-DA", "Volcano", "Clustering", "Pathway", "Biomarker"];
   const analysisHrefs: Record<string, string> = {
@@ -66,7 +81,7 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
       totalMetabolites: dataset?.features_count ?? 0,
       samplesAnalyzed: dataset?.samples_count ?? 0,
       significantFeatures,
-      modelAccuracy: 87.3,
+      modelAccuracy,
     },
     recentAnalyses,
     status: dataset ? "ready" : "no_data",

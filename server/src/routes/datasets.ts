@@ -123,6 +123,36 @@ router.get("/:id/features", authMiddleware, async (req: Request, res: Response) 
   });
 });
 
+router.get("/:id/download", authMiddleware, async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params.id), 10);
+  const { samples, features } = await loadDatasetMatrix(id);
+  const headers = ["sample_id", "group", ...features.map((f) => f.name)];
+  const rows = samples.map((s, si) => [
+    s.sampleId,
+    s.groupLabel,
+    ...features.map((f) => f.values[si] ?? ""),
+  ]);
+  const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="dataset-${id}.csv"`);
+  res.send(csv);
+});
+
+router.get("/:id/groups", authMiddleware, async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params.id), 10);
+  const result = await query<{ group_label: string; count: string }>(
+    `SELECT group_label, COUNT(*)::text AS count FROM samples WHERE dataset_id = $1 GROUP BY group_label`,
+    [id]
+  );
+  res.json(result.rows.map((r) => ({ label: r.group_label, count: parseInt(r.count, 10) })));
+});
+
+router.delete("/:id", authMiddleware, async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params.id), 10);
+  await query("DELETE FROM datasets WHERE id = $1", [id]);
+  res.json({ success: true });
+});
+
 router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   const result = await query(

@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../lib/api";
+import { downloadFromApi } from "../../lib/export";
 import { useAuth } from "../../contexts/auth-context";
 
 const colorMap: Record<string, string> = {
@@ -42,21 +43,26 @@ function StatusChip({ status }: { status: string }) {
 
 // ─── Add Member Dialog ───────────────────────────────────────────────────────
 
-function AddMemberDialog({ open, onClose, onAdd }: {
-  open: boolean; onClose: () => void;
+function AddMemberDialog({ open, onClose, projectId, onAdd }: {
+  open: boolean; onClose: () => void; projectId: number;
   onAdd: (m: { id: number; name: string; email: string; role: string; joined: string; avatar: string }) => void;
 }) {
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState("Researcher");
+  const [role, setRole] = useState("viewer");
 
-  function handleAdd() {
+  async function handleAdd() {
     if (!email.trim() || !/\S+@\S+\.\S+/.test(email)) {
       toast.error("Enter a valid email address"); return;
     }
-    const name = email.split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-    onAdd({ id: Date.now(), name, email: email.trim(), role, joined: "Just now", avatar: name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() });
-    toast.success(`Invitation sent to ${email}`);
-    setEmail(""); setRole("Researcher"); onClose();
+    try {
+      const { id } = await api.inviteMember(projectId, { email: email.trim(), role });
+      const name = email.split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      onAdd({ id, name, email: email.trim(), role, joined: "Just now", avatar: name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() });
+      toast.success(`Invitation sent to ${email}`);
+      setEmail(""); setRole("viewer"); onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Invite failed");
+    }
   }
 
   return (
@@ -79,9 +85,9 @@ function AddMemberDialog({ open, onClose, onAdd }: {
               <label className="text-xs font-medium">Role</label>
               <select value={role} onChange={(e) => setRole(e.target.value)}
                 className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none">
-                <option value="Viewer">Viewer — read-only</option>
-                <option value="Analyst">Analyst — run analyses</option>
-                <option value="Researcher">Researcher — full access</option>
+                <option value="viewer">Viewer — read-only</option>
+                <option value="analyst">Analyst — run analyses</option>
+                <option value="researcher">Researcher — full access</option>
               </select>
             </div>
           </div>
@@ -107,9 +113,7 @@ export function ProjectDetailView() {
   const [loading, setLoading] = useState(true);
   const [datasets, setDatasets] = useState<Array<{ id: string; name: string; type: string; samples: number; features: number; created: string; status: string }>>([]);
   const [experiments, setExperiments] = useState<Array<{ id: string; name: string; type: string; status: string; created: string }>>([]);
-  const [members, setMembers] = useState([
-    { id: 1, name: user?.name ?? "Owner", email: user?.email ?? "", role: "Owner", joined: "Project start", avatar: (user?.name ?? "U").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() },
-  ]);
+  const [members, setMembers] = useState<Array<{ id: number; name: string; email: string; role: string; joined: string; avatar: string }>>([]);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [projectDesc, setProjectDesc] = useState("");
@@ -123,19 +127,69 @@ export function ProjectDetailView() {
         setExperiments(p.experiments);
         setProjectName(p.name);
         setProjectDesc(p.description);
+        setMembers((p.members ?? []).map((m) => ({
+          id: m.id,
+          name: m.name,
+          email: m.email,
+          role: m.role,
+          joined: m.joined,
+          avatar: m.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase(),
+        })));
       })
       .catch(() => navigate("/projects"))
       .finally(() => setLoading(false));
   }, [id, navigate]);
 
-  function removeDataset(did: string) {
-    setDatasets((prev) => prev.filter((d) => d.id !== did));
-    toast.success("Dataset removed from project");
+  async function removeDataset(did: string) {
+    try {
+      await api.deleteDataset(parseInt(did, 10));
+      setDatasets((prev) => prev.filter((d) => d.id !== did));
+      toast.success("Dataset removed from project");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+    }
   }
 
-  function removeMember(mid: number) {
-    setMembers((prev) => prev.filter((m) => m.id !== mid));
-    toast.success("Member removed");
+  async function removeMember(mid: number) {
+    if (!id || mid === 0) return;
+    try {
+      await api.removeMember(parseInt(id, 10), mid);
+      setMembers((prev) => prev.filter((m) => m.id !== mid));
+      toast.success("Member removed");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Remove failed");
+    }
+  }
+
+  async function saveSettings() {
+    if (!id) return;
+    try {
+      await api.updateProject(parseInt(id, 10), { name: projectName, description: projectDesc });
+      toast.success("Project settings saved");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
+  async function archiveProject() {
+    if (!id) return;
+    try {
+      await api.updateProject(parseInt(id, 10), { status: "archived" });
+      toast.success("Project archived");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Archive failed");
+    }
+  }
+
+  async function deleteProject() {
+    if (!id) return;
+    try {
+      await api.deleteProject(parseInt(id, 10));
+      toast.success("Project deleted");
+      navigate("/projects");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+    }
   }
 
   if (loading || !project) {
@@ -150,7 +204,7 @@ export function ProjectDetailView() {
 
   return (
     <div className="h-full overflow-auto bg-gradient-to-br from-background via-background to-muted/20">
-      <AddMemberDialog open={addMemberOpen} onClose={() => setAddMemberOpen(false)}
+      <AddMemberDialog open={addMemberOpen} onClose={() => setAddMemberOpen(false)} projectId={project.id}
         onAdd={(m) => setMembers((prev) => [...prev, m])} />
 
       {/* Header */}
@@ -261,7 +315,7 @@ export function ProjectDetailView() {
                           <ExternalLink className="h-3.5 w-3.5" /> View in Data Table
                         </DropdownMenu.Item>
                         <DropdownMenu.Item className="flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-                          onSelect={() => toast.success(`Downloading ${ds.name}`)}>
+                          onSelect={() => downloadFromApi(`/datasets/${ds.id}/download`, `${ds.name}.csv`)}>
                           <Download className="h-3.5 w-3.5" /> Download
                         </DropdownMenu.Item>
                         <DropdownMenu.Separator className="my-1 h-px bg-border" />
@@ -405,7 +459,7 @@ export function ProjectDetailView() {
                   </select>
                 </div>
               </div>
-              <button onClick={() => toast.success("Project settings saved")}
+              <button onClick={saveSettings}
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
                 Save Changes
               </button>
@@ -418,7 +472,7 @@ export function ProjectDetailView() {
                   <p className="text-sm font-medium">Archive Project</p>
                   <p className="text-xs text-muted-foreground">Disable analysis and hide from active list</p>
                 </div>
-                <button onClick={() => toast.info("Project archived")}
+                <button onClick={archiveProject}
                   className="flex items-center gap-1.5 rounded border border-destructive/30 px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10">
                   <Archive className="h-3.5 w-3.5" /> Archive
                 </button>
@@ -428,7 +482,7 @@ export function ProjectDetailView() {
                   <p className="text-sm font-medium">Delete Project</p>
                   <p className="text-xs text-muted-foreground">Permanently remove this project and all its data</p>
                 </div>
-                <button onClick={() => toast.error("Deletion requires confirmation from project owner")}
+                <button onClick={deleteProject}
                   className="flex items-center gap-1.5 rounded bg-destructive px-3 py-1.5 text-xs text-white hover:bg-destructive/90">
                   <Trash2 className="h-3.5 w-3.5" /> Delete
                 </button>

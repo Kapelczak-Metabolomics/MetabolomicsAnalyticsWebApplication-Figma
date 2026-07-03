@@ -6,6 +6,7 @@ import { ConfigureDialog } from "../components/configure-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
 import { useAnalysisPage } from "../../hooks/use-analysis-page";
+import { useApp } from "../../contexts/app-context";
 import type { PCAScore } from "../components/plots/pca-plot";
 
 const pcaStages = [
@@ -51,6 +52,7 @@ function ExportMenu() {
 export function PCAView() {
   const [runOpen, setRunOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
+  const { saveAnalysisConfig } = useApp();
   const { dataset, results, loading, error, refresh } = useAnalysisPage("PCA");
 
   const scores = (results?.scores as PCAScore[]) ?? [];
@@ -76,7 +78,7 @@ export function PCAView() {
         stages={pcaStages}
         onComplete={refresh}
       />
-      <ConfigureDialog open={configOpen} onClose={() => setConfigOpen(false)} title="Configure PCA" groups={pcaConfig} />
+      <ConfigureDialog open={configOpen} onClose={() => setConfigOpen(false)} title="Configure PCA" groups={pcaConfig} onSave={(c) => saveAnalysisConfig("PCA", c)} />
 
       <div className="flex-1 overflow-auto p-6 space-y-4">
         <div className="flex items-center justify-between">

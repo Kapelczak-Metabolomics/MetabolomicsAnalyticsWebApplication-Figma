@@ -29,6 +29,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new ApiError(res.status, body.error || res.statusText);
   }
+  if (res.status === 204) return undefined as T;
   return res.json();
 }
 
@@ -39,6 +40,12 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
 
+  forgotPassword: (email: string) =>
+    request<{ success: boolean; message: string }>("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
+
+  resetPassword: (token: string, password: string) =>
+    request<{ success: boolean }>("/auth/reset-password", { method: "POST", body: JSON.stringify({ token, password }) }),
+
   me: () => request<{ user: { id: number; name: string; email: string; role: string } }>("/auth/me"),
 
   getProjects: () => request<Array<{
@@ -48,19 +55,34 @@ export const api = {
 
   getProject: (id: string) => request<{
     id: number; name: string; description: string; status: string; color: string;
+    studyType?: string; visibility?: string;
     datasets: Array<{ id: string; name: string; type: string; samples: number; features: number; created: string; status: string }>;
     experiments: Array<{ id: string; name: string; type: string; status: string; created: string }>;
+    members: Array<{ id: number; name: string; email: string; role: string; status: string; joined: string }>;
   }>(`/projects/${id}`),
 
-  createProject: (data: { name: string; description?: string; type?: string }) =>
+  createProject: (data: { name: string; description?: string; type?: string; color?: string; collaborators?: string[] }) =>
     request<{ id: number; name: string; color: string }>("/projects", { method: "POST", body: JSON.stringify(data) }),
 
   deleteProject: (id: number) => request<{ success: boolean }>(`/projects/${id}`, { method: "DELETE" }),
 
-  updateProject: (id: number, data: { name?: string; description?: string; status?: string }) =>
+  updateProject: (id: number, data: { name?: string; description?: string; status?: string; studyType?: string; visibility?: string }) =>
     request<{ success: boolean }>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
+  inviteMember: (projectId: number, data: { email: string; role?: string; name?: string }) =>
+    request<{ id: number }>(`/projects/${projectId}/members`, { method: "POST", body: JSON.stringify(data) }),
+
+  updateMember: (projectId: number, memberId: number, data: { role?: string; status?: string }) =>
+    request<{ success: boolean }>(`/projects/${projectId}/members/${memberId}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  removeMember: (projectId: number, memberId: number) =>
+    request<{ success: boolean }>(`/projects/${projectId}/members/${memberId}`, { method: "DELETE" }),
+
   getDatasets: () => request<Array<{ id: number; name: string; type: string; samples_count: number; features_count: number; status: string; project_id: number; project_name: string }>>("/datasets"),
+
+  deleteDataset: (id: number) => request<{ success: boolean }>(`/datasets/${id}`, { method: "DELETE" }),
+
+  getDatasetGroups: (id: number) => request<Array<{ label: string; count: number }>>(`/datasets/${id}/groups`),
 
   getDatasetFeatures: (id: number, params?: { page?: number; limit?: number; search?: string }) => {
     const q = new URLSearchParams();
@@ -79,17 +101,23 @@ export const api = {
 
   getExperiment: (id: number) => request<Record<string, unknown>>(`/experiments/${id}`),
 
+  cancelExperiment: (id: number) => request<{ success: boolean }>(`/experiments/${id}/cancel`, { method: "POST" }),
+
   runAnalysis: (data: { projectId: number; datasetId: number; name: string; type: string; config?: unknown }) =>
     request<{ id: number; status: string }>("/experiments/run", { method: "POST", body: JSON.stringify(data) }),
 
-  getAnalysisResults: (datasetId: number, type: string) =>
-    request<{ experimentId: number | null; status: string; results: Record<string, unknown>; source: string }>(
-      `/analysis/results?datasetId=${datasetId}&type=${encodeURIComponent(type)}`
-    ),
+  getAnalysisResults: (datasetId: number, type: string, groups?: { groupA?: string; groupB?: string }) => {
+    const q = new URLSearchParams({ datasetId: String(datasetId), type });
+    if (groups?.groupA) q.set("groupA", groups.groupA);
+    if (groups?.groupB) q.set("groupB", groups.groupB);
+    return request<{ experimentId: number | null; status: string; results: Record<string, unknown>; source: string; config?: unknown }>(
+      `/analysis/results?${q}`
+    );
+  },
 
-  getDatasetMatrix: (datasetId: number) =>
-    request<{ sampleLabels: string[]; featureLabels: string[]; matrix: (number | null)[][]; groups: string[] }>(
-      `/analysis/dataset-matrix?datasetId=${datasetId}`
+  getDatasetMatrix: (datasetId: number, clustered = false) =>
+    request<{ sampleLabels: string[]; featureLabels: string[]; matrix: (number | null)[][]; groups: string[]; dendrogram?: unknown[]; silhouette?: number }>(
+      `/analysis/dataset-matrix?datasetId=${datasetId}${clustered ? "&clustered=true" : ""}`
     ),
 
   importDataset: (data: { projectId: number; name: string; type?: string; csv: string }) =>
@@ -108,21 +136,54 @@ export const api = {
 
   deleteNotification: (id: number) => request<{ success: boolean }>(`/notifications/${id}`, { method: "DELETE" }),
 
-  getDashboard: (projectId?: number) =>
-    request<{
+  getDashboard: (params?: { projectId?: number; datasetId?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.projectId) q.set("projectId", String(params.projectId));
+    if (params?.datasetId) q.set("datasetId", String(params.datasetId));
+    return request<{
       projectName: string; datasetName: string; datasetId: number | null;
       kpis: { totalMetabolites: number; samplesAnalyzed: number; significantFeatures: number; modelAccuracy: number };
       recentAnalyses: Array<{ title: string; type: string; href: string; lastRun: string }>;
       status: string;
-    }>(`/dashboard${projectId ? `?projectId=${projectId}` : ""}`),
+    }>(`/dashboard?${q}`);
+  },
 
   getProfile: () => request<{ id: number; name: string; email: string; role: string }>("/profile"),
 
   updateProfile: (data: { name?: string; email?: string }) =>
     request<{ success: boolean }>("/profile", { method: "PATCH", body: JSON.stringify(data) }),
 
+  updatePassword: (data: { currentPassword: string; newPassword: string }) =>
+    request<{ success: boolean }>("/profile/password", { method: "PATCH", body: JSON.stringify(data) }),
+
+  getPreferences: () => request<Record<string, unknown>>("/profile/preferences"),
+
+  updatePreferences: (preferences: Record<string, unknown>) =>
+    request<{ success: boolean }>("/profile/preferences", { method: "PATCH", body: JSON.stringify(preferences) }),
+
+  getStorage: () => request<{ usedGb: number; quotaGb: number }>("/profile/storage"),
+
+  getAnalysisConfig: (type: string) => request<Record<string, unknown>>(`/profile/analysis-config/${type}`),
+
+  saveAnalysisConfig: (type: string, config: Record<string, unknown>) =>
+    request<{ success: boolean }>(`/profile/analysis-config/${type}`, { method: "PUT", body: JSON.stringify(config) }),
+
+  getLenses: () => request<Array<{ id: number; name: string; criteria: unknown; weights: unknown }>>("/lenses"),
+
+  saveLens: (data: { name: string; criteria: unknown; weights?: unknown }) =>
+    request<{ id: number }>("/lenses", { method: "POST", body: JSON.stringify(data) }),
+
+  deleteLens: (id: number) => request<{ success: boolean }>(`/lenses/${id}`, { method: "DELETE" }),
+
+  addToWatchlist: (data: { featureName: string; featureId?: string; datasetId?: number }) =>
+    request<{ success: boolean }>("/lenses/watchlist", { method: "POST", body: JSON.stringify(data) }),
+
+  submitHelpFeedback: (articleId: string, helpful: boolean) =>
+    request<{ success: boolean }>("/help/feedback", { method: "POST", body: JSON.stringify({ articleId, helpful }) }),
+
   admin: {
-    getStats: () => request<{ totalUsers: number; activeProjects: number; runningAnalyses: number; systemAlerts: number; uptime: string }>("/admin/stats"),
+    getStats: () => request<Record<string, unknown>>("/admin/stats"),
+    getHealth: () => request<{ cpu: number; memory: number; disk: number; network: number }>("/admin/health"),
     getActivity: () => request<Array<{ user: string; action: string; time: string }>>("/admin/activity"),
     getUsers: () => request<Array<{ id: number; name: string; email: string; role: string; status: string; lastActive: string; projects: number }>>("/admin/users"),
     createUser: (data: { name: string; email: string; role: string }) =>
@@ -130,12 +191,19 @@ export const api = {
     updateUser: (id: number, data: { role?: string; status?: string }) =>
       request<{ success: boolean }>(`/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     deleteUser: (id: number) => request<{ success: boolean }>(`/admin/users/${id}`, { method: "DELETE" }),
+    resetUserPassword: (id: number) => request<{ success: boolean }>(`/admin/users/${id}/reset-password`, { method: "POST" }),
     getRuns: () => request<Array<Record<string, unknown>>>("/admin/runs"),
-    getLogs: () => request<Array<Record<string, unknown>>>("/admin/logs"),
+    getLogs: (since?: string) => request<{ counts: Record<string, number>; logs: Array<Record<string, unknown>> }>(`/admin/logs${since ? `?since=${since}` : ""}`),
     getAudit: () => request<Array<Record<string, unknown>>>("/admin/audit"),
     getSystem: () => request<Record<string, unknown>>("/admin/system"),
     updateSystem: (key: string, value: unknown) =>
       request<{ success: boolean }>("/admin/system", { method: "PATCH", body: JSON.stringify({ key, value }) }),
+    updateSystemBulk: (settings: Record<string, unknown>) =>
+      request<{ success: boolean }>("/admin/system", { method: "PATCH", body: JSON.stringify({ settings }) }),
+    testS3: (data: { bucket: string; region?: string }) =>
+      request<{ success: boolean; message: string }>("/admin/system/test-s3", { method: "POST", body: JSON.stringify(data) }),
+    testEmail: (data: { host: string; port?: number }) =>
+      request<{ success: boolean; message: string }>("/admin/system/test-email", { method: "POST", body: JSON.stringify(data) }),
   },
 };
 

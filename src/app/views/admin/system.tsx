@@ -1,6 +1,7 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Server, Database, HardDrive, Cpu, Wifi, Cloud, Key, Eye, EyeOff, Check, RefreshCw, Upload, Palette, ImageIcon } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "../../../lib/api";
 
 function Toggle({ defaultChecked = false }: { defaultChecked?: boolean }) {
   const [on, setOn] = useState(defaultChecked);
@@ -185,7 +186,10 @@ function BrandingSection() {
           </div>
         </div>
 
-        <button onClick={() => toast.success("Branding settings saved — reload to see changes")}
+        <button onClick={async () => {
+          await api.admin.updateSystemBulk({ branding: { appName, tagline, accent: ACCENT_PRESETS[accent] } });
+          toast.success("Branding settings saved");
+        }}
           className="rounded-lg bg-gradient-to-r from-violet-500 to-cyan-500 px-4 py-2 text-sm font-medium text-white shadow-md hover:shadow-lg">
           Save Branding
         </button>
@@ -197,17 +201,31 @@ function BrandingSection() {
 export function AdminSystem() {
   const [testingS3, setTestingS3] = useState(false);
   const [s3Status, setS3Status] = useState<"idle" | "ok" | "fail">("idle");
+  const [health, setHealth] = useState({ cpu: 0, memory: 0, disk: 0, network: 0 });
+  const [s3Bucket, setS3Bucket] = useState("metaboanalytics-data");
+  const [smtpHost, setSmtpHost] = useState("smtp.example.com");
 
-  function handleTestS3() {
+  useEffect(() => {
+    api.admin.getHealth().then(setHealth).catch(console.error);
+    api.admin.getSystem().then((s) => {
+      if (s.s3 && typeof s.s3 === "object" && "bucket" in (s.s3 as object)) setS3Bucket(String((s.s3 as { bucket: string }).bucket));
+      if (s.email && typeof s.email === "object" && "host" in (s.email as object)) setSmtpHost(String((s.email as { host: string }).host));
+    }).catch(console.error);
+  }, []);
+
+  async function handleTestS3() {
     setTestingS3(true);
     setS3Status("idle");
-    setTimeout(() => {
-      setTestingS3(false);
+    try {
+      await api.admin.testS3({ bucket: s3Bucket });
       setS3Status("ok");
-      toast.success("S3 connection successful", {
-        description: "Bucket is accessible and writable",
-      });
-    }, 1800);
+      toast.success("S3 connection successful");
+    } catch {
+      setS3Status("fail");
+      toast.error("S3 connection failed");
+    } finally {
+      setTestingS3(false);
+    }
   }
 
   return (

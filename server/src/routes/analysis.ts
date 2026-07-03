@@ -6,28 +6,28 @@ import { runPCA, runVolcano, runClustering, runPathway, runBiomarker, runPLSDA }
 
 const router = Router();
 
-async function computeResults(type: string, datasetId: number) {
+async function computeResults(type: string, datasetId: number, config: Record<string, unknown> = {}) {
   const { samples, features } = await loadDatasetMatrix(datasetId);
   const groups = [...new Set(samples.map((s) => s.groupLabel))];
-  const groupA = groups[0];
-  const groupB = groups[1] ?? groups[0];
+  const groupA = String(config.groupA ?? groups[0]);
+  const groupB = String(config.groupB ?? groups[1] ?? groups[0]);
 
   switch (type) {
     case "PCA":
-      return runPCA(samples, 2);
+      return runPCA(samples, Number(config.components ?? 2), config);
     case "Volcano":
-      return runVolcano(samples, features, groupA, groupB);
+      return runVolcano(samples, features, groupA, groupB, config);
     case "Clustering":
-      return runClustering(samples);
+      return runClustering(samples, features, config);
     case "PLS-DA":
-      return runPLSDA(samples, features, groupA, groupB);
+      return runPLSDA(samples, features, groupA, groupB, config);
     case "Pathway": {
-      const volcano = runVolcano(samples, features, groupA, groupB);
-      return runPathway(volcano);
+      const volcano = runVolcano(samples, features, groupA, groupB, config);
+      return runPathway(volcano, config);
     }
     case "Biomarker": {
-      const volcano = runVolcano(samples, features, groupA, groupB);
-      return runBiomarker(volcano);
+      const volcano = runVolcano(samples, features, groupA, groupB, config);
+      return runBiomarker(volcano, config);
     }
     default:
       return { message: "Unknown analysis type" };
@@ -37,14 +37,16 @@ async function computeResults(type: string, datasetId: number) {
 router.get("/results", authMiddleware, async (req: Request, res: Response) => {
   const datasetId = parseInt(String(req.query.datasetId), 10);
   const type = String(req.query.type || "");
+  const groupA = req.query.groupA as string | undefined;
+  const groupB = req.query.groupB as string | undefined;
 
   if (!datasetId || !type) {
     res.status(400).json({ error: "datasetId and type are required" });
     return;
   }
 
-  const existing = await query<{ id: number; results: unknown; status: string; completed_at: Date | null }>(
-    `SELECT id, results, status, completed_at FROM experiments
+  const existing = await query<{ id: number; results: unknown; status: string; completed_at: Date | null; config: unknown }>(
+    `SELECT id, results, status, completed_at, config FROM experiments
      WHERE dataset_id = $1 AND type = $2 AND status = 'completed' AND results IS NOT NULL
      ORDER BY completed_at DESC NULLS LAST LIMIT 1`,
     [datasetId, type]
@@ -55,23 +57,43 @@ router.get("/results", authMiddleware, async (req: Request, res: Response) => {
       experimentId: existing.rows[0].id,
       status: "completed",
       results: existing.rows[0].results,
+      config: existing.rows[0].config,
       source: "experiment",
     });
     return;
   }
 
-  const results = await computeResults(type, datasetId);
+  const config: Record<string, unknown> = {};
+  if (groupA) config.groupA = groupA;
+  if (groupB) config.groupB = groupB;
+
+  const results = await computeResults(type, datasetId, config);
   res.json({ experimentId: null, status: "computed", results, source: "live" });
 });
 
 router.get("/dataset-matrix", authMiddleware, async (req: Request, res: Response) => {
   const datasetId = parseInt(String(req.query.datasetId), 10);
+  const useClustered = req.query.clustered === "true";
   if (!datasetId) {
     res.status(400).json({ error: "datasetId is required" });
     return;
   }
 
   const { samples, features } = await loadDatasetMatrix(datasetId);
+
+  if (useClustered) {
+    const clustered = runClustering(samples, features);
+    res.json({
+      sampleLabels: clustered.sampleOrder ?? samples.slice(0, 30).map((s) => s.sampleId),
+      featureLabels: clustered.featureLabels ?? features.slice(0, 20).map((f) => f.name),
+      matrix: clustered.heatmapMatrix ?? [],
+      groups: samples.slice(0, 30).map((s) => s.groupLabel),
+      dendrogram: clustered.dendrogram,
+      silhouette: clustered.silhouette,
+    });
+    return;
+  }
+
   const matrix = samples.slice(0, 30).map((s, si) =>
     features.slice(0, 20).map((f) => {
       const v = f.values[si];

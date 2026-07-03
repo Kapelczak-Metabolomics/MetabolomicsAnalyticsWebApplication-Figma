@@ -2,63 +2,61 @@ import { Router, Request, Response } from "express";
 import { query } from "../db/index.js";
 import { authMiddleware, logAudit, createNotification } from "../middleware/auth.js";
 import { loadDatasetMatrix, formatRelativeTime, formatDuration } from "../utils/dataset.js";
+import { getProcessUsage } from "../utils/metrics.js";
 import { runPCA, runVolcano, runClustering, runPathway, runBiomarker, runPLSDA } from "../services/analysis.js";
 
 const router = Router();
 
-async function executeAnalysis(experimentId: number, type: string, datasetId: number, userId: number) {
-  await query(
-    `UPDATE experiments SET status = 'running', started_at = NOW() WHERE id = $1`,
-    [experimentId]
-  );
+async function executeAnalysis(experimentId: number, type: string, datasetId: number, userId: number, config: Record<string, unknown> = {}) {
+  await query(`UPDATE experiments SET status = 'running', started_at = NOW() WHERE id = $1`, [experimentId]);
 
   try {
     const { samples, features } = await loadDatasetMatrix(datasetId);
     const groups = [...new Set(samples.map((s) => s.groupLabel))];
+    const groupA = String(config.groupA ?? groups[0]);
+    const groupB = String(config.groupB ?? groups[1] ?? groups[0]);
     let results: unknown;
 
     switch (type) {
       case "PCA":
-        results = runPCA(samples, 2);
+        results = runPCA(samples, Number(config.components ?? 2), config);
         break;
       case "Volcano":
-        results = runVolcano(samples, features, groups[0], groups[1] ?? groups[0]);
+        results = runVolcano(samples, features, groupA, groupB, config);
         break;
       case "Clustering":
-        results = runClustering(samples);
+        results = runClustering(samples, features, config);
         break;
       case "PLS-DA":
-        results = runPLSDA(samples, features, groups[0], groups[1] ?? groups[0]);
+        results = runPLSDA(samples, features, groupA, groupB, config);
         break;
       case "Pathway": {
-        const volcano = runVolcano(samples, features, groups[0], groups[1] ?? groups[0]);
-        results = runPathway(volcano);
+        const volcano = runVolcano(samples, features, groupA, groupB, config);
+        results = runPathway(volcano, config);
         break;
       }
       case "Biomarker": {
-        const volcano = runVolcano(samples, features, groups[0], groups[1] ?? groups[0]);
-        results = runBiomarker(volcano);
+        const volcano = runVolcano(samples, features, groupA, groupB, config);
+        results = runBiomarker(volcano, config);
         break;
       }
       default:
         results = { message: "Analysis completed" };
     }
 
+    const usage = getProcessUsage();
     await query(
       `UPDATE experiments SET status = 'completed', results = $1, completed_at = NOW(),
        samples_count = $2, features_count = $3, cpu_usage = $4, mem_usage = $5
        WHERE id = $6`,
-      [JSON.stringify(results), samples.length, features.length, `${Math.floor(30 + Math.random() * 60)}%`, `${(2 + Math.random() * 5).toFixed(1)} GB`, experimentId]
+      [JSON.stringify(results), samples.length, features.length, usage.cpu, usage.mem, experimentId]
     );
 
     const exp = await query<{ name: string }>("SELECT name FROM experiments WHERE id = $1", [experimentId]);
     await createNotification(userId, "success", "Analysis Complete", `${exp.rows[0].name} finished successfully. ${samples.length} samples processed.`, `/experiments/${experimentId}`, "View results");
   } catch (err) {
     const message = err instanceof Error ? err.message : "Analysis failed";
-    await query(
-      `UPDATE experiments SET status = 'failed', error_message = $1, completed_at = NOW() WHERE id = $2`,
-      [message, experimentId]
-    );
+    await query(`UPDATE experiments SET status = 'failed', error_message = $1, completed_at = NOW() WHERE id = $2`, [message, experimentId]);
     const exp = await query<{ name: string }>("SELECT name FROM experiments WHERE id = $1", [experimentId]);
     await createNotification(userId, "error", "Analysis Failed", `${exp.rows[0].name} failed. ${message}`, `/experiments/${experimentId}`, "View error log");
   }
@@ -131,6 +129,42 @@ router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
   });
 });
 
+router.get("/:id/export", authMiddleware, async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params.id), 10);
+  const format = String(req.query.format ?? "json");
+  const result = await query<{ name: string; type: string; results: unknown }>(
+    `SELECT name, type, results FROM experiments WHERE id = $1`,
+    [id]
+  );
+  if (!result.rows[0]?.results) {
+    res.status(404).json({ error: "No results to export" });
+    return;
+  }
+  const data = result.rows[0];
+  if (format === "csv" && data.results && typeof data.results === "object") {
+    const results = data.results as Record<string, unknown>;
+    const features = results.features as Array<Record<string, unknown>> | undefined;
+    if (features?.length) {
+      const headers = Object.keys(features[0]);
+      const csv = [headers.join(","), ...features.map((f) => headers.map((h) => f[h]).join(","))].join("\n");
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="${data.name}.csv"`);
+      res.send(csv);
+      return;
+    }
+  }
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Content-Disposition", `attachment; filename="${data.name}.json"`);
+  res.send(JSON.stringify(data.results, null, 2));
+});
+
+router.post("/:id/cancel", authMiddleware, async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params.id), 10);
+  await query(`UPDATE experiments SET status = 'failed', error_message = 'Cancelled by user', completed_at = NOW() WHERE id = $1 AND status IN ('pending', 'running')`, [id]);
+  await logAudit(req.user, "CANCEL_RUN", "analysis", `Experiment #${id}`, "Run cancelled", req);
+  res.json({ success: true });
+});
+
 router.post("/", authMiddleware, async (req: Request, res: Response) => {
   const { projectId, datasetId, name, type, config } = req.body;
   if (!projectId || !name || !type) {
@@ -145,14 +179,13 @@ router.post("/", authMiddleware, async (req: Request, res: Response) => {
   );
 
   await logAudit(req.user, "RUN_ANALYSIS", "analysis", `Experiment: ${name}`, `Initiated ${type} run`, req);
-
   res.status(201).json({ id: result.rows[0].id });
 });
 
 router.post("/:id/run", authMiddleware, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
-  const exp = await query<{ dataset_id: number; type: string; user_id: number }>(
-    "SELECT dataset_id, type, user_id FROM experiments WHERE id = $1",
+  const exp = await query<{ dataset_id: number; type: string; user_id: number; config: unknown }>(
+    "SELECT dataset_id, type, user_id, config FROM experiments WHERE id = $1",
     [id]
   );
 
@@ -161,8 +194,8 @@ router.post("/:id/run", authMiddleware, async (req: Request, res: Response) => {
     return;
   }
 
-  executeAnalysis(id, exp.rows[0].type, exp.rows[0].dataset_id, exp.rows[0].user_id ?? req.user!.id);
-
+  const config = (exp.rows[0].config as Record<string, unknown>) ?? {};
+  executeAnalysis(id, exp.rows[0].type, exp.rows[0].dataset_id, exp.rows[0].user_id ?? req.user!.id, config);
   res.json({ status: "running", id });
 });
 
@@ -181,8 +214,7 @@ router.post("/run", authMiddleware, async (req: Request, res: Response) => {
 
   const experimentId = result.rows[0].id;
   await logAudit(req.user, "RUN_ANALYSIS", "analysis", `Experiment: ${name}`, `Started ${type} analysis`, req);
-
-  executeAnalysis(experimentId, type, datasetId, req.user!.id);
+  executeAnalysis(experimentId, type, datasetId, req.user!.id, (config as Record<string, unknown>) ?? {});
 
   res.status(201).json({ id: experimentId, status: "running" });
 });

@@ -19,18 +19,23 @@ export function AdminLogs() {
   const [logData, setLogData] = useState(logs);
 
   useEffect(() => {
-    api.admin.getLogs()
-      .then((data) => setLogData(data.map((l) => ({
-        id: Number(l.id),
-        timestamp: String(l.timestamp),
-        level: String(l.level),
-        user: String(l.user ?? "system"),
-        action: String(l.action),
-        details: String(l.details),
-        ip: String(l.ip ?? ""),
-      }))))
+    const since = timeFilter === "Last 24 hours" ? "24 hours" : timeFilter === "Last 7 days" ? "7 days" : "30 days";
+    api.admin.getLogs(since)
+      .then((data) => {
+        const logs = data.logs ?? data;
+        const arr = Array.isArray(logs) ? logs : [];
+        setLogData(arr.map((l) => ({
+          id: Number(l.id),
+          timestamp: String(l.timestamp),
+          level: String(l.level),
+          user: String(l.user ?? "system"),
+          action: String(l.action),
+          details: String(l.details),
+          ip: String(l.ip ?? ""),
+        })));
+      })
       .catch(console.error);
-  }, []);
+  }, [timeFilter]);
 
   const filtered = logData.filter((log) => {
     const q = search.toLowerCase();

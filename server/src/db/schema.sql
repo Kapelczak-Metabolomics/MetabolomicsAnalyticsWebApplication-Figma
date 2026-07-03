@@ -125,6 +125,72 @@ CREATE TABLE IF NOT EXISTS system_settings (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS user_preferences (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  preferences JSONB NOT NULL DEFAULT '{}',
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token VARCHAR(255) UNIQUE NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS project_members (
+  id SERIAL PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  email VARCHAR(255) NOT NULL,
+  name VARCHAR(255),
+  role VARCHAR(50) NOT NULL DEFAULT 'viewer',
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  invited_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(project_id, email)
+);
+
+CREATE TABLE IF NOT EXISTS biomarker_lenses (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  criteria JSONB NOT NULL DEFAULT '[]',
+  weights JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS help_feedback (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  article_id VARCHAR(100),
+  helpful BOOLEAN NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS feature_watchlist (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  feature_name VARCHAR(255) NOT NULL,
+  feature_id VARCHAR(100),
+  dataset_id INTEGER REFERENCES datasets(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, feature_name, dataset_id)
+);
+
+CREATE TABLE IF NOT EXISTS analysis_configs (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  analysis_type VARCHAR(50) NOT NULL,
+  config JSONB NOT NULL DEFAULT '{}',
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, analysis_type)
+);
+
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS study_type VARCHAR(100) DEFAULT 'metabolomics';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS visibility VARCHAR(50) DEFAULT 'team';
+
 CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_id);
 CREATE INDEX IF NOT EXISTS idx_datasets_project ON datasets(project_id);
 CREATE INDEX IF NOT EXISTS idx_samples_dataset ON samples(dataset_id);
@@ -132,4 +198,6 @@ CREATE INDEX IF NOT EXISTS idx_features_dataset ON features(dataset_id);
 CREATE INDEX IF NOT EXISTS idx_experiments_project ON experiments(project_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_system_logs_created ON system_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_project_members_project ON project_members(project_id);
+CREATE INDEX IF NOT EXISTS idx_biomarker_lenses_user ON biomarker_lenses(user_id);
+CREATE INDEX IF NOT EXISTS idx_feature_watchlist_user ON feature_watchlist(user_id);

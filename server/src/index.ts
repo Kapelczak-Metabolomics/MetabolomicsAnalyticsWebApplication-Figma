@@ -11,6 +11,8 @@ import dashboardRoutes from "./routes/dashboard.js";
 import adminRoutes from "./routes/admin.js";
 import profileRoutes from "./routes/profile.js";
 import analysisRoutes from "./routes/analysis.js";
+import lensesRoutes from "./routes/lenses.js";
+import helpRoutes from "./routes/help.js";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "47822", 10);
@@ -31,6 +33,8 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/analysis", analysisRoutes);
+app.use("/api/lenses", lensesRoutes);
+app.use("/api/help", helpRoutes);
 
 async function start() {
   console.log("Starting MetaboAnalytics API...");

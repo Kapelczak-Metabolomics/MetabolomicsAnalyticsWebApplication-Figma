@@ -6,74 +6,74 @@ import * as Select from "@radix-ui/react-select";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { NotificationsPopover } from "./notifications-popover";
 import { useAuth } from "../../contexts/auth-context";
+import { useApp } from "../../contexts/app-context";
 import { api } from "../../lib/api";
 
 export function TopBar() {
   const { theme, setTheme } = useTheme();
   const { user, logout } = useAuth();
-  const [projects, setProjects] = useState<Array<{ id: number; name: string }>>([]);
-  const [datasets, setDatasets] = useState<Array<{ id: number; name: string; samples_count: number; project_id: number }>>([]);
-  const [selectedProject, setSelectedProject] = useState("");
-  const [selectedDataset, setSelectedDataset] = useState("");
+  const {
+    projects, datasets, selectedProjectId, selectedDatasetId, selectedLens, groupLenses,
+    setSelectedProjectId, setSelectedDatasetId, setSelectedLens,
+  } = useApp();
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    api.getProjects().then((p) => {
-      setProjects(p);
-      if (p.length) setSelectedProject(p[0].name);
-    }).catch(console.error);
-    api.getDatasets().then((d) => {
-      setDatasets(d);
-      if (d.length) setSelectedDataset(`${d[0].name} (n=${d[0].samples_count})`);
-    }).catch(console.error);
     api.getNotifications().then((n) => setUnreadCount(n.filter((x) => !x.read).length)).catch(console.error);
   }, []);
 
   const initials = (user?.name ?? "U").split(" ").filter(Boolean).map((n) => n[0]).join("").slice(0, 2).toUpperCase();
-  const projectDatasets = datasets.filter((d) => projects.find((p) => p.name === selectedProject)?.id === d.project_id);
+  const projectDatasets = datasets.filter((d) => d.project_id === selectedProjectId);
+  const selectedProject = projects.find((p) => p.id === selectedProjectId);
+  const selectedDataset = datasets.find((d) => d.id === selectedDatasetId);
 
   return (
     <div className="flex h-14 items-center justify-between border-b border-border bg-gradient-to-r from-background via-background to-muted/10 px-4 backdrop-blur-sm">
       <div className="flex items-center gap-4">
         <SelectDropdown
           label="Project"
-          value={selectedProject || "Select project"}
+          value={selectedProject?.name ?? "Select project"}
           options={projects.map((p) => p.name)}
-          onChange={setSelectedProject}
+          onChange={(name) => {
+            const p = projects.find((x) => x.name === name);
+            if (p) {
+              setSelectedProjectId(p.id);
+              const ds = datasets.find((d) => d.project_id === p.id);
+              if (ds) setSelectedDatasetId(ds.id);
+            }
+          }}
         />
         <SelectDropdown
           label="Dataset"
-          value={selectedDataset || "Select dataset"}
+          value={selectedDataset ? `${selectedDataset.name} (n=${selectedDataset.samples_count})` : "Select dataset"}
           options={(projectDatasets.length ? projectDatasets : datasets).map((d) => `${d.name} (n=${d.samples_count})`)}
-          onChange={setSelectedDataset}
+          onChange={(label) => {
+            const ds = (projectDatasets.length ? projectDatasets : datasets).find((d) => label.startsWith(d.name));
+            if (ds) setSelectedDatasetId(ds.id);
+          }}
         />
         <SelectDropdown
           label="Lens"
-          value="AD vs Control"
-          options={["AD vs Control", "Early vs Late Stage", "Treatment Response"]}
+          value={selectedLens}
+          options={groupLenses}
+          onChange={setSelectedLens}
         />
       </div>
       <div className="flex items-center gap-1">
         <Link to="/help" className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" title="Help & Documentation">
           <HelpCircle className="h-4 w-4" />
         </Link>
-
         <NotificationsPopover />
-
         <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" title="Toggle theme">
           {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
-
         <Link to="/settings" className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" title="Settings">
           <Settings className="h-4 w-4" />
         </Link>
-
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
             <button className="ml-1 flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1 hover:bg-accent">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 text-xs font-semibold text-white">
-                {initials}
-              </div>
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 text-xs font-semibold text-white">{initials}</div>
               <ChevronDown className="h-3 w-3 text-muted-foreground" />
             </button>
           </DropdownMenu.Trigger>
@@ -108,6 +108,7 @@ export function TopBar() {
 }
 
 function SelectDropdown({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange?: (v: string) => void }) {
+  if (!options.length) return null;
   return (
     <Select.Root value={value} onValueChange={onChange}>
       <Select.Trigger className="flex items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs hover:bg-accent">

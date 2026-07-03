@@ -347,23 +347,24 @@ export function AdminUsers() {
   }
 
   function handleStatusToggle(id: number) {
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === id
-          ? { ...u, status: u.status === "active" ? "inactive" : "active" }
-          : u
-      )
-    );
     const user = users.find((u) => u.id === id);
-    if (user) {
-      const next = user.status === "active" ? "deactivated" : "reactivated";
-      toast.success(`${user.name} ${next}`);
-    }
+    if (!user) return;
+    const newStatus = user.status === "active" ? "inactive" : "active";
+    api.admin.updateUser(id, { status: newStatus })
+      .then(() => {
+        setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, status: newStatus } : u)));
+        toast.success(`${user.name} ${newStatus === "active" ? "reactivated" : "deactivated"}`);
+      })
+      .catch(() => toast.error("Failed to update status"));
   }
 
   function handleDelete(id: number, name: string) {
-    setUsers((prev) => prev.filter((u) => u.id !== id));
-    toast.success(`${name} deleted`);
+    api.admin.deleteUser(id)
+      .then(() => {
+        setUsers((prev) => prev.filter((u) => u.id !== id));
+        toast.success(`${name} deleted`);
+      })
+      .catch(() => toast.error("Failed to delete user"));
   }
 
   const activeCount = users.filter((u) => u.status === "active").length;

@@ -6,6 +6,7 @@ import {
   FileText, Lightbulb, AlertTriangle, CheckCircle2, ArrowLeft,
 } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "../../lib/api";
 
 // ─── Article content library ─────────────────────────────────────────────────
 
@@ -366,11 +367,11 @@ function ArticleView({ article, onBack }: { article: Article; onBack: () => void
         <div className="border-t border-border pt-4 flex items-center justify-between">
           <span className="text-xs text-muted-foreground">Was this article helpful?</span>
           <div className="flex gap-2">
-            <button onClick={() => toast.success("Thanks for your feedback!")}
+            <button onClick={() => api.submitHelpFeedback(article.id, true).then(() => toast.success("Thanks for your feedback!")).catch(() => toast.error("Failed to submit"))}
               className="flex items-center gap-1 rounded border border-border px-2.5 py-1 text-xs hover:bg-accent">
               <CheckCircle2 className="h-3 w-3 text-emerald-500" /> Yes
             </button>
-            <button onClick={() => toast.info("We'll improve this article.")}
+            <button onClick={() => api.submitHelpFeedback(article.id, false).then(() => toast.info("We'll improve this article.")).catch(() => toast.error("Failed to submit"))}
               className="flex items-center gap-1 rounded border border-border px-2.5 py-1 text-xs hover:bg-accent">
               No
             </button>
@@ -474,7 +475,7 @@ export function HelpView() {
       <div className="mx-auto max-w-5xl p-6 space-y-8">
         {/* Quick links — no Live Chat */}
         <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => toast.info("Opening video tutorials...")}
+          <a href="https://www.youtube.com/results?search_query=metabolomics+analysis+tutorial" target="_blank" rel="noreferrer"
             className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 text-left hover:shadow-md transition-shadow">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/10">
               <Video className="h-4 w-4 text-violet-500" />
@@ -484,8 +485,8 @@ export function HelpView() {
               <p className="text-xs text-muted-foreground">Step-by-step video walkthroughs</p>
             </div>
             <ExternalLink className="h-4 w-4 ml-auto text-muted-foreground flex-shrink-0" />
-          </button>
-          <button onClick={() => toast.info("Opening API documentation...")}
+          </a>
+          <a href="https://swagger.io/docs/" target="_blank" rel="noreferrer"
             className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 text-left hover:shadow-md transition-shadow">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-500/10">
               <Upload className="h-4 w-4 text-cyan-500" />
@@ -495,7 +496,7 @@ export function HelpView() {
               <p className="text-xs text-muted-foreground">Integrate with your pipeline</p>
             </div>
             <ExternalLink className="h-4 w-4 ml-auto text-muted-foreground flex-shrink-0" />
-          </button>
+          </a>
         </div>
 
         {/* Analysis module quick links */}

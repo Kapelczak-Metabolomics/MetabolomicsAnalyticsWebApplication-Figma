@@ -183,16 +183,13 @@ export function PathwayView() {
                   <tr key={pathway.name} className="border-b border-border hover:bg-muted/50">
                     <td className="p-2">{pathway.name}</td>
                     <td className="p-2 text-right tabular-nums">{pathway.genes}</td>
-                    <td className="p-2 text-right tabular-nums">—</td>
+                    <td className="p-2 text-right tabular-nums">{pathway.total ?? "—"}</td>
                     <td className="p-2 text-right tabular-nums">{pathway.pValue.toExponential(1)}</td>
-                    <td className="p-2 text-right tabular-nums">—</td>
+                    <td className="p-2 text-right tabular-nums">{(pathway as { fdr?: number }).fdr?.toExponential(1) ?? "—"}</td>
                     <td className="p-2 text-center">
-                      <button
-                        className="inline-flex items-center text-primary hover:underline"
-                        onClick={() => toast.info(`Pathway: ${pathway.name}`)}
-                      >
+                      <a href={(pathway as { url?: string }).url ?? "#"} target="_blank" rel="noreferrer" className="inline-flex items-center text-primary hover:underline">
                         <ExternalLink className="h-3 w-3" />
-                      </button>
+                      </a>
                     </td>
                   </tr>
                 ))}
