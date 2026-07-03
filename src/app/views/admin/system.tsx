@@ -246,10 +246,10 @@ export function AdminSystem() {
           <h3 className="mb-4 text-base font-medium">System Health</h3>
           <div className="grid grid-cols-2 gap-4">
             {[
-              { icon: Cpu, label: "CPU Usage", value: 34, color: "from-violet-500 to-violet-600" },
-              { icon: Server, label: "Memory Usage", value: 67, color: "from-cyan-500 to-cyan-600" },
-              { icon: HardDrive, label: "Disk Usage", value: 42, color: "from-emerald-500 to-emerald-600" },
-              { icon: Wifi, label: "Network I/O", value: 18, color: "from-amber-500 to-amber-600" },
+              { icon: Cpu, label: "CPU Usage", value: health.cpu, color: "from-violet-500 to-violet-600" },
+              { icon: Server, label: "Memory Usage", value: health.memory, color: "from-cyan-500 to-cyan-600" },
+              { icon: HardDrive, label: "Disk Usage", value: health.disk, color: "from-emerald-500 to-emerald-600" },
+              { icon: Wifi, label: "Network I/O", value: health.network, color: "from-amber-500 to-amber-600" },
             ].map(({ icon: Icon, label, value, color }) => (
               <div key={label} className="space-y-2">
                 <div className="flex items-center justify-between">
