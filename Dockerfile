@@ -6,7 +6,9 @@ COPY . .
 RUN npm run build
 
 FROM nginx:alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+ARG METABO_API_PORT=47822
+COPY nginx.conf /tmp/nginx.conf
+RUN sed "s/API_PORT_PLACEHOLDER/${METABO_API_PORT}/g" /tmp/nginx.conf > /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

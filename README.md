@@ -10,18 +10,18 @@ The easiest way to run the entire stack:
 docker compose up --build
 ```
 
-Then open **http://localhost:8080** and sign in with:
+Then open **http://localhost:47821** and sign in with:
 
 - **Email:** `sarah.chen@university.edu`
 - **Password:** `password123`
 
-Docker Compose starts three services:
+Docker Compose starts three services on **non-standard ports** (47821–47823) to avoid conflicts with common local services such as 3000, 5173, 5432, and 8080. Copy `.env.example` to `.env` to customize ports if needed.
 
-| Service | Description | Port |
-|---------|-------------|------|
-| `db` | PostgreSQL 16 with persistent volume | internal |
-| `api` | Express API — auto-creates schema and seeds data on first run | internal |
-| `web` | Nginx serving the React app and proxying `/api` | 8080 |
+| Service | Description | Host port |
+|---------|-------------|-----------|
+| `db` | PostgreSQL 16 with persistent volume | **47823** |
+| `api` | Express API — auto-creates schema and seeds data on first run | **47822** |
+| `web` | Nginx serving the React app and proxying `/api` | **47821** |
 
 The database is automatically initialized when the API starts: tables are created, and seed data (users, projects, datasets, metabolite features, experiments, notifications) is inserted on first boot.
 
@@ -36,7 +36,7 @@ The database is automatically initialized when the API starts: tables are create
 
 ```bash
 createdb metaboanalytics
-export DATABASE_URL=postgresql://localhost:5432/metaboanalytics
+export DATABASE_URL=postgresql://localhost:47823/metaboanalytics
 ```
 
 ### API Server
@@ -47,7 +47,7 @@ npm install
 npm run dev
 ```
 
-The API runs on http://localhost:3001 and seeds the database automatically.
+The API runs on http://localhost:47822 and seeds the database automatically.
 
 ### Frontend
 
@@ -63,12 +63,12 @@ The Vite dev server proxies `/api` requests to the backend.
 ```
 ┌─────────────┐     ┌─────────────┐     ┌──────────────┐
 │   Browser   │────▶│  Nginx/web  │────▶│  Express API │
-│  (React)    │     │   :8080     │     │    :3001     │
+│  (React)    │     │   :47821    │     │    :47822    │
 └─────────────┘     └─────────────┘     └──────┬───────┘
                                                │
                                         ┌──────▼───────┐
                                         │  PostgreSQL  │
-                                        │    :5432     │
+                                        │    :47823    │
                                         └──────────────┘
 ```
 
@@ -85,9 +85,12 @@ The Vite dev server proxies `/api` requests to the backend.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `METABO_WEB_PORT` | `47821` | Host port for the web UI |
+| `METABO_API_PORT` | `47822` | Host and container port for the API |
+| `METABO_DB_PORT` | `47823` | Host port mapped to PostgreSQL |
 | `DATABASE_URL` | set in docker-compose | PostgreSQL connection string |
 | `JWT_SECRET` | change in production | Secret for signing auth tokens |
-| `PORT` | `3001` | API server port |
+| `PORT` | `47822` | API server port (same as `METABO_API_PORT`) |
 
 ## Original Design
 

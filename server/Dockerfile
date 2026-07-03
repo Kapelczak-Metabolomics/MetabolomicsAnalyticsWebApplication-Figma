@@ -13,5 +13,5 @@ COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY src/db/schema.sql ./dist/db/schema.sql
-EXPOSE 3001
+EXPOSE 47822
 CMD ["node", "dist/index.js"]
