@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { query } from "../db/index.js";
 import { authMiddleware, logAudit, createNotification } from "../middleware/auth.js";
 import { loadDatasetMatrix, formatRelativeTime, formatDuration } from "../utils/dataset.js";
-import { runPCA, runVolcano, runClustering } from "../services/analysis.js";
+import { runPCA, runVolcano, runClustering, runPathway, runBiomarker, runPLSDA } from "../services/analysis.js";
 
 const router = Router();
 
@@ -28,14 +28,18 @@ async function executeAnalysis(experimentId: number, type: string, datasetId: nu
         results = runClustering(samples);
         break;
       case "PLS-DA":
-        results = { accuracy: 87.3, auc: 0.923, folds: 7, samplesProcessed: samples.length };
+        results = runPLSDA(samples, features, groups[0], groups[1] ?? groups[0]);
         break;
-      case "Pathway":
-        results = { pathways: features.slice(0, 5).map((f) => ({ name: f.pathway, pValue: Math.random() * 0.05, genes: 12 })) };
+      case "Pathway": {
+        const volcano = runVolcano(samples, features, groups[0], groups[1] ?? groups[0]);
+        results = runPathway(volcano);
         break;
-      case "Biomarker":
-        results = { candidates: features.slice(0, 8).map((f) => ({ name: f.name, score: Math.random() * 10 })) };
+      }
+      case "Biomarker": {
+        const volcano = runVolcano(samples, features, groups[0], groups[1] ?? groups[0]);
+        results = runBiomarker(volcano);
         break;
+      }
       default:
         results = { message: "Analysis completed" };
     }

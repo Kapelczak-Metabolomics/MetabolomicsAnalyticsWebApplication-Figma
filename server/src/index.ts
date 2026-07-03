@@ -10,6 +10,7 @@ import notificationRoutes from "./routes/notifications.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import adminRoutes from "./routes/admin.js";
 import profileRoutes from "./routes/profile.js";
+import analysisRoutes from "./routes/analysis.js";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "47822", 10);
@@ -29,6 +30,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/profile", profileRoutes);
+app.use("/api/analysis", analysisRoutes);
 
 async function start() {
   console.log("Starting MetaboAnalytics API...");

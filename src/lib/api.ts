@@ -82,6 +82,22 @@ export const api = {
   runAnalysis: (data: { projectId: number; datasetId: number; name: string; type: string; config?: unknown }) =>
     request<{ id: number; status: string }>("/experiments/run", { method: "POST", body: JSON.stringify(data) }),
 
+  getAnalysisResults: (datasetId: number, type: string) =>
+    request<{ experimentId: number | null; status: string; results: Record<string, unknown>; source: string }>(
+      `/analysis/results?datasetId=${datasetId}&type=${encodeURIComponent(type)}`
+    ),
+
+  getDatasetMatrix: (datasetId: number) =>
+    request<{ sampleLabels: string[]; featureLabels: string[]; matrix: (number | null)[][]; groups: string[] }>(
+      `/analysis/dataset-matrix?datasetId=${datasetId}`
+    ),
+
+  importDataset: (data: { projectId: number; name: string; type?: string; csv: string }) =>
+    request<{ id: number; samples: number; features: number; missingPct: number }>("/datasets/import", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   getNotifications: () => request<Array<{
     id: number; type: string; title: string; message: string; time: string; read: boolean; link?: string; linkLabel?: string;
   }>>("/notifications"),

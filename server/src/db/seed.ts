@@ -1,5 +1,7 @@
 import bcrypt from "bcryptjs";
 import { query } from "./index.js";
+import { loadDatasetMatrix } from "../utils/dataset.js";
+import { runPCA, runVolcano, runPLSDA, runPathway } from "../services/analysis.js";
 
 const DEFAULT_PASSWORD = "password123";
 
@@ -154,7 +156,7 @@ export async function seedDatabase() {
     [{ label: "Cancer", count: 25, meanShift: 3.0 }, { label: "Healthy", count: 25, meanShift: 0 }]
   );
 
-  await insertDataset(
+  const diabetesDatasetId = await insertDataset(
     projectIds[2], "Fasting Plasma", "Plasma LC-MS", "ready", 3.2,
     metabolites.slice(0, 12),
     [{ label: "Diabetic", count: 20, meanShift: 2.0 }, { label: "Control", count: 20, meanShift: 0 }]
@@ -170,7 +172,7 @@ export async function seedDatabase() {
     { projectId: projectIds[0], datasetId: adniDatasetId, userId: sarahId, name: "PCA - AD vs Control", type: "PCA", status: "completed", samples: 60, features: 20 },
     { projectId: projectIds[1], datasetId: cancerDatasetId, userId: userIds["m.torres@biotech.com"], name: "Volcano Analysis - Plasma", type: "Volcano", status: "completed", samples: 50, features: 20 },
     { projectId: projectIds[0], datasetId: adniDatasetId, userId: sarahId, name: "PLS-DA Classification", type: "PLS-DA", status: "running", samples: 60, features: 20 },
-    { projectId: projectIds[2], datasetId: null, userId: userIds["emily.wang@lab.edu"], name: "Pathway Enrichment - KEGG", type: "Pathway", status: "completed", samples: 40, features: 12 },
+    { projectId: projectIds[2], datasetId: diabetesDatasetId, userId: userIds["emily.wang@lab.edu"], name: "Pathway Enrichment - KEGG", type: "Pathway", status: "completed", samples: 40, features: 12 },
     { projectId: projectIds[3], datasetId: covidDatasetId, userId: userIds["m.brown@university.edu"], name: "Hierarchical Clustering", type: "Clustering", status: "failed", samples: 8, features: 10, error: "Insufficient samples after QC (n=8, minimum=10)" },
   ];
 
@@ -184,6 +186,31 @@ export async function seedDatabase() {
       [e.projectId, e.datasetId, e.userId, e.name, e.type, e.status, e.samples, e.features, (e as { error?: string }).error ?? null]
     );
     experimentIds.push(r.rows[0].id);
+  }
+
+  for (const e of experiments) {
+    if (e.status !== "completed" || !e.datasetId) continue;
+    const { samples, features } = await loadDatasetMatrix(e.datasetId);
+    const groups = [...new Set(samples.map((s) => s.groupLabel))];
+    let results: unknown;
+    switch (e.type) {
+      case "PCA":
+        results = runPCA(samples, 2);
+        break;
+      case "Volcano":
+        results = runVolcano(samples, features, groups[0], groups[1] ?? groups[0]);
+        break;
+      case "PLS-DA":
+        results = runPLSDA(samples, features, groups[0], groups[1] ?? groups[0]);
+        break;
+      case "Pathway":
+        results = runPathway(runVolcano(samples, features, groups[0], groups[1] ?? groups[0]));
+        break;
+      default:
+        continue;
+    }
+    const idx = experiments.indexOf(e);
+    await query(`UPDATE experiments SET results = $1 WHERE id = $2`, [JSON.stringify(results), experimentIds[idx]]);
   }
 
   const notifications = [

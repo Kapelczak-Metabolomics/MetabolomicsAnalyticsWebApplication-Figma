@@ -1,156 +1,158 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   Upload,
   FileSpreadsheet,
-  ChevronRight,
   Check,
   AlertCircle,
   ArrowLeft,
   ArrowRight,
 } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "../../lib/api";
 
 const steps = ["Upload File", "Map Columns", "Validate", "Import"];
 
-const sampleColumns = [
-  { col: "sample_id", detected: "Sample ID", required: true, mapped: "Sample ID" },
-  { col: "group", detected: "Group/Class", required: true, mapped: "Group" },
-  { col: "age", detected: "Age (years)", required: false, mapped: "Age" },
-  { col: "sex", detected: "Sex", required: false, mapped: "Sex" },
-  { col: "batch", detected: "Batch", required: false, mapped: "Batch" },
-];
-
-const validationResults = [
-  { type: "success", message: "342 samples detected" },
-  { type: "success", message: "1,247 metabolite features detected" },
-  { type: "success", message: "2 sample groups identified: AD (178), Control (164)" },
-  { type: "warning", message: "3.2% missing values — will be imputed by KNN" },
-  { type: "warning", message: "14 features below 80% detection frequency" },
-  { type: "success", message: "No duplicate sample IDs detected" },
-  { type: "success", message: "Batch information available for correction" },
-];
+function parseCsvPreview(csv: string) {
+  const lines = csv.trim().split(/\r?\n/).filter(Boolean);
+  if (lines.length < 2) return { headers: [] as string[], rows: [] as string[][], sampleCount: 0, featureCount: 0 };
+  const headers = lines[0].split(",").map((h) => h.trim());
+  const rows = lines.slice(1).map((line) => line.split(",").map((c) => c.trim()));
+  const sampleIdx = headers.findIndex((h) => /sample/i.test(h));
+  const groupIdx = headers.findIndex((h) => /group|class/i.test(h));
+  const featureCount = headers.filter((_, i) => i !== sampleIdx && i !== groupIdx).length;
+  const groups = groupIdx >= 0 ? [...new Set(rows.map((r) => r[groupIdx]).filter(Boolean))] : [];
+  return { headers, rows, sampleCount: rows.length, featureCount, sampleIdx, groupIdx, groups };
+}
 
 export function DataImportView() {
   const [step, setStep] = useState(0);
-  const [file, setFile] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [csvContent, setCsvContent] = useState<string>("");
   const [isDragging, setIsDragging] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [projects, setProjects] = useState<Array<{ id: number; name: string }>>([]);
+  const [projectId, setProjectId] = useState<number | null>(null);
+  const [datasetName, setDatasetName] = useState("");
   const navigate = useNavigate();
 
-  function handleFileSelect() {
-    setFile("plasma_metabolomics_ADNI_v3.csv");
-    setTimeout(() => setStep(1), 300);
+  useEffect(() => {
+    api.getProjects()
+      .then((list) => {
+        setProjects(list.map((p) => ({ id: p.id, name: p.name })));
+        if (list[0]) setProjectId(list[0].id);
+      })
+      .catch(() => toast.error("Failed to load projects"));
+  }, []);
+
+  const preview = useMemo(() => parseCsvPreview(csvContent), [csvContent]);
+
+  const validationResults = useMemo(() => {
+    if (!csvContent) return [];
+    const results: Array<{ type: "success" | "warning"; message: string }> = [];
+    if (preview.sampleCount > 0) results.push({ type: "success", message: `${preview.sampleCount} samples detected` });
+    if (preview.featureCount > 0) results.push({ type: "success", message: `${preview.featureCount} metabolite features detected` });
+    if (preview.groups.length) results.push({ type: "success", message: `${preview.groups.length} sample groups: ${preview.groups.join(", ")}` });
+    if (preview.sampleIdx < 0) results.push({ type: "warning", message: "No sample ID column detected — ensure a column named sample_id" });
+    if (preview.groupIdx < 0) results.push({ type: "warning", message: "No group column detected — ensure a column named group" });
+    return results;
+  }, [csvContent, preview]);
+
+  function handleFile(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result ?? "");
+      setCsvContent(text);
+      setFileName(file.name);
+      setDatasetName(file.name.replace(/\.[^.]+$/, ""));
+      setStep(1);
+    };
+    reader.onerror = () => toast.error("Failed to read file");
+    reader.readAsText(file);
   }
 
-  function handleImport() {
+  function handleFileSelect(input?: HTMLInputElement | null) {
+    const file = input?.files?.[0];
+    if (file) handleFile(file);
+  }
+
+  async function handleImport() {
+    if (!projectId || !datasetName.trim() || !csvContent.trim()) {
+      toast.error("Project, dataset name, and CSV content are required");
+      return;
+    }
     setImporting(true);
-    setTimeout(() => {
-      setImporting(false);
+    try {
+      const result = await api.importDataset({ projectId, name: datasetName.trim(), csv: csvContent });
       toast.success("Dataset imported successfully", {
-        description: "342 samples · 1,247 features · ready for analysis",
+        description: `${result.samples} samples · ${result.features} features · ready for analysis`,
       });
       navigate("/data");
-    }, 2000);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setImporting(false);
+    }
   }
 
   return (
     <div className="h-full overflow-auto bg-gradient-to-br from-background via-background to-muted/20">
-      {/* Header */}
       <div className="border-b border-border bg-card/50 px-6 py-4">
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate("/data")}
-            className="flex h-7 w-7 items-center justify-center rounded-md border border-border hover:bg-accent"
-          >
+          <button onClick={() => navigate("/data")} className="flex h-7 w-7 items-center justify-center rounded-md border border-border hover:bg-accent">
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div>
             <h2 className="text-base font-semibold">Import Dataset</h2>
-            <p className="text-xs text-muted-foreground">Add a new dataset to your project</p>
+            <p className="text-xs text-muted-foreground">Upload a CSV and import into PostgreSQL</p>
           </div>
         </div>
       </div>
 
       <div className="mx-auto max-w-3xl p-6 space-y-6">
-        {/* Stepper */}
         <div className="flex items-center gap-0">
           {steps.map((s, idx) => (
             <div key={s} className="flex items-center flex-1 last:flex-none">
-              <button
-                onClick={() => idx < step && setStep(idx)}
-                className="flex items-center gap-2"
-                disabled={idx > step}
-              >
-                <div
-                  className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold transition-colors ${
-                    idx < step
-                      ? "bg-emerald-500 text-white"
-                      : idx === step
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground"
-                  }`}
-                >
+              <button onClick={() => idx < step && setStep(idx)} className="flex items-center gap-2" disabled={idx > step}>
+                <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${idx < step ? "bg-emerald-500 text-white" : idx === step ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
                   {idx < step ? <Check className="h-3.5 w-3.5" /> : idx + 1}
                 </div>
-                <span
-                  className={`text-xs font-medium ${
-                    idx === step ? "text-foreground" : "text-muted-foreground"
-                  }`}
-                >
-                  {s}
-                </span>
+                <span className={`text-xs font-medium ${idx === step ? "text-foreground" : "text-muted-foreground"}`}>{s}</span>
               </button>
-              {idx < steps.length - 1 && (
-                <div className="flex-1 h-px mx-3 bg-border" />
-              )}
+              {idx < steps.length - 1 && <div className="flex-1 h-px mx-3 bg-border" />}
             </div>
           ))}
         </div>
 
-        {/* Step content */}
         {step === 0 && (
           <div className="space-y-4">
             <div
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}
-              onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleFileSelect(); }}
-              onClick={handleFileSelect}
-              className={`cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-colors ${
-                isDragging
-                  ? "border-primary/50 bg-primary/5"
-                  : "border-border hover:border-primary/30 hover:bg-muted/30"
-              }`}
+              onDrop={(e) => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+              className={`rounded-xl border-2 border-dashed p-12 text-center transition-colors ${isDragging ? "border-primary/50 bg-primary/5" : "border-border hover:border-primary/30 hover:bg-muted/30"}`}
             >
               <Upload className="mx-auto h-10 w-10 text-muted-foreground mb-4" />
-              <h3 className="text-sm font-medium">Drop your file here</h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                or click to browse — CSV, Excel (.xlsx), mzML, mzXML supported
-              </p>
-              <div className="mt-4 flex items-center justify-center gap-2">
-                <button className="rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90">
-                  Browse Files
-                </button>
-              </div>
+              <h3 className="text-sm font-medium">Drop your CSV file here</h3>
+              <p className="mt-1 text-xs text-muted-foreground">Must include sample_id and group columns plus feature columns</p>
+              <label className="mt-4 inline-flex cursor-pointer rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90">
+                Browse Files
+                <input type="file" accept=".csv,.tsv,.txt" className="hidden" onChange={(e) => handleFileSelect(e.target)} />
+              </label>
             </div>
-
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-2">Supported formats</p>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { fmt: "CSV / TSV", desc: "Comma or tab separated values" },
-                  { fmt: "Excel (.xlsx)", desc: "Microsoft Excel workbook" },
-                  { fmt: "mzML / mzXML", desc: "Mass spectrometry data" },
-                ].map((f) => (
-                  <div key={f.fmt} className="rounded-lg border border-border bg-card p-3 flex items-start gap-2">
-                    <FileSpreadsheet className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-xs font-medium">{f.fmt}</p>
-                      <p className="text-xs text-muted-foreground">{f.desc}</p>
-                    </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { fmt: "CSV / TSV", desc: "Comma or tab separated values" },
+                { fmt: "Required columns", desc: "sample_id, group, plus numeric features" },
+              ].map((f) => (
+                <div key={f.fmt} className="rounded-lg border border-border bg-card p-3 flex items-start gap-2">
+                  <FileSpreadsheet className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-medium">{f.fmt}</p>
+                    <p className="text-xs text-muted-foreground">{f.desc}</p>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -159,67 +161,29 @@ export function DataImportView() {
           <div className="space-y-4">
             <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-700 dark:text-emerald-400">
               <Check className="h-4 w-4 flex-shrink-0" />
-              <span>
-                <strong>{file}</strong> loaded successfully — 342 rows, 1,250 columns detected
-              </span>
+              <span><strong>{fileName}</strong> loaded — {preview.sampleCount} rows, {preview.headers.length} columns</span>
             </div>
-
-            <div>
-              <h3 className="text-sm font-medium mb-3">Column Mapping</h3>
-              <div className="rounded-xl border border-border bg-card overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead className="border-b border-border bg-muted/30">
-                    <tr>
-                      <th className="p-3 text-left font-medium">File Column</th>
-                      <th className="p-3 text-left font-medium">Detected As</th>
-                      <th className="p-3 text-left font-medium">Map to Field</th>
-                      <th className="p-3 text-center font-medium">Required</th>
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="border-b border-border bg-muted/30">
+                  <tr>
+                    <th className="p-3 text-left font-medium">Column</th>
+                    <th className="p-3 text-left font-medium">Detected As</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.headers.slice(0, 8).map((h) => (
+                    <tr key={h} className="border-b border-border">
+                      <td className="p-3 font-mono text-muted-foreground">{h}</td>
+                      <td className="p-3">{/sample/i.test(h) ? "Sample ID" : /group|class/i.test(h) ? "Group" : "Feature"}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {sampleColumns.map((col) => (
-                      <tr key={col.col} className="border-b border-border last:border-0 hover:bg-muted/30">
-                        <td className="p-3 font-mono text-muted-foreground">{col.col}</td>
-                        <td className="p-3">{col.detected}</td>
-                        <td className="p-3">
-                          <select
-                            defaultValue={col.mapped}
-                            className="rounded border border-border bg-background px-2 py-1 text-xs outline-none"
-                          >
-                            <option>Sample ID</option>
-                            <option>Group</option>
-                            <option>Age</option>
-                            <option>Sex</option>
-                            <option>Batch</option>
-                            <option>Skip</option>
-                          </select>
-                        </td>
-                        <td className="p-3 text-center">
-                          {col.required ? (
-                            <span className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                              Required
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">Optional</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
-
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
-                1,247 metabolite columns will be imported as features
-              </p>
-              <button
-                onClick={() => setStep(2)}
-                className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90"
-              >
-                Validate Data
-                <ArrowRight className="h-3.5 w-3.5" />
+            <div className="flex justify-end">
+              <button onClick={() => setStep(2)} className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90">
+                Validate Data <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
@@ -227,61 +191,20 @@ export function DataImportView() {
 
         {step === 2 && (
           <div className="space-y-4">
-            <div>
-              <h3 className="text-sm font-medium mb-3">Validation Results</h3>
-              <div className="space-y-2">
-                {validationResults.map((r, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-start gap-2.5 rounded-lg border p-3 text-xs ${
-                      r.type === "success"
-                        ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400"
-                        : "border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-400"
-                    }`}
-                  >
-                    {r.type === "success" ? (
-                      <Check className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                    ) : (
-                      <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                    )}
-                    {r.message}
-                  </div>
-                ))}
-              </div>
+            <div className="space-y-2">
+              {validationResults.map((r, i) => (
+                <div key={i} className={`flex items-start gap-2.5 rounded-lg border p-3 text-xs ${r.type === "success" ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400" : "border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-400"}`}>
+                  {r.type === "success" ? <Check className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
+                  {r.message}
+                </div>
+              ))}
             </div>
-
-            <div className="rounded-lg border border-border bg-card p-4">
-              <h4 className="text-xs font-medium mb-3">Import Summary</h4>
-              <div className="grid grid-cols-3 gap-4 text-xs">
-                <div>
-                  <p className="text-muted-foreground">Samples</p>
-                  <p className="text-lg font-semibold tabular-nums mt-0.5">342</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Features</p>
-                  <p className="text-lg font-semibold tabular-nums mt-0.5">1,247</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Groups</p>
-                  <p className="text-lg font-semibold tabular-nums mt-0.5">2</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => setStep(1)}
-                className="flex items-center gap-1.5 rounded-md border border-border px-4 py-2 text-xs hover:bg-accent"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Back
+            <div className="flex justify-between">
+              <button onClick={() => setStep(1)} className="flex items-center gap-1.5 rounded-md border border-border px-4 py-2 text-xs hover:bg-accent">
+                <ArrowLeft className="h-3.5 w-3.5" /> Back
               </button>
-              <button
-                onClick={() => setStep(3)}
-                className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90"
-              >
-                Proceed to Import
-                <ArrowRight className="h-3.5 w-3.5" />
+              <button onClick={() => setStep(3)} disabled={preview.sampleIdx < 0 || preview.groupIdx < 0} className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                Proceed to Import <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
@@ -290,62 +213,23 @@ export function DataImportView() {
         {step === 3 && (
           <div className="space-y-4">
             <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-              <h3 className="text-sm font-medium">Import Configuration</h3>
-              <div className="space-y-3">
-                {[
-                  { label: "Dataset name", defaultValue: "Plasma Samples (ADNI v3)", type: "text" },
-                  { label: "Description", defaultValue: "ADNI metabolomics plasma dataset, negative mode LC-MS", type: "text" },
-                ].map((field) => (
-                  <div key={field.label}>
-                    <label className="text-xs font-medium text-muted-foreground">{field.label}</label>
-                    <input
-                      type={field.type}
-                      defaultValue={field.defaultValue}
-                      className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-                    />
-                  </div>
-                ))}
-
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { label: "Project", defaultValue: "ADNI Metabolomics Study" },
-                    { label: "Sample type", defaultValue: "Plasma" },
-                  ].map((field) => (
-                    <div key={field.label}>
-                      <label className="text-xs font-medium text-muted-foreground">{field.label}</label>
-                      <select className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-xs outline-none">
-                        <option>{field.defaultValue}</option>
-                      </select>
-                    </div>
-                  ))}
-                </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Dataset name</label>
+                <input value={datasetName} onChange={(e) => setDatasetName(e.target.value)} className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-xs outline-none" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Project</label>
+                <select value={projectId ?? ""} onChange={(e) => setProjectId(Number(e.target.value))} className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-xs outline-none">
+                  {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
               </div>
             </div>
-
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => setStep(2)}
-                className="flex items-center gap-1.5 rounded-md border border-border px-4 py-2 text-xs hover:bg-accent"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Back
+            <div className="flex justify-between">
+              <button onClick={() => setStep(2)} className="flex items-center gap-1.5 rounded-md border border-border px-4 py-2 text-xs hover:bg-accent">
+                <ArrowLeft className="h-3.5 w-3.5" /> Back
               </button>
-              <button
-                onClick={handleImport}
-                disabled={importing}
-                className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-violet-500 to-cyan-500 px-5 py-2 text-xs font-medium text-white shadow-md hover:shadow-lg disabled:opacity-50"
-              >
-                {importing ? (
-                  <>
-                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                    Importing...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="h-3.5 w-3.5" />
-                    Import Dataset
-                  </>
-                )}
+              <button onClick={handleImport} disabled={importing || !projectId} className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-violet-500 to-cyan-500 px-5 py-2 text-xs font-medium text-white disabled:opacity-50">
+                {importing ? "Importing..." : <><Upload className="h-3.5 w-3.5" /> Import Dataset</>}
               </button>
             </div>
           </div>

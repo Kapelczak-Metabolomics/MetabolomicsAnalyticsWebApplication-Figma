@@ -5,6 +5,7 @@ import { RunAnalysisDialog } from "../components/run-analysis-dialog";
 import { ConfigureDialog } from "../components/configure-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
+import { useAnalysisPage } from "../../hooks/use-analysis-page";
 
 const plsdaStages = [
   "Loading dataset into memory",
@@ -75,14 +76,29 @@ function ExportMenu() {
 export function PLSDAView() {
   const [runOpen, setRunOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
+  const { dataset, results, loading, error, refresh } = useAnalysisPage("PLS-DA");
+
+  const scores = (results?.scores as Array<{ comp1: number; comp2: number; group: string }>) ?? [];
+  const accuracy = (results?.accuracy as number) ?? 0;
+  const auc = (results?.auc as number) ?? 0;
+  const folds = (results?.folds as number) ?? 7;
+  const samplesProcessed = (results?.samplesProcessed as number) ?? dataset?.samples_count ?? 0;
+
+  if (loading) {
+    return <div className="flex h-full items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div>;
+  }
 
   return (
     <div className="flex h-full">
       <RunAnalysisDialog
         open={runOpen}
-        onClose={() => setRunOpen(false)}
+        onClose={() => { setRunOpen(false); refresh(); }}
         analysisName="PLS-DA Classification"
+        analysisType="PLS-DA"
+        projectId={dataset?.project_id}
+        datasetId={dataset?.id}
         stages={plsdaStages}
+        onComplete={refresh}
       />
       <ConfigureDialog
         open={configOpen}
@@ -96,8 +112,9 @@ export function PLSDAView() {
           <div>
             <h2 className="text-base">Partial Least Squares - DA</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Supervised classification and biomarker discovery
+              {dataset ? `${dataset.project_name} · ${dataset.name}` : "No dataset"}
             </p>
+            {error && <p className="text-xs text-destructive mt-1">{error}</p>}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -109,7 +126,8 @@ export function PLSDAView() {
             </button>
             <button
               onClick={() => setRunOpen(true)}
-              className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90"
+              disabled={!dataset}
+              className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               <Play className="h-3.5 w-3.5" />
               Run Analysis
@@ -120,19 +138,19 @@ export function PLSDAView() {
         <div className="grid grid-cols-4 gap-3">
           <div className="rounded-lg border border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 to-emerald-600/10 p-3">
             <p className="text-xs font-medium text-muted-foreground">Accuracy</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">87.3%</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{accuracy ? `${accuracy}%` : "—"}</p>
           </div>
           <div className="rounded-lg border border-violet-500/20 bg-gradient-to-br from-violet-500/5 to-violet-600/10 p-3">
-            <p className="text-xs font-medium text-muted-foreground">R² (cumulative)</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-violet-600 dark:text-violet-400">0.714</p>
+            <p className="text-xs font-medium text-muted-foreground">AUC</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-violet-600 dark:text-violet-400">{auc ? auc.toFixed(3) : "—"}</p>
           </div>
           <div className="rounded-lg border border-cyan-500/20 bg-gradient-to-br from-cyan-500/5 to-cyan-600/10 p-3">
-            <p className="text-xs font-medium text-muted-foreground">Q² (CV)</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-cyan-600 dark:text-cyan-400">0.658</p>
+            <p className="text-xs font-medium text-muted-foreground">CV Folds</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-cyan-600 dark:text-cyan-400">{folds}</p>
           </div>
           <div className="rounded-lg border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-amber-600/10 p-3">
-            <p className="text-xs font-medium text-muted-foreground">Components</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-amber-600 dark:text-amber-400">3</p>
+            <p className="text-xs font-medium text-muted-foreground">Samples</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-amber-600 dark:text-amber-400">{samplesProcessed}</p>
           </div>
         </div>
 
@@ -141,7 +159,7 @@ export function PLSDAView() {
             <h3 className="text-sm">Score Plot (LV1 vs LV2)</h3>
             <ExportMenu />
           </div>
-          <ChartPlaceholder type="PLS-DA Score Plot" height="450px" />
+          <ChartPlaceholder type="PLS-DA Score Plot" height="450px" plsdaScores={scores} />
         </div>
 
         <div className="grid grid-cols-2 gap-4">

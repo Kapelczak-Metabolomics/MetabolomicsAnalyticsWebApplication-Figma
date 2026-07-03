@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Play, Download, Settings2, Filter, Plus, Trash2, ChevronDown, X } from "lucide-react";
 import { ConfigureDialog } from "../components/configure-dialog";
+import { RunAnalysisDialog } from "../components/run-analysis-dialog";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
+import { useAnalysisPage } from "../../hooks/use-analysis-page";
 
 const biomarkerConfig = [
   {
@@ -133,9 +135,26 @@ function CriteriaEditor({ open, onClose }: { open: boolean; onClose: () => void 
 export function BiomarkerView() {
   const [configOpen, setConfigOpen] = useState(false);
   const [criteriaOpen, setCriteriaOpen] = useState(false);
+  const [runOpen, setRunOpen] = useState(false);
+  const { dataset, results, loading, error, refresh } = useAnalysisPage("Biomarker");
+
+  const candidates = (results?.candidates as Array<{ name: string; featureId: string; score: number; log2fc: number; pValue: number; vip: number }>) ?? [];
+
+  if (loading) {
+    return <div className="flex h-full items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div>;
+  }
 
   return (
     <div className="flex h-full">
+      <RunAnalysisDialog
+        open={runOpen}
+        onClose={() => { setRunOpen(false); refresh(); }}
+        analysisName="Biomarker Discovery"
+        analysisType="Biomarker"
+        projectId={dataset?.project_id}
+        datasetId={dataset?.id}
+        onComplete={refresh}
+      />
       <ConfigureDialog
         open={configOpen}
         onClose={() => setConfigOpen(false)}
@@ -149,8 +168,9 @@ export function BiomarkerView() {
           <div>
             <h2 className="text-base">Biomarker Lenses</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Multi-criteria feature filtering and prioritization
+              {dataset ? `${dataset.project_name} · ${dataset.name}` : "No dataset"}
             </p>
+            {error && <p className="text-xs text-destructive mt-1">{error}</p>}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -167,9 +187,17 @@ export function BiomarkerView() {
               <Settings2 className="h-3.5 w-3.5" />
               Configure
             </button>
+            <button
+              onClick={() => setRunOpen(true)}
+              disabled={!dataset}
+              className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              <Play className="h-3.5 w-3.5" />
+              Run Discovery
+            </button>
             <DropdownMenu.Root>
               <DropdownMenu.Trigger asChild>
-                <button className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90">
+                <button className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent">
                   <Download className="h-3.5 w-3.5" />
                   Export Candidates
                   <ChevronDown className="h-3 w-3" />
@@ -199,19 +227,19 @@ export function BiomarkerView() {
         <div className="grid grid-cols-4 gap-3">
           <div className="rounded-md border border-border bg-card p-3">
             <p className="text-xs text-muted-foreground">Candidates</p>
-            <p className="mt-1 text-xl tabular-nums">34</p>
+            <p className="mt-1 text-xl tabular-nums">{candidates.length}</p>
           </div>
           <div className="rounded-md border border-border bg-card p-3">
-            <p className="text-xs text-muted-foreground">Criteria Passed</p>
-            <p className="mt-1 text-xl tabular-nums">5/5</p>
+            <p className="text-xs text-muted-foreground">Significant (p&lt;0.05)</p>
+            <p className="mt-1 text-xl tabular-nums">{candidates.filter((c) => c.pValue < 0.05).length}</p>
           </div>
           <div className="rounded-md border border-border bg-card p-3">
-            <p className="text-xs text-muted-foreground">High Priority</p>
-            <p className="mt-1 text-xl tabular-nums">12</p>
+            <p className="text-xs text-muted-foreground">High VIP (&gt;1.5)</p>
+            <p className="mt-1 text-xl tabular-nums">{candidates.filter((c) => c.vip > 1.5).length}</p>
           </div>
           <div className="rounded-md border border-border bg-card p-3">
-            <p className="text-xs text-muted-foreground">Literature Support</p>
-            <p className="mt-1 text-xl tabular-nums">8</p>
+            <p className="text-xs text-muted-foreground">Top Score</p>
+            <p className="mt-1 text-xl tabular-nums">{candidates[0]?.score.toFixed(1) ?? "—"}</p>
           </div>
         </div>
 
@@ -274,26 +302,21 @@ export function BiomarkerView() {
                 </tr>
               </thead>
               <tbody>
-                {[
-                  { name: "Glutamate", fc: 2.34, p: 3.4e-6, vip: 2.34, priority: 9.2, pathway: "Nitrogen metabolism", pubmed: 234 },
-                  { name: "Leucine", fc: -1.87, p: 8.2e-5, vip: 2.12, priority: 8.8, pathway: "BCAA biosynthesis", pubmed: 187 },
-                  { name: "Phenylalanine", fc: 1.92, p: 2.3e-4, vip: 1.89, priority: 8.5, pathway: "Aminoacyl-tRNA", pubmed: 156 },
-                  { name: "Valine", fc: -1.65, p: 4.7e-4, vip: 1.76, priority: 8.1, pathway: "BCAA biosynthesis", pubmed: 143 },
-                  { name: "Isoleucine", fc: -1.54, p: 8.9e-4, vip: 1.68, priority: 7.9, pathway: "BCAA biosynthesis", pubmed: 129 },
-                  { name: "Arginine", fc: 1.73, p: 1.2e-3, vip: 1.54, priority: 7.6, pathway: "Arginine biosynthesis", pubmed: 201 },
-                ].map((feature) => (
-                  <tr key={feature.name} className="border-b border-border hover:bg-muted/50">
+                {candidates.length === 0 ? (
+                  <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">Run biomarker discovery to see candidates</td></tr>
+                ) : candidates.map((feature) => (
+                  <tr key={feature.featureId} className="border-b border-border hover:bg-muted/50">
                     <td className="p-2 font-medium">{feature.name}</td>
-                    <td className="p-2 text-right tabular-nums">{feature.fc.toFixed(2)}</td>
-                    <td className="p-2 text-right tabular-nums">{feature.p.toExponential(1)}</td>
+                    <td className="p-2 text-right tabular-nums">{feature.log2fc.toFixed(2)}</td>
+                    <td className="p-2 text-right tabular-nums">{feature.pValue.toExponential(1)}</td>
                     <td className="p-2 text-right tabular-nums">{feature.vip.toFixed(2)}</td>
                     <td className="p-2 text-right">
                       <span className="inline-flex rounded bg-primary/10 px-1.5 py-0.5 tabular-nums text-primary">
-                        {feature.priority}
+                        {feature.score}
                       </span>
                     </td>
-                    <td className="p-2 text-muted-foreground">{feature.pathway}</td>
-                    <td className="p-2 text-center tabular-nums text-muted-foreground">{feature.pubmed}</td>
+                    <td className="p-2 text-muted-foreground">—</td>
+                    <td className="p-2 text-center tabular-nums text-muted-foreground">—</td>
                     <td className="p-2 text-center">
                       <DropdownMenu.Root>
                         <DropdownMenu.Trigger asChild>

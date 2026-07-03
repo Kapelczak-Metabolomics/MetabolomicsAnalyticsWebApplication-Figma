@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChartPlaceholder } from "../components/chart-placeholder";
 import { Play, Download, Settings2, ChevronDown } from "lucide-react";
 import { RunAnalysisDialog } from "../components/run-analysis-dialog";
 import { ConfigureDialog } from "../components/configure-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
+import { useAnalysisPage } from "../../hooks/use-analysis-page";
+import { api } from "../../lib/api";
 
 const clusteringStages = [
   "Loading & scaling dataset",
@@ -75,14 +77,34 @@ function ExportMenu() {
 export function ClusteringView() {
   const [runOpen, setRunOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
+  const { dataset, results, loading, error, refresh } = useAnalysisPage("Clustering");
+  const [heatmap, setHeatmap] = useState<{ matrix: (number | null)[][]; sampleLabels: string[]; featureLabels: string[] } | null>(null);
+
+  const clusters = (results?.clusters as Array<{ name: string; count: number; color: string }>) ?? [];
+  const samplesProcessed = (results?.samplesProcessed as number) ?? dataset?.samples_count ?? 0;
+
+  useEffect(() => {
+    if (!dataset) return;
+    api.getDatasetMatrix(dataset.id)
+      .then((data) => setHeatmap({ matrix: data.matrix, sampleLabels: data.sampleLabels, featureLabels: data.featureLabels }))
+      .catch(() => setHeatmap(null));
+  }, [dataset?.id]);
+
+  if (loading) {
+    return <div className="flex h-full items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div>;
+  }
 
   return (
     <div className="flex h-full">
       <RunAnalysisDialog
         open={runOpen}
-        onClose={() => setRunOpen(false)}
+        onClose={() => { setRunOpen(false); refresh(); }}
         analysisName="Hierarchical Clustering"
+        analysisType="Clustering"
+        projectId={dataset?.project_id}
+        datasetId={dataset?.id}
         stages={clusteringStages}
+        onComplete={refresh}
       />
       <ConfigureDialog
         open={configOpen}
@@ -96,8 +118,9 @@ export function ClusteringView() {
           <div>
             <h2 className="text-base">Hierarchical Clustering</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Sample and feature grouping by similarity
+              {dataset ? `${dataset.project_name} · ${dataset.name}` : "No dataset"}
             </p>
+            {error && <p className="text-xs text-destructive mt-1">{error}</p>}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -109,7 +132,8 @@ export function ClusteringView() {
             </button>
             <button
               onClick={() => setRunOpen(true)}
-              className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90"
+              disabled={!dataset}
+              className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               <Play className="h-3.5 w-3.5" />
               Run Analysis
@@ -119,16 +143,16 @@ export function ClusteringView() {
 
         <div className="grid grid-cols-4 gap-3">
           <div className="rounded-md border border-border bg-card p-3">
-            <p className="text-xs text-muted-foreground">Sample Clusters</p>
-            <p className="mt-1 text-xl tabular-nums">4</p>
+            <p className="text-xs text-muted-foreground">Sample Groups</p>
+            <p className="mt-1 text-xl tabular-nums">{clusters.length || "—"}</p>
           </div>
           <div className="rounded-md border border-border bg-card p-3">
-            <p className="text-xs text-muted-foreground">Feature Clusters</p>
-            <p className="mt-1 text-xl tabular-nums">12</p>
+            <p className="text-xs text-muted-foreground">Samples Processed</p>
+            <p className="mt-1 text-xl tabular-nums">{samplesProcessed}</p>
           </div>
           <div className="rounded-md border border-border bg-card p-3">
-            <p className="text-xs text-muted-foreground">Distance Metric</p>
-            <p className="mt-1 text-base">Euclidean</p>
+            <p className="text-xs text-muted-foreground">Features in Heatmap</p>
+            <p className="mt-1 text-xl tabular-nums">{heatmap?.featureLabels.length ?? dataset?.features_count ?? "—"}</p>
           </div>
           <div className="rounded-md border border-border bg-card p-3">
             <p className="text-xs text-muted-foreground">Linkage</p>
@@ -141,7 +165,7 @@ export function ClusteringView() {
             <h3 className="text-sm">Heatmap with Dendrograms</h3>
             <ExportMenu />
           </div>
-          <ChartPlaceholder type="Clustered Heatmap" height="550px" />
+          <ChartPlaceholder type="Clustered Heatmap" height="550px" heatmap={heatmap ?? undefined} />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -188,12 +212,9 @@ export function ClusteringView() {
         <div>
           <h3 className="text-xs text-muted-foreground mb-2">Cluster Summary</h3>
           <div className="space-y-1.5">
-            {[
-              { name: "Cluster 1", count: 89, color: "bg-chart-1" },
-              { name: "Cluster 2", count: 76, color: "bg-chart-2" },
-              { name: "Cluster 3", count: 103, color: "bg-chart-3" },
-              { name: "Cluster 4", count: 74, color: "bg-chart-4" },
-            ].map((cluster) => (
+            {clusters.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Run clustering to see group assignments</p>
+            ) : clusters.map((cluster, i) => (
               <div
                 key={cluster.name}
                 className="rounded-md bg-card p-2 text-xs hover:bg-accent cursor-pointer"
@@ -201,7 +222,7 @@ export function ClusteringView() {
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className={`h-2.5 w-2.5 rounded-full ${cluster.color}`} />
+                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: cluster.color }} />
                     <span>{cluster.name}</span>
                   </div>
                   <span className="tabular-nums text-muted-foreground">n={cluster.count}</span>
@@ -211,28 +232,11 @@ export function ClusteringView() {
           </div>
         </div>
 
-        <div>
-          <h3 className="text-xs text-muted-foreground mb-2">Quality Metrics</h3>
-          <div className="space-y-2 text-xs">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Silhouette</span>
-              <span className="tabular-nums">0.68</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Davies-Bouldin</span>
-              <span className="tabular-nums">0.42</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Calinski-Harabasz</span>
-              <span className="tabular-nums">245.7</span>
-            </div>
-          </div>
-        </div>
-
         <div className="pt-2 border-t border-border">
           <button
             onClick={() => setRunOpen(true)}
-            className="w-full flex items-center justify-center gap-1.5 rounded-md bg-primary/10 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/20"
+            disabled={!dataset}
+            className="w-full flex items-center justify-center gap-1.5 rounded-md bg-primary/10 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50"
           >
             <Play className="h-3.5 w-3.5" />
             Re-run Analysis

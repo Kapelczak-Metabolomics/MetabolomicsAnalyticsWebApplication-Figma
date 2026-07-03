@@ -5,6 +5,7 @@ import { RunAnalysisDialog } from "../components/run-analysis-dialog";
 import { ConfigureDialog } from "../components/configure-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
+import { useAnalysisPage } from "../../hooks/use-analysis-page";
 
 const pathwayStages = [
   "Loading feature list",
@@ -75,14 +76,27 @@ function ExportMenu() {
 export function PathwayView() {
   const [runOpen, setRunOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
+  const { dataset, results, loading, error, refresh } = useAnalysisPage("Pathway");
+
+  const pathways = (results?.pathways as Array<{ name: string; genes: number; pValue: number; negLogP: number }>) ?? [];
+  const sigFeatures = (results?.significantFeatures as number) ?? 0;
+  const sigPathways = pathways.filter((p) => p.pValue < 0.05).length;
+
+  if (loading) {
+    return <div className="flex h-full items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div>;
+  }
 
   return (
     <div className="flex h-full">
       <RunAnalysisDialog
         open={runOpen}
-        onClose={() => setRunOpen(false)}
+        onClose={() => { setRunOpen(false); refresh(); }}
         analysisName="Pathway Enrichment Analysis"
+        analysisType="Pathway"
+        projectId={dataset?.project_id}
+        datasetId={dataset?.id}
         stages={pathwayStages}
+        onComplete={refresh}
       />
       <ConfigureDialog
         open={configOpen}
@@ -96,8 +110,9 @@ export function PathwayView() {
           <div>
             <h2 className="text-base">Pathway Enrichment Analysis</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Functional annotation and over-representation
+              {dataset ? `${dataset.project_name} · ${dataset.name}` : "No dataset"}
             </p>
+            {error && <p className="text-xs text-destructive mt-1">{error}</p>}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -120,15 +135,15 @@ export function PathwayView() {
         <div className="grid grid-cols-4 gap-3">
           <div className="rounded-md border border-border bg-card p-3">
             <p className="text-xs text-muted-foreground">Enriched Pathways</p>
-            <p className="mt-1 text-xl tabular-nums">47</p>
+            <p className="mt-1 text-xl tabular-nums">{pathways.length}</p>
+          </div>
+          <div className="rounded-md border border-border bg-card p-3">
+            <p className="text-xs text-muted-foreground">Significant Pathways</p>
+            <p className="mt-1 text-xl tabular-nums">{sigPathways}</p>
           </div>
           <div className="rounded-md border border-border bg-card p-3">
             <p className="text-xs text-muted-foreground">Input Features</p>
-            <p className="mt-1 text-xl tabular-nums">189</p>
-          </div>
-          <div className="rounded-md border border-border bg-card p-3">
-            <p className="text-xs text-muted-foreground">Mapped Features</p>
-            <p className="mt-1 text-xl tabular-nums">143</p>
+            <p className="mt-1 text-xl tabular-nums">{sigFeatures}</p>
           </div>
           <div className="rounded-md border border-border bg-card p-3">
             <p className="text-xs text-muted-foreground">Database</p>
@@ -141,7 +156,7 @@ export function PathwayView() {
             <h3 className="text-sm">Enrichment Overview</h3>
             <ExportMenu />
           </div>
-          <ChartPlaceholder type="Dot Plot (p-value vs Count)" height="400px" />
+          <ChartPlaceholder type="Dot Plot (p-value vs Count)" height="400px" pathways={pathways} />
         </div>
 
         <div className="rounded-lg border border-border bg-card">
@@ -162,23 +177,19 @@ export function PathwayView() {
                 </tr>
               </thead>
               <tbody>
-                {[
-                  { name: "Aminoacyl-tRNA biosynthesis", hits: 12, total: 48, p: 2.3e-6, fdr: 1.1e-4, id: "00970" },
-                  { name: "Valine, leucine, isoleucine biosynthesis", hits: 8, total: 27, p: 5.6e-5, fdr: 1.3e-3, id: "00290" },
-                  { name: "Nitrogen metabolism", hits: 7, total: 32, p: 1.2e-4, fdr: 1.9e-3, id: "00910" },
-                  { name: "Arginine biosynthesis", hits: 9, total: 41, p: 2.8e-4, fdr: 3.2e-3, id: "00220" },
-                  { name: "Glutathione metabolism", hits: 6, total: 29, p: 4.5e-4, fdr: 4.1e-3, id: "00480" },
-                ].map((pathway) => (
+                {pathways.length === 0 ? (
+                  <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">Run pathway enrichment to see results</td></tr>
+                ) : pathways.map((pathway) => (
                   <tr key={pathway.name} className="border-b border-border hover:bg-muted/50">
                     <td className="p-2">{pathway.name}</td>
-                    <td className="p-2 text-right tabular-nums">{pathway.hits}</td>
-                    <td className="p-2 text-right tabular-nums">{pathway.total}</td>
-                    <td className="p-2 text-right tabular-nums">{pathway.p.toExponential(1)}</td>
-                    <td className="p-2 text-right tabular-nums">{pathway.fdr.toExponential(1)}</td>
+                    <td className="p-2 text-right tabular-nums">{pathway.genes}</td>
+                    <td className="p-2 text-right tabular-nums">—</td>
+                    <td className="p-2 text-right tabular-nums">{pathway.pValue.toExponential(1)}</td>
+                    <td className="p-2 text-right tabular-nums">—</td>
                     <td className="p-2 text-center">
                       <button
                         className="inline-flex items-center text-primary hover:underline"
-                        onClick={() => toast.info(`Opening KEGG pathway hsa${pathway.id}`)}
+                        onClick={() => toast.info(`Pathway: ${pathway.name}`)}
                       >
                         <ExternalLink className="h-3 w-3" />
                       </button>
