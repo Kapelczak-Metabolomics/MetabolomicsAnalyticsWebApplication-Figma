@@ -25,6 +25,22 @@ Docker Compose starts three services on **non-standard ports** (47821–47823) t
 
 The database is automatically initialized when the API starts: tables are created, and seed data (users, projects, datasets, metabolite features, experiments, notifications) is inserted on first boot.
 
+## Deploy on EasyPanel
+
+Use `docker-compose.easypanel.yml` for one-click deployment on [EasyPanel](https://easypanel.io):
+
+1. In EasyPanel, create a **Project** → **Services** → **Compose (Beta)**
+2. Connect this GitHub repository
+3. Set the compose file path to **`docker-compose.easypanel.yml`**
+4. Edit the compose file and replace these placeholders before deploying:
+   - `CHANGE_ME_DB_PASSWORD` — PostgreSQL password (use the same value in `DATABASE_URL`)
+   - `CHANGE_ME_JWT_SECRET` — long random string for JWT signing
+5. Click **Deploy** and wait for all three services to become healthy (~1–2 minutes on first run)
+6. Open the **web** service → **Domains** → add your domain with **proxy port 80**
+7. EasyPanel provisions HTTPS automatically via Let's Encrypt
+
+Only the **web** (nginx) service is exposed on port 80. The API and database communicate on the internal Docker network. Sign in at your domain with `sarah.chen@university.edu` / `password123`.
+
 ## Local Development
 
 ### Prerequisites

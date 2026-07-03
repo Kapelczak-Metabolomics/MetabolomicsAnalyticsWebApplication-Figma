@@ -1,0 +1,75 @@
+# MetaboAnalytics — EasyPanel deployment
+#
+# Setup in EasyPanel:
+#   1. Create a project → Services → Compose (Beta)
+#   2. Connect this GitHub repository (or paste this file into the editor)
+#   3. Set "Compose file" to: docker-compose.easypanel.yml
+#   4. Replace CHANGE_ME_* secrets below before deploying
+#   5. Deploy, then open the "web" service → Domains → add your domain
+#      Proxy port: 80 (HTTP/HTTPS is handled by EasyPanel Traefik)
+#
+# Notes:
+#   - Only the web (nginx) service is published; API and PostgreSQL are internal.
+#   - EasyPanel does not load .env files — all variables are defined here.
+#   - After first deploy, sign in at your domain with:
+#       Email: sarah.chen@university.edu
+#       Password: password123
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: metabo
+      POSTGRES_PASSWORD: CHANGE_ME_DB_PASSWORD
+      POSTGRES_DB: metaboanalytics
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metabo -d metaboanalytics"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://metabo:CHANGE_ME_DB_PASSWORD@db:5432/metaboanalytics
+      JWT_SECRET: CHANGE_ME_JWT_SECRET
+      PORT: "47822"
+      NODE_ENV: production
+    expose:
+      - "47822"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"require('http').get('http://127.0.0.1:47822/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 45s
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        METABO_API_PORT: "47822"
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
