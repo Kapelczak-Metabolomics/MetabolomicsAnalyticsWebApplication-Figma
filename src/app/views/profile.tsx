@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Camera, Save, Mail, User as UserIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../lib/api";
@@ -8,13 +8,18 @@ export function ProfileView() {
   const { user } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    api.getProfile().then((p) => {
-      setName(p.name);
-      setEmail(p.email);
-    }).catch(console.error);
+    Promise.all([api.getProfile(), api.getPreferences().catch(() => ({}))])
+      .then(([p, prefs]) => {
+        setName(p.name);
+        setEmail(p.email);
+        if (prefs.avatarUrl && typeof prefs.avatarUrl === "string") setAvatarUrl(prefs.avatarUrl);
+      })
+      .catch(console.error);
   }, []);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -28,6 +33,27 @@ export function ProfileView() {
       toast.error("Failed to update profile");
     }
   };
+
+  async function handleAvatarFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Image must be under 2 MB");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      setAvatarUrl(dataUrl);
+      try {
+        await api.updatePreferences({ avatarUrl: dataUrl });
+        toast.success("Profile photo updated");
+      } catch {
+        toast.error("Failed to save photo");
+      }
+    };
+    reader.readAsDataURL(file);
+  }
 
   const initials = (name || user?.name || "U").split(" ").filter(Boolean).map((n) => n[0]).join("").slice(0, 2).toUpperCase();
 
@@ -43,10 +69,16 @@ export function ProfileView() {
           <h3 className="mb-6 text-base font-medium">Profile Picture</h3>
           <div className="flex items-center gap-6">
             <div className="relative">
-              <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 text-2xl font-semibold text-white">
-                {initials}
-              </div>
-              <button className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full border-2 border-background bg-gradient-to-br from-violet-500 to-cyan-500 text-white shadow-lg hover:shadow-xl">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Profile" className="h-24 w-24 rounded-full object-cover" />
+              ) : (
+                <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 text-2xl font-semibold text-white">
+                  {initials}
+                </div>
+              )}
+              <input ref={fileRef} type="file" accept="image/*" className="sr-only" onChange={handleAvatarFile} />
+              <button type="button" onClick={() => fileRef.current?.click()}
+                className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full border-2 border-background bg-gradient-to-br from-violet-500 to-cyan-500 text-white shadow-lg hover:shadow-xl">
                 <Camera className="h-4 w-4" />
               </button>
             </div>

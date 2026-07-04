@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate, Link } from "react-router";
+import { useParams, useNavigate, Link, useSearchParams } from "react-router";
 import * as Tabs from "@radix-ui/react-tabs";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -116,7 +116,9 @@ export function ProjectDetailView() {
   const [members, setMembers] = useState<Array<{ id: number; name: string; email: string; role: string; joined: string; avatar: string }>>([]);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
-  const [projectDesc, setProjectDesc] = useState("");
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab") ?? "datasets";
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   useEffect(() => {
     if (!id) return;
@@ -158,6 +160,17 @@ export function ProjectDetailView() {
       toast.success("Member removed");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Remove failed");
+    }
+  }
+
+  async function changeMemberRole(mid: number, role: string) {
+    if (!id) return;
+    try {
+      await api.updateMember(parseInt(id, 10), mid, { role: role.toLowerCase() });
+      setMembers((prev) => prev.map((m) => m.id === mid ? { ...m, role } : m));
+      toast.success("Member role updated");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Role update failed");
     }
   }
 
@@ -264,7 +277,7 @@ export function ProjectDetailView() {
       </div>
 
       {/* Tabs */}
-      <Tabs.Root defaultValue="datasets" className="flex flex-col h-auto">
+      <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-auto">
         <div className="border-b border-border bg-card/20 px-6">
           <Tabs.List className="flex gap-0 -mb-px">
             {[
@@ -411,10 +424,12 @@ export function ProjectDetailView() {
                       </DropdownMenu.Trigger>
                       <DropdownMenu.Portal>
                         <DropdownMenu.Content className="z-50 min-w-[150px] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg" sideOffset={4} align="end">
-                          <DropdownMenu.Item className="flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-                            onSelect={() => toast.info(`Changing role for ${m.name}`)}>
-                            <Shield className="h-3.5 w-3.5" /> Change Role
-                          </DropdownMenu.Item>
+                          {["Viewer", "Analyst", "Researcher"].map((role) => (
+                            <DropdownMenu.Item key={role} className="flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
+                              onSelect={() => changeMemberRole(m.id, role)}>
+                              <Shield className="h-3.5 w-3.5" /> Set as {role}
+                            </DropdownMenu.Item>
+                          ))}
                           <DropdownMenu.Separator className="my-1 h-px bg-border" />
                           <DropdownMenu.Item className="flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 text-xs outline-none hover:bg-destructive/10 text-destructive"
                             onSelect={() => removeMember(m.id)}>

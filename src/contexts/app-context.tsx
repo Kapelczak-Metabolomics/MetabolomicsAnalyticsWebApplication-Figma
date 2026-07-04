@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
+import { ANALYSIS_TYPES } from "../lib/analysis-config";
 
 interface AppContextValue {
   projects: Array<{ id: number; name: string }>;
@@ -39,6 +40,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refresh().catch(console.error);
+    Promise.all(ANALYSIS_TYPES.map((type) => api.getAnalysisConfig(type).catch(() => ({}))))
+      .then((configs) => {
+        const merged: Record<string, Record<string, unknown>> = {};
+        ANALYSIS_TYPES.forEach((type, i) => { merged[type] = configs[i] as Record<string, unknown>; });
+        setAnalysisConfigs(merged);
+      })
+      .catch(console.error);
   }, []);
 
   useEffect(() => {

@@ -7,6 +7,7 @@ import {
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
 import { api } from "../../../lib/api";
+import { downloadCsv, downloadJson, downloadText } from "../../../lib/export";
 
 type AuditSeverity = "info" | "warning" | "critical" | "success";
 type AuditCategory = "auth" | "data" | "analysis" | "admin" | "export";
@@ -86,6 +87,18 @@ export function AdminAudit() {
     return matchSearch && matchSeverity && matchCategory && matchUser;
   });
 
+  const exportAudit = (fmt: string) => {
+    if (!filtered.length) { toast.error("No events to export"); return; }
+    const rows = filtered.map((e) => ({
+      id: e.id, timestamp: e.timestamp, user: e.user, email: e.userEmail,
+      action: e.action, category: e.category, severity: e.severity,
+      resource: e.resource, details: e.details, ip: e.ip,
+    }));
+    if (fmt === "JSON") downloadJson("audit-log.json", rows);
+    else downloadCsv("audit-log.csv", rows);
+    toast.success(`Audit log exported as ${fmt}`);
+  };
+
   const counts = {
     critical: auditEvents.filter((e) => e.severity === "critical").length,
     warning: auditEvents.filter((e) => e.severity === "warning").length,
@@ -111,9 +124,9 @@ export function AdminAudit() {
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content className="z-50 min-w-[150px] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg" sideOffset={4} align="end">
-                {["CSV", "JSON", "PDF Report"].map((fmt) => (
+                {["CSV", "JSON"].map((fmt) => (
                   <DropdownMenu.Item key={fmt} className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-                    onSelect={() => toast.success(`Audit log exported as ${fmt}`)}>
+                    onSelect={() => exportAudit(fmt)}>
                     {fmt}
                   </DropdownMenu.Item>
                 ))}

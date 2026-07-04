@@ -143,10 +143,16 @@ router.get("/:id/export", authMiddleware, async (req: Request, res: Response) =>
   const data = result.rows[0];
   if (format === "csv" && data.results && typeof data.results === "object") {
     const results = data.results as Record<string, unknown>;
-    const features = results.features as Array<Record<string, unknown>> | undefined;
-    if (features?.length) {
-      const headers = Object.keys(features[0]);
-      const csv = [headers.join(","), ...features.map((f) => headers.map((h) => f[h]).join(","))].join("\n");
+    const arrays: Array<Record<string, unknown>> | undefined =
+      (results.features as Array<Record<string, unknown>>) ??
+      (results.scores as Array<Record<string, unknown>>) ??
+      (results.pathways as Array<Record<string, unknown>>) ??
+      (results.candidates as Array<Record<string, unknown>>) ??
+      (results.clusters as Array<Record<string, unknown>>) ??
+      (results.vipFeatures as Array<Record<string, unknown>>);
+    if (arrays?.length) {
+      const headers = Object.keys(arrays[0]);
+      const csv = [headers.join(","), ...arrays.map((f) => headers.map((h) => JSON.stringify(f[h] ?? "")).join(","))].join("\n");
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", `attachment; filename="${data.name}.csv"`);
       res.send(csv);

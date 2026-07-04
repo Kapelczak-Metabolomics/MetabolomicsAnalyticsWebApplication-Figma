@@ -329,14 +329,14 @@ export function ProjectsView() {
                         >
                           <DropdownMenu.Item
                             className="flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-                            onSelect={() => toast.info(`Opening ${project.name}`)}
+                            onSelect={() => navigate(`/projects/${project.id}`)}
                           >
                             <ExternalLink className="h-3.5 w-3.5" />
                             Open project
                           </DropdownMenu.Item>
                           <DropdownMenu.Item
                             className="flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-                            onSelect={() => toast.info("Opening project settings...")}
+                            onSelect={() => navigate(`/projects/${project.id}?tab=settings`)}
                           >
                             <Database className="h-3.5 w-3.5" />
                             Settings

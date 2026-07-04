@@ -3,6 +3,7 @@ import { Search, Download, Filter, Info, AlertTriangle, XCircle, Activity } from
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
 import { api } from "../../../lib/api";
+import { downloadCsv, downloadJson } from "../../../lib/export";
 
 const logs: Array<{ id: number; timestamp: string; level: string; user: string; action: string; details: string; ip: string }> = [];
 
@@ -44,6 +45,14 @@ export function AdminLogs() {
     return matchSearch && matchLevel;
   });
 
+  const exportLogs = (fmt: string) => {
+    if (!filtered.length) { toast.error("No logs to export"); return; }
+    if (fmt === "JSON") downloadJson("activity-logs.json", filtered);
+    else if (fmt === "CSV") downloadCsv("activity-logs.csv", filtered as unknown as Array<Record<string, unknown>>);
+    else downloadCsv("activity-logs.txt", filtered.map((l) => ({ line: `${l.timestamp} [${l.level}] ${l.user}: ${l.action} — ${l.details}` })));
+    toast.success(`Logs exported as ${fmt}`);
+  };
+
   const infoCount    = logData.filter((l) => l.level === "info").length;
   const warnCount    = logData.filter((l) => l.level === "warning").length;
   const errorCount   = logData.filter((l) => l.level === "error").length;
@@ -68,7 +77,7 @@ export function AdminLogs() {
               <DropdownMenu.Content className="z-50 min-w-[150px] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg" sideOffset={4} align="end">
                 {["CSV", "JSON", "Plain text"].map((fmt) => (
                   <DropdownMenu.Item key={fmt} className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-                    onSelect={() => toast.success(`Logs exported as ${fmt}`)}>
+                    onSelect={() => exportLogs(fmt)}>
                     {fmt}
                   </DropdownMenu.Item>
                 ))}
@@ -84,7 +93,7 @@ export function AdminLogs() {
               <Activity className="h-4 w-4 text-muted-foreground" />
               <p className="text-xs text-muted-foreground">Total Events</p>
             </div>
-            <p className="text-2xl font-semibold tabular-nums">12,847</p>
+            <p className="text-2xl font-semibold tabular-nums">{logData.length}</p>
           </div>
           <div className="rounded-lg border border-cyan-500/20 bg-gradient-to-br from-cyan-500/5 to-cyan-600/10 p-4">
             <div className="flex items-center gap-2 mb-1">

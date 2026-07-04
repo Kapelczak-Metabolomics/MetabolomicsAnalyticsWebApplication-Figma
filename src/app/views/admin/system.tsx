@@ -413,7 +413,10 @@ export function AdminSystem() {
                 </span>
               )}
               <button
-                onClick={() => toast.success("S3 configuration saved")}
+                onClick={async () => {
+                  await api.admin.updateSystemBulk({ s3: { bucket: s3Bucket, region: "us-east-1" } });
+                  toast.success("S3 configuration saved");
+                }}
                 className="ml-auto rounded-lg bg-gradient-to-r from-violet-500 to-cyan-500 px-4 py-2 text-sm font-medium text-white shadow-md hover:shadow-lg"
               >
                 Save S3 Settings
@@ -466,7 +469,10 @@ export function AdminSystem() {
 
             <div className="pt-2">
               <button
-                onClick={() => toast.success("Server configuration saved")}
+                onClick={async () => {
+                  await api.admin.updateSystemBulk({ server: { maintenanceMode: false, autoBackup: true, maxConcurrentJobs: 10, sessionTimeout: "1 hour" } });
+                  toast.success("Server configuration saved");
+                }}
                 className="rounded-lg bg-gradient-to-r from-violet-500 to-cyan-500 px-4 py-2 text-sm font-medium text-white shadow-md hover:shadow-lg"
               >
                 Save Configuration
@@ -540,7 +546,10 @@ export function AdminSystem() {
               </div>
             </div>
             <button
-              onClick={() => toast.success("Email settings saved")}
+              onClick={async () => {
+                await api.admin.updateSystemBulk({ email: { host: smtpHost, port: 587, encryption: "TLS" } });
+                toast.success("Email settings saved");
+              }}
               className="rounded-lg bg-gradient-to-r from-violet-500 to-cyan-500 px-4 py-2 text-sm font-medium text-white hover:shadow-lg"
             >
               Save Email Settings

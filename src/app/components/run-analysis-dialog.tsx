@@ -3,6 +3,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { CheckCircle2, Loader2, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../lib/api";
+import { useAppOptional } from "../../contexts/app-context";
 
 interface RunAnalysisDialogProps {
   open: boolean;
@@ -31,10 +32,11 @@ export function RunAnalysisDialog({
   analysisType = "PCA",
   projectId,
   datasetId,
-  config,
+  config: configProp,
   stages = defaultStages,
   onComplete,
 }: RunAnalysisDialogProps) {
+  const app = useAppOptional();
   const [currentStage, setCurrentStage] = useState(-1);
   const [completed, setCompleted] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -54,7 +56,8 @@ export function RunAnalysisDialog({
     (async () => {
       if (projectId && datasetId) {
         try {
-          const { id } = await api.runAnalysis({ projectId, datasetId, name: analysisName, type: analysisType, config });
+          const mergedConfig = { ...(app?.getAnalysisConfig(analysisType) ?? {}), ...(configProp ?? {}) };
+          const { id } = await api.runAnalysis({ projectId, datasetId, name: analysisName, type: analysisType, config: mergedConfig });
           experimentIdRef.current = id;
         } catch {
           toast.error("Failed to start analysis");
@@ -97,7 +100,7 @@ export function RunAnalysisDialog({
     })();
 
     return () => { cancelled = true; };
-  }, [open, projectId, datasetId, analysisName, analysisType, config, stages, onClose, onComplete, failed]);
+  }, [open, projectId, datasetId, analysisName, analysisType, configProp, stages, onClose, onComplete, failed, app]);
 
   const progress = failed ? 0 : completed ? 100 : currentStage < 0 ? 5 : Math.round(((currentStage + 1) / stages.length) * 90);
 

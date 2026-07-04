@@ -24,10 +24,11 @@ interface ConfigureDialogProps {
   title: string;
   groups: ConfigGroup[];
   analysisType?: string;
+  initialValues?: Record<string, unknown>;
   onSave?: (config: Record<string, unknown>) => void | Promise<void>;
 }
 
-export function ConfigureDialog({ open, onClose, title, groups, onSave }: ConfigureDialogProps) {
+export function ConfigureDialog({ open, onClose, title, groups, initialValues, onSave }: ConfigureDialogProps) {
   const [values, setValues] = useState<Record<string, unknown>>({});
 
   useEffect(() => {
@@ -35,11 +36,11 @@ export function ConfigureDialog({ open, onClose, title, groups, onSave }: Config
       const initial: Record<string, unknown> = {};
       groups.forEach((g) => g.fields.forEach((f) => {
         const key = f.key ?? f.label;
-        initial[key] = f.value ?? (f.type === "checkbox" ? false : f.type === "number" ? 0 : "");
+        initial[key] = initialValues?.[key] ?? f.value ?? (f.type === "checkbox" ? false : f.type === "number" ? 0 : "");
       }));
       setValues(initial);
     }
-  }, [open, groups]);
+  }, [open, groups, initialValues]);
 
   async function handleApply() {
     try {

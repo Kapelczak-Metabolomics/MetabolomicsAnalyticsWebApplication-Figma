@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { ChartPlaceholder } from "../components/chart-placeholder";
-import { Play, Download, Settings2, ChevronDown } from "lucide-react";
+import { Play, Settings2 } from "lucide-react";
 import { RunAnalysisDialog } from "../components/run-analysis-dialog";
 import { ConfigureDialog } from "../components/configure-dialog";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { toast } from "sonner";
+import { AnalysisExportMenu } from "../components/analysis-export-menu";
 import { useAnalysisPage } from "../../hooks/use-analysis-page";
 import { useApp } from "../../contexts/app-context";
+import { plsdaConfig } from "../../lib/analysis-config";
 
 const plsdaStages = [
   "Loading dataset into memory",
@@ -17,68 +17,11 @@ const plsdaStages = [
   "Computing VIP scores",
 ];
 
-const plsdaConfig = [
-  {
-    title: "Model Parameters",
-    fields: [
-      { label: "Number of Components", type: "number" as const, value: 3 },
-      { label: "Scaling Method", type: "select" as const, value: "Pareto", options: ["Pareto", "Auto", "Range", "None"] },
-      { label: "Log Transformation", type: "checkbox" as const, value: true },
-    ],
-  },
-  {
-    title: "Cross-Validation",
-    fields: [
-      { label: "CV Method", type: "select" as const, value: "7-fold", options: ["7-fold", "5-fold", "10-fold", "LOO"] },
-      { label: "Permutations", type: "number" as const, value: 1000 },
-      { label: "Seed", type: "number" as const, value: 42 },
-    ],
-  },
-  {
-    title: "Feature Selection",
-    fields: [
-      { label: "VIP threshold", type: "number" as const, value: 1.0 },
-      { label: "Apply feature selection", type: "checkbox" as const, value: false, description: "Retain only features with VIP > threshold" },
-    ],
-  },
-];
-
-function ExportMenu() {
-  return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <button className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-          <Download className="h-3.5 w-3.5" />
-          Export
-          <ChevronDown className="h-3 w-3" />
-        </button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          className="z-50 min-w-[140px] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg"
-          sideOffset={4}
-          align="end"
-        >
-          {["PNG (high-res)", "SVG (vector)", "PDF", "CSV (data)"].map((fmt) => (
-            <DropdownMenu.Item
-              key={fmt}
-              className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-              onSelect={() => toast.success(`Exported as ${fmt.split(" ")[0]}`)}
-            >
-              {fmt}
-            </DropdownMenu.Item>
-          ))}
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
-  );
-}
-
 export function PLSDAView() {
   const [runOpen, setRunOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
-  const { saveAnalysisConfig } = useApp();
-  const { dataset, results, loading, error, refresh } = useAnalysisPage("PLS-DA");
+  const { saveAnalysisConfig, getAnalysisConfig } = useApp();
+  const { dataset, results, loading, error, refresh, experimentId } = useAnalysisPage("PLS-DA");
 
   const scores = (results?.scores as Array<{ comp1: number; comp2: number; group: string }>) ?? [];
   const vipFeatures = (results?.vipFeatures as Array<{ name: string; vip: number }>) ?? [];
@@ -108,7 +51,7 @@ export function PLSDAView() {
         stages={plsdaStages}
         onComplete={refresh}
       />
-      <ConfigureDialog open={configOpen} onClose={() => setConfigOpen(false)} title="Configure PLS-DA" groups={plsdaConfig} onSave={(c) => saveAnalysisConfig("PLS-DA", c)} />
+      <ConfigureDialog open={configOpen} onClose={() => setConfigOpen(false)} title="Configure PLS-DA" groups={plsdaConfig} initialValues={getAnalysisConfig("PLS-DA")} onSave={(c) => saveAnalysisConfig("PLS-DA", c)} />
 
       <div className="flex-1 overflow-auto p-6 space-y-4">
         <div className="flex items-center justify-between">
@@ -160,7 +103,7 @@ export function PLSDAView() {
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm">Score Plot (LV1 vs LV2)</h3>
-            <ExportMenu />
+            <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PLS-DA" filename="plsda" />
           </div>
           <ChartPlaceholder type="PLS-DA Score Plot" height="450px" plsdaScores={scores} />
         </div>
@@ -169,14 +112,14 @@ export function PLSDAView() {
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm">VIP Scores</h3>
-              <ExportMenu />
+              <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PLS-DA" filename="plsda" />
             </div>
             <ChartPlaceholder type="Variable Importance in Projection" height="280px" vipFeatures={vipFeatures} />
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm">Permutation Test</h3>
-              <ExportMenu />
+              <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PLS-DA" filename="plsda" />
             </div>
             <ChartPlaceholder type="Model Validation" height="280px" permScores={permScores} />
           </div>

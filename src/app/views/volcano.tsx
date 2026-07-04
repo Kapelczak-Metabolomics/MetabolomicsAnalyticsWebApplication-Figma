@@ -1,28 +1,21 @@
 import { useMemo, useState } from "react";
 import { ChartPlaceholder } from "../components/chart-placeholder";
-import { Play, Download, Settings2, Filter, ChevronDown } from "lucide-react";
+import { Play, Settings2 } from "lucide-react";
 import { RunAnalysisDialog } from "../components/run-analysis-dialog";
 import { ConfigureDialog } from "../components/configure-dialog";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { toast } from "sonner";
+import { AnalysisExportMenu } from "../components/analysis-export-menu";
 import { useAnalysisPage } from "../../hooks/use-analysis-page";
+import { useApp } from "../../contexts/app-context";
+import { volcanoConfig } from "../../lib/analysis-config";
 import type { VolcanoPoint } from "../components/plots/volcano-plot";
 
 const volcanoStages = ["Loading dataset", "Computing fold changes", "Running statistical tests", "Applying FDR correction", "Generating volcano plot"];
-const volcanoConfig = [{ title: "Statistical Test", fields: [{ label: "Test Method", type: "select" as const, value: "t-test", options: ["t-test", "Wilcoxon"] }] }];
-
-function ExportMenu() {
-  return (
-    <button onClick={() => toast.success("Exported CSV")} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-      <Download className="h-3.5 w-3.5" /> Export
-    </button>
-  );
-}
 
 export function VolcanoView() {
   const [runOpen, setRunOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
-  const { dataset, results, loading, error, refresh } = useAnalysisPage("Volcano");
+  const { saveAnalysisConfig, getAnalysisConfig } = useApp();
+  const { dataset, results, loading, error, refresh, experimentId } = useAnalysisPage("Volcano");
 
   const features = (results?.features as VolcanoPoint[]) ?? [];
   const stats = useMemo(() => {
@@ -44,7 +37,7 @@ export function VolcanoView() {
   return (
     <div className="flex h-full">
       <RunAnalysisDialog open={runOpen} onClose={() => { setRunOpen(false); refresh(); }} analysisName="Volcano Plot Analysis" analysisType="Volcano" projectId={dataset?.project_id} datasetId={dataset?.id} stages={volcanoStages} onComplete={refresh} />
-      <ConfigureDialog open={configOpen} onClose={() => setConfigOpen(false)} title="Configure Volcano Plot" groups={volcanoConfig} />
+      <ConfigureDialog open={configOpen} onClose={() => setConfigOpen(false)} title="Configure Volcano Plot" groups={volcanoConfig} initialValues={getAnalysisConfig("Volcano")} onSave={(c) => saveAnalysisConfig("Volcano", c)} />
 
       <div className="flex-1 overflow-auto p-6 space-y-4">
         <div className="flex items-center justify-between">
@@ -67,7 +60,7 @@ export function VolcanoView() {
         </div>
 
         <div className="rounded-lg border border-border bg-card p-4">
-          <div className="mb-3 flex justify-between"><h3 className="text-sm">Volcano Plot</h3><ExportMenu /></div>
+          <div className="mb-3 flex justify-between"><h3 className="text-sm">Volcano Plot</h3><AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Volcano" filename="volcano-features" /></div>
           <ChartPlaceholder type="Volcano Plot" height="500px" volcanoFeatures={features} />
         </div>
 

@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import { ChartPlaceholder } from "../components/chart-placeholder";
-import { Play, Download, Settings2, ChevronDown } from "lucide-react";
+import { Play, Settings2 } from "lucide-react";
+import { toast } from "sonner";
 import { RunAnalysisDialog } from "../components/run-analysis-dialog";
 import { ConfigureDialog } from "../components/configure-dialog";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { toast } from "sonner";
+import { AnalysisExportMenu } from "../components/analysis-export-menu";
 import { useAnalysisPage } from "../../hooks/use-analysis-page";
 import { api } from "../../lib/api";
 import { useApp } from "../../contexts/app-context";
-import { downloadFromApi } from "../../lib/export";
+import { clusteringConfig } from "../../lib/analysis-config";
 
 const clusteringStages = [
   "Loading & scaling dataset",
@@ -17,55 +17,6 @@ const clusteringStages = [
   "Optimizing cluster cutoff",
   "Generating heatmap & dendrograms",
 ];
-
-const clusteringConfig = [
-  {
-    title: "Clustering Method",
-    fields: [
-      { label: "Algorithm", type: "select" as const, value: "Hierarchical", options: ["Hierarchical", "K-means", "DBSCAN", "Spectral"] },
-      { label: "Distance Metric", type: "select" as const, value: "Euclidean", options: ["Euclidean", "Pearson", "Spearman", "Manhattan", "Cosine"] },
-      { label: "Linkage Method", type: "select" as const, value: "Ward", options: ["Ward", "Average", "Complete", "Single"] },
-    ],
-  },
-  {
-    title: "Normalization",
-    fields: [
-      { label: "Row scaling", type: "select" as const, value: "Z-score", options: ["Z-score", "Min-Max", "None"] },
-      { label: "Log transform", type: "checkbox" as const, value: true },
-      { label: "Impute missing values", type: "checkbox" as const, value: true },
-    ],
-  },
-  {
-    title: "Visualization",
-    fields: [
-      { label: "Color palette", type: "select" as const, value: "RdBu", options: ["RdBu", "Viridis", "Plasma", "Coolwarm", "YlOrRd"] },
-      { label: "Show row dendrogram", type: "checkbox" as const, value: true },
-      { label: "Show col dendrogram", type: "checkbox" as const, value: true },
-    ],
-  },
-];
-
-function ExportMenu({ experimentId }: { experimentId?: number | null }) {
-  return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <button className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-          <Download className="h-3.5 w-3.5" /> Export <ChevronDown className="h-3 w-3" />
-        </button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content className="z-50 min-w-[140px] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg" sideOffset={4} align="end">
-          {["CSV", "JSON"].map((fmt) => (
-            <DropdownMenu.Item key={fmt} className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-              onSelect={() => experimentId ? downloadFromApi(`/experiments/${experimentId}/export?format=${fmt.toLowerCase()}`, `clustering.${fmt.toLowerCase()}`) : toast.error("Run analysis first")}>
-              {fmt}
-            </DropdownMenu.Item>
-          ))}
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
-  );
-}
 
 export function ClusteringView() {
   const [runOpen, setRunOpen] = useState(false);
@@ -107,6 +58,7 @@ export function ClusteringView() {
         onClose={() => setConfigOpen(false)}
         title="Configure Clustering"
         groups={clusteringConfig}
+        initialValues={getAnalysisConfig("Clustering")}
         onSave={(config) => saveAnalysisConfig("Clustering", config)}
       />
 
@@ -160,7 +112,7 @@ export function ClusteringView() {
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm">Heatmap with Dendrograms</h3>
-            <ExportMenu />
+            <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Clustering" filename="clustering" />
           </div>
           <ChartPlaceholder type="Clustered Heatmap" height="550px" heatmap={heatmap ? { matrix: heatmap.matrix, sampleLabels: heatmap.sampleLabels, featureLabels: heatmap.featureLabels } : undefined} />
         </div>
@@ -169,14 +121,14 @@ export function ClusteringView() {
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm">Sample Dendrogram</h3>
-              <ExportMenu experimentId={experimentId} />
+              <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Clustering" filename="clustering-dendrogram" />
             </div>
             <ChartPlaceholder type="Hierarchical Tree" height="250px" dendrogram={dendrogram} />
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm">Silhouette Analysis</h3>
-              <ExportMenu experimentId={experimentId} />
+              <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Clustering" filename="clustering-dendrogram" />
             </div>
             <ChartPlaceholder type="Cluster Quality" height="250px" silhouette={silhouette} />
           </div>

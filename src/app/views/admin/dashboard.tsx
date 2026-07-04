@@ -35,9 +35,17 @@ const recentActivity: Array<{ user: string; action: string; time: string }> = []
 export function AdminDashboard() {
   const [statData, setStatData] = useState<Record<string, string | number>>({});
   const [activity, setActivity] = useState(recentActivity);
+  const [health, setHealth] = useState({ cpu: 0, memory: 0, disk: 0, network: 0 });
 
   useEffect(() => {
-    api.admin.getStats().then((s) => setStatData(s as unknown as Record<string, string | number>)).catch(console.error);
+    api.admin.getStats().then((s) => {
+      setStatData(s as unknown as Record<string, string | number>);
+      if (s.health && typeof s.health === "object") {
+        const h = s.health as { cpu: number; memory: number; disk: number; network: number };
+        setHealth(h);
+      }
+    }).catch(console.error);
+    api.admin.getHealth().then(setHealth).catch(console.error);
     api.admin.getActivity().then(setActivity).catch(console.error);
   }, []);
 
@@ -126,10 +134,10 @@ export function AdminDashboard() {
               </h3>
               <div className="space-y-3">
                 {[
-                  { label: "CPU", value: 34, color: "bg-violet-500" },
-                  { label: "Memory", value: 67, color: "bg-cyan-500" },
-                  { label: "Disk", value: 42, color: "bg-emerald-500" },
-                  { label: "S3 Storage", value: 17, color: "bg-amber-500" },
+                  { label: "CPU", value: health.cpu, color: "bg-violet-500" },
+                  { label: "Memory", value: health.memory, color: "bg-cyan-500" },
+                  { label: "Disk", value: health.disk, color: "bg-emerald-500" },
+                  { label: "Network", value: health.network, color: "bg-amber-500" },
                 ].map(({ label, value, color }) => (
                   <div key={label}>
                     <div className="flex justify-between text-xs mb-1">
@@ -148,11 +156,11 @@ export function AdminDashboard() {
               <h3 className="text-sm font-medium mb-3">Quick Stats</h3>
               <div className="space-y-2 text-xs">
                 {[
-                  { label: "Runs today", value: "23" },
-                  { label: "Datasets imported", value: "8" },
-                  { label: "Active sessions", value: "14" },
-                  { label: "Pending invites", value: "3" },
-                  { label: "Storage used", value: "342 GB" },
+                  { label: "Running analyses", value: String(statData.runningAnalyses ?? "—") },
+                  { label: "Datasets imported (30d)", value: String(statData.importsThisMonth ?? "—") },
+                  { label: "Active sessions (7d)", value: String(statData.activeSessions ?? "—") },
+                  { label: "New users (month)", value: String(statData.newUsersThisMonth ?? "—") },
+                  { label: "Storage used", value: statData.storageGb ? `${statData.storageGb} GB` : "—" },
                 ].map(({ label, value }) => (
                   <div key={label} className="flex justify-between">
                     <span className="text-muted-foreground">{label}</span>
