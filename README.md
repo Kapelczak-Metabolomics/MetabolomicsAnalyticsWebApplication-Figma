@@ -37,10 +37,10 @@ Use `docker-compose.easypanel.yml` for one-click deployment on [EasyPanel](https
    - `CHANGE_ME_DB_PASSWORD` — PostgreSQL password (use the same value in `DATABASE_URL`)
    - `CHANGE_ME_JWT_SECRET` — long random string for JWT signing
 5. Click **Deploy** and wait for all four services to become healthy (~2–3 minutes on first run)
-6. Open the **web** service → **Domains** → add your domain with **proxy port 80**
+6. Open the **web** service → **Domains** → add your domain with **proxy port 47821**
 7. EasyPanel provisions HTTPS automatically via Let's Encrypt
 
-Only the **web** (nginx) service is exposed on port 80. The API and database communicate on the internal Docker network. Sign in at your domain with `sarah.chen@university.edu` / `password123`.
+Only the **web** service is published on host port **47821**. API, Python, and PostgreSQL stay on the internal Docker network. Sign in at your domain with `sarah.chen@university.edu` / `password123`.
 
 ## Local Development
 
