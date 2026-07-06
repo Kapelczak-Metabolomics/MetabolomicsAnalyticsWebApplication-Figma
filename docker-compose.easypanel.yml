@@ -6,13 +6,18 @@
 #   3. Set "Compose file" to: docker-compose.easypanel.yml
 #   4. Replace CHANGE_ME_* secrets below before deploying
 #   5. Deploy, then open the "web" service → Domains → add your domain
-#      Proxy port: 47821 (container nginx listens on 80; host binds 47821 to avoid port 80 conflicts)
+#      Proxy port: 80 (container internal port — NOT a host port)
 #
-# Port map (host → container) — all non-standard to avoid conflicts with 80, 443, 3000, 5432, 8080:
-#   web    47821 → 80   (only service published to host; point EasyPanel domain here)
-#   api    internal 47822 (Docker network only)
-#   python internal 47824 (Docker network only)
-#   db     internal 5432  (Docker network only)
+# IMPORTANT — do NOT use host "ports" mappings in this file.
+# EasyPanel injects docker-compose.override.yml and merges port lists;
+# binding 80 or 47821 on the host conflicts with Traefik (port already allocated).
+# Use "expose" only; EasyPanel routes your domain to the container via its proxy.
+#
+# Internal port map (Docker network only):
+#   web    80    (nginx — point EasyPanel domain proxy here)
+#   api    47822
+#   python 47824
+#   db     5432
 #   - EasyPanel does not load .env files — all variables are defined here.
 #   - After first deploy, sign in at your domain with:
 #       Email: sarah.chen@university.edu
@@ -91,7 +96,7 @@ services:
         METABO_API_PORT: "47822"
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "47821:80"
     depends_on:
       api:
         condition: service_healthy

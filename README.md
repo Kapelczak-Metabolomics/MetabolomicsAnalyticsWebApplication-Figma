@@ -37,10 +37,14 @@ Use `docker-compose.easypanel.yml` for one-click deployment on [EasyPanel](https
    - `CHANGE_ME_DB_PASSWORD` — PostgreSQL password (use the same value in `DATABASE_URL`)
    - `CHANGE_ME_JWT_SECRET` — long random string for JWT signing
 5. Click **Deploy** and wait for all four services to become healthy (~2–3 minutes on first run)
-6. Open the **web** service → **Domains** → add your domain with **proxy port 47821**
+6. Open the **web** service → **Domains** → add your domain
+   - **Service:** `web`
+   - **Proxy port:** `80` (container port — EasyPanel Traefik routes 80/443 to this; do not publish host port 80 in compose)
 7. EasyPanel provisions HTTPS automatically via Let's Encrypt
 
-Only the **web** service is published on host port **47821**. API, Python, and PostgreSQL stay on the internal Docker network. Sign in at your domain with `sarah.chen@university.edu` / `password123`.
+**Troubleshooting:** If deploy fails with `port is already allocated`, remove any **Published** host ports from the EasyPanel service UI (Domains/Ports tabs). This compose file intentionally uses `expose` only so Traefik handles external access.
+
+Only internal Docker ports are used. Sign in at your domain with `sarah.chen@university.edu` / `password123`.
 
 ## Local Development
 
