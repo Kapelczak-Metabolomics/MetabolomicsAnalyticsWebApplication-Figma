@@ -126,6 +126,30 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  importMzxml: async (data: { projectId: number; name: string; files: File[]; groups?: Record<string, string> }) => {
+    const form = new FormData();
+    form.append("projectId", String(data.projectId));
+    form.append("name", data.name);
+    if (data.groups) form.append("groups", JSON.stringify(data.groups));
+    data.files.forEach((f) => form.append("files", f));
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/datasets/import/mzxml`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new ApiError(res.status, body.error || res.statusText);
+    }
+    return res.json() as Promise<{ id: number; status: string; message: string }>;
+  },
+
+  getImportStatus: (datasetId: number) =>
+    request<{ id: number; status: string; error: string | null; samples: number; features: number; missingPct: number; sourceFormat: string }>(
+      `/datasets/${datasetId}/import-status`
+    ),
+
   getNotifications: () => request<Array<{
     id: number; type: string; title: string; message: string; time: string; read: boolean; link?: string; linkLabel?: string;
   }>>("/notifications"),

@@ -15,11 +15,12 @@ Then open **http://localhost:47821** and sign in with:
 - **Email:** `sarah.chen@university.edu`
 - **Password:** `password123`
 
-Docker Compose starts three services on **non-standard ports** (47821–47823) to avoid conflicts with common local services such as 3000, 5173, 5432, and 8080. Copy `.env.example` to `.env` to customize ports if needed.
+Docker Compose starts four services on **non-standard ports** (47821–47824) to avoid conflicts with common local services such as 3000, 5173, 5432, and 8080.
 
 | Service | Description | Host port |
 |---------|-------------|-----------|
 | `db` | PostgreSQL 16 with persistent volume | **47823** |
+| `python` | FastAPI — mzXML import (pymzML) and analysis engine (scikit-learn, scipy) | **47824** |
 | `api` | Express API — auto-creates schema and seeds data on first run | **47822** |
 | `web` | Nginx serving the React app and proxying `/api` | **47821** |
 
@@ -35,7 +36,7 @@ Use `docker-compose.easypanel.yml` for one-click deployment on [EasyPanel](https
 4. Edit the compose file and replace these placeholders before deploying:
    - `CHANGE_ME_DB_PASSWORD` — PostgreSQL password (use the same value in `DATABASE_URL`)
    - `CHANGE_ME_JWT_SECRET` — long random string for JWT signing
-5. Click **Deploy** and wait for all three services to become healthy (~1–2 minutes on first run)
+5. Click **Deploy** and wait for all four services to become healthy (~2–3 minutes on first run)
 6. Open the **web** service → **Domains** → add your domain with **proxy port 80**
 7. EasyPanel provisions HTTPS automatically via Let's Encrypt
 
@@ -65,6 +66,16 @@ npm run dev
 
 The API runs on http://localhost:47822 and seeds the database automatically.
 
+### Python Analysis Service (optional for local dev)
+
+```bash
+cd python
+pip install -r requirements.txt
+uvicorn app.main:app --host 0.0.0.0 --port 47824
+```
+
+Set `PYTHON_SERVICE_URL=http://127.0.0.1:47824` and `USE_PYTHON_ANALYSIS=true` when running the API locally to use Python for analysis and mzXML parsing.
+
 ### Frontend
 
 ```bash
@@ -74,13 +85,24 @@ npm run dev
 
 The Vite dev server proxies `/api` requests to the backend.
 
+## mzXML Import
+
+1. Sign in and open **Data → Import**
+2. Select **mzXML** format
+3. Upload one or more `.mzxml` / `.xml` files (or a `.zip` archive)
+4. Assign sample groups, then start import
+5. The API uploads files to the Python service, parses MS1 spectra, and loads the feature matrix into PostgreSQL
+6. Poll import status until the dataset is **ready**, then run analyses as usual
+
+Each mzXML file becomes one sample; features are binned m/z values with summed intensities.
+
 ## Architecture
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌──────────────┐
-│   Browser   │────▶│  Nginx/web  │────▶│  Express API │
-│  (React)    │     │   :47821    │     │    :47822    │
-└─────────────┘     └─────────────┘     └──────┬───────┘
+┌─────────────┐     ┌─────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Browser   │────▶│  Nginx/web  │────▶│  Express API │────▶│ Python svc   │
+│  (React)    │     │   :47821    │     │    :47822    │     │   :47824     │
+└─────────────┘     └─────────────┘     └──────┬───────┘     └──────────────┘
                                                │
                                         ┌──────▼───────┐
                                         │  PostgreSQL  │
@@ -88,12 +110,17 @@ The Vite dev server proxies `/api` requests to the backend.
                                         └──────────────┘
 ```
 
+Analysis runs prefer the Python service when available (`USE_PYTHON_ANALYSIS=true`); the Express API falls back to its TypeScript implementations if Python is unreachable.
+
 ## Features
 
 - JWT authentication with role-based access (Administrator, Researcher, Analyst)
 - Project and dataset management backed by PostgreSQL
+- **mzXML import** — upload raw LC-MS files; Python parses MS1 spectra into m/z feature matrices
+- CSV and mzXML dataset import with background processing and status polling
 - Real metabolomics feature statistics computed from stored sample data
-- Analysis runs (PCA, Volcano, Clustering, PLS-DA, Pathway, Biomarker) persisted to the database
+- Analysis runs (PCA, Volcano, Clustering, PLS-DA, Pathway, Biomarker) via Python with TypeScript fallback
+- Interactive plots (Recharts) with **SVG/PNG export** for publication-ready figures
 - Notifications, audit logs, and admin panel with live data
 - No simulated/mock data in production — all views fetch from the API
 
@@ -104,9 +131,13 @@ The Vite dev server proxies `/api` requests to the backend.
 | `METABO_WEB_PORT` | `47821` | Host port for the web UI |
 | `METABO_API_PORT` | `47822` | Host and container port for the API |
 | `METABO_DB_PORT` | `47823` | Host port mapped to PostgreSQL |
+| `METABO_PYTHON_PORT` | `47824` | Host port for the Python analysis service |
 | `DATABASE_URL` | set in docker-compose | PostgreSQL connection string |
 | `JWT_SECRET` | change in production | Secret for signing auth tokens |
 | `PORT` | `47822` | API server port (same as `METABO_API_PORT`) |
+| `PYTHON_SERVICE_URL` | `http://python:47824` | Python service URL (Docker internal) |
+| `USE_PYTHON_ANALYSIS` | `true` | Use Python for analysis; set `false` for TS-only |
+| `RAW_DATA_DIR` | `/data/raw` | Directory for uploaded mzXML raw files |
 
 ## Original Design
 

@@ -9,7 +9,7 @@
 #      Proxy port: 80 (HTTP/HTTPS is handled by EasyPanel Traefik)
 #
 # Notes:
-#   - Only the web (nginx) service is published; API and PostgreSQL are internal.
+#   - Only the web (nginx) service is published; API, Python, and PostgreSQL are internal.
 #   - EasyPanel does not load .env files — all variables are defined here.
 #   - After first deploy, sign in at your domain with:
 #       Email: sarah.chen@university.edu
@@ -32,6 +32,20 @@ services:
       retries: 10
       start_period: 15s
 
+  python:
+    build:
+      context: ./python
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "47824"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:47824/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
+
   api:
     build:
       context: ./server
@@ -42,10 +56,17 @@ services:
       JWT_SECRET: CHANGE_ME_JWT_SECRET
       PORT: "47822"
       NODE_ENV: production
+      PYTHON_SERVICE_URL: http://python:47824
+      USE_PYTHON_ANALYSIS: "true"
+      RAW_DATA_DIR: /data/raw
     expose:
       - "47822"
+    volumes:
+      - raw_data:/data/raw
     depends_on:
       db:
+        condition: service_healthy
+      python:
         condition: service_healthy
     healthcheck:
       test:
@@ -73,3 +94,4 @@ services:
 
 volumes:
   postgres_data:
+  raw_data:

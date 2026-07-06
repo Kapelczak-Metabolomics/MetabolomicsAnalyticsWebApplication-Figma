@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { HeatmapPlot } from "./plots/heatmap-plot";
 import { VolcanoPlot, type VolcanoPoint } from "./plots/volcano-plot";
 import { PCAPlot, type PCAScore } from "./plots/pca-plot";
@@ -10,6 +11,7 @@ import { PermutationPlot } from "./plots/permutation-plot";
 interface ChartPlaceholderProps {
   type: string;
   height?: string;
+  exportId?: string;
   pcaScores?: PCAScore[];
   explainedVariance?: number[];
   volcanoFeatures?: VolcanoPoint[];
@@ -25,6 +27,7 @@ interface ChartPlaceholderProps {
 export function ChartPlaceholder({
   type,
   height = "400px",
+  exportId,
   pcaScores,
   explainedVariance,
   volcanoFeatures,
@@ -36,75 +39,49 @@ export function ChartPlaceholder({
   permScores,
   silhouette,
 }: ChartPlaceholderProps) {
+  const wrap = (children: ReactNode) => (
+    <div id={exportId} data-plot-export={exportId ?? type} className="flex items-center justify-center overflow-hidden rounded-md border border-border bg-white dark:bg-muted/10" style={{ height }}>
+      {children}
+    </div>
+  );
+
   const lower = type.toLowerCase();
 
   if (lower.includes("heatmap") && heatmap) {
-    return (
-      <div className="flex items-center justify-center overflow-auto rounded-md border border-border bg-muted/10" style={{ height }}>
-        <HeatmapPlot {...heatmap} />
-      </div>
-    );
+    return wrap(<HeatmapPlot {...heatmap} />);
   }
 
   if (lower.includes("volcano")) {
-    return (
-      <div className="flex items-center justify-center overflow-hidden rounded-md border border-border bg-muted/10" style={{ height }}>
-        <VolcanoPlot features={volcanoFeatures} />
-      </div>
-    );
+    return wrap(<VolcanoPlot features={volcanoFeatures} />);
   }
 
   if (lower.includes("pca")) {
-    return (
-      <div className="flex items-center justify-center overflow-hidden rounded-md border border-border bg-muted/10" style={{ height }}>
-        <PCAPlot scores={pcaScores} explainedVariance={explainedVariance} />
-      </div>
-    );
+    return wrap(<PCAPlot scores={pcaScores} explainedVariance={explainedVariance} />);
   }
 
   if (lower.includes("pls-da") || lower.includes("plsda")) {
-    return (
-      <div className="flex items-center justify-center overflow-hidden rounded-md border border-border bg-muted/10" style={{ height }}>
-        <PLSDAPlot scores={plsdaScores} />
-      </div>
-    );
+    return wrap(<PLSDAPlot scores={plsdaScores} />);
   }
 
   if (lower.includes("dot plot") || lower.includes("enrichment") || lower.includes("pathway")) {
-    return (
-      <div className="flex items-center justify-center overflow-auto rounded-md border border-border bg-muted/10" style={{ height }}>
-        <PathwayPlot pathways={pathways} />
-      </div>
-    );
+    return wrap(<PathwayPlot pathways={pathways} />);
   }
 
   if (lower.includes("dendrogram") || lower.includes("hierarchical tree")) {
-    return (
-      <div className="flex items-center justify-center overflow-hidden rounded-md border border-border bg-muted/10" style={{ height }}>
-        <DendrogramPlot data={dendrogram} height={parseInt(height) || 250} />
-      </div>
-    );
+    return wrap(<DendrogramPlot data={dendrogram} height={parseInt(height) || 250} />);
   }
 
   if (lower.includes("vip") || lower.includes("importance")) {
-    return (
-      <div className="flex items-center justify-center overflow-auto rounded-md border border-border bg-muted/10" style={{ height }}>
-        <VIPPlot features={vipFeatures} />
-      </div>
-    );
+    return wrap(<VIPPlot features={vipFeatures} />);
   }
 
   if (lower.includes("permutation") || lower.includes("validation")) {
-    return (
-      <div className="flex items-center justify-center overflow-hidden rounded-md border border-border bg-muted/10" style={{ height }}>
-        <PermutationPlot scores={permScores} />
-      </div>
-    );
+    return wrap(<PermutationPlot scores={permScores} />);
   }
 
   if (lower.includes("silhouette") || lower.includes("cluster quality")) {
     return (
-      <div className="flex items-center justify-center rounded-md border border-border bg-muted/10" style={{ height }}>
+      <div id={exportId} data-plot-export={exportId ?? type} className="flex items-center justify-center rounded-md border border-border bg-muted/10" style={{ height }}>
         <div className="text-center">
           <p className="text-3xl font-semibold tabular-nums">{silhouette != null ? silhouette.toFixed(3) : "—"}</p>
           <p className="text-sm text-muted-foreground mt-1">Silhouette Score</p>

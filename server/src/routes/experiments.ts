@@ -3,7 +3,7 @@ import { query } from "../db/index.js";
 import { authMiddleware, logAudit, createNotification } from "../middleware/auth.js";
 import { loadDatasetMatrix, formatRelativeTime, formatDuration } from "../utils/dataset.js";
 import { getProcessUsage } from "../utils/metrics.js";
-import { runPCA, runVolcano, runClustering, runPathway, runBiomarker, runPLSDA } from "../services/analysis.js";
+import { computeWithEngine } from "../services/compute-analysis.js";
 
 const router = Router();
 
@@ -12,37 +12,7 @@ async function executeAnalysis(experimentId: number, type: string, datasetId: nu
 
   try {
     const { samples, features } = await loadDatasetMatrix(datasetId);
-    const groups = [...new Set(samples.map((s) => s.groupLabel))];
-    const groupA = String(config.groupA ?? groups[0]);
-    const groupB = String(config.groupB ?? groups[1] ?? groups[0]);
-    let results: unknown;
-
-    switch (type) {
-      case "PCA":
-        results = runPCA(samples, Number(config.components ?? 2), config);
-        break;
-      case "Volcano":
-        results = runVolcano(samples, features, groupA, groupB, config);
-        break;
-      case "Clustering":
-        results = runClustering(samples, features, config);
-        break;
-      case "PLS-DA":
-        results = runPLSDA(samples, features, groupA, groupB, config);
-        break;
-      case "Pathway": {
-        const volcano = runVolcano(samples, features, groupA, groupB, config);
-        results = runPathway(volcano, config);
-        break;
-      }
-      case "Biomarker": {
-        const volcano = runVolcano(samples, features, groupA, groupB, config);
-        results = runBiomarker(volcano, config);
-        break;
-      }
-      default:
-        results = { message: "Analysis completed" };
-    }
+    const results = await computeWithEngine(type, samples, features, config);
 
     const usage = getProcessUsage();
     await query(

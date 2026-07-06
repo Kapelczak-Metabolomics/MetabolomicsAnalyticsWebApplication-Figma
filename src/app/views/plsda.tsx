@@ -103,25 +103,25 @@ export function PLSDAView() {
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm">Score Plot (LV1 vs LV2)</h3>
-            <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PLS-DA" filename="plsda" />
+            <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PLS-DA" filename="plsda-scores" plotContainerId="plot-plsda-main" />
           </div>
-          <ChartPlaceholder type="PLS-DA Score Plot" height="450px" plsdaScores={scores} />
+          <ChartPlaceholder type="PLS-DA Score Plot" height="450px" exportId="plot-plsda-main" plsdaScores={scores} />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm">VIP Scores</h3>
-              <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PLS-DA" filename="plsda" />
+              <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PLS-DA" filename="plsda-vip" plotContainerId="plot-plsda-vip" />
             </div>
-            <ChartPlaceholder type="Variable Importance in Projection" height="280px" vipFeatures={vipFeatures} />
+            <ChartPlaceholder type="Variable Importance in Projection" height="280px" exportId="plot-plsda-vip" vipFeatures={vipFeatures} />
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm">Permutation Test</h3>
-              <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PLS-DA" filename="plsda" />
+              <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PLS-DA" filename="plsda-permutation" plotContainerId="plot-plsda-permutation" />
             </div>
-            <ChartPlaceholder type="Model Validation" height="280px" permScores={permScores} />
+            <ChartPlaceholder type="Model Validation" height="280px" exportId="plot-plsda-permutation" permScores={permScores} />
           </div>
         </div>
       </div>

@@ -92,9 +92,9 @@ export function PCAView() {
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm">Score Plot (PC1 vs PC2)</h3>
-            <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PCA" filename="pca-scores" />
+            <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PCA" filename="pca-scores" plotContainerId="plot-pca-main" />
           </div>
-          <ChartPlaceholder type="PCA Score Plot" height="450px" pcaScores={scores} explainedVariance={explainedVariance} />
+          <ChartPlaceholder type="PCA Score Plot" height="450px" exportId="plot-pca-main" pcaScores={scores} explainedVariance={explainedVariance} />
         </div>
       </div>
 

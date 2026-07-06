@@ -2,37 +2,10 @@ import { Router, Request, Response } from "express";
 import { query } from "../db/index.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { loadDatasetMatrix } from "../utils/dataset.js";
-import { runPCA, runVolcano, runClustering, runPathway, runBiomarker, runPLSDA } from "../services/analysis.js";
+import { runClustering } from "../services/analysis.js";
+import { computeResults } from "../services/compute-analysis.js";
 
 const router = Router();
-
-async function computeResults(type: string, datasetId: number, config: Record<string, unknown> = {}) {
-  const { samples, features } = await loadDatasetMatrix(datasetId);
-  const groups = [...new Set(samples.map((s) => s.groupLabel))];
-  const groupA = String(config.groupA ?? groups[0]);
-  const groupB = String(config.groupB ?? groups[1] ?? groups[0]);
-
-  switch (type) {
-    case "PCA":
-      return runPCA(samples, Number(config.components ?? 2), config);
-    case "Volcano":
-      return runVolcano(samples, features, groupA, groupB, config);
-    case "Clustering":
-      return runClustering(samples, features, config);
-    case "PLS-DA":
-      return runPLSDA(samples, features, groupA, groupB, config);
-    case "Pathway": {
-      const volcano = runVolcano(samples, features, groupA, groupB, config);
-      return runPathway(volcano, config);
-    }
-    case "Biomarker": {
-      const volcano = runVolcano(samples, features, groupA, groupB, config);
-      return runBiomarker(volcano, config);
-    }
-    default:
-      return { message: "Unknown analysis type" };
-  }
-}
 
 router.get("/results", authMiddleware, async (req: Request, res: Response) => {
   const datasetId = parseInt(String(req.query.datasetId), 10);

@@ -106,9 +106,9 @@ export function PathwayView() {
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm">Enrichment Overview</h3>
-            <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Pathway" filename="pathway-enrichment" />
+            <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Pathway" filename="pathway-enrichment" plotContainerId="plot-pathway-main" />
           </div>
-          <ChartPlaceholder type="Dot Plot (p-value vs Count)" height="400px" pathways={pathways} />
+          <ChartPlaceholder type="Dot Plot (p-value vs Count)" height="400px" exportId="plot-pathway-main" pathways={pathways} />
         </div>
 
         <div className="rounded-lg border border-border bg-card">

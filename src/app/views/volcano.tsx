@@ -60,8 +60,8 @@ export function VolcanoView() {
         </div>
 
         <div className="rounded-lg border border-border bg-card p-4">
-          <div className="mb-3 flex justify-between"><h3 className="text-sm">Volcano Plot</h3><AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Volcano" filename="volcano-features" /></div>
-          <ChartPlaceholder type="Volcano Plot" height="500px" volcanoFeatures={features} />
+          <div className="mb-3 flex justify-between"><h3 className="text-sm">Volcano Plot</h3><AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Volcano" filename="volcano-features" plotContainerId="plot-volcano-main" /></div>
+          <ChartPlaceholder type="Volcano Plot" height="500px" exportId="plot-volcano-main" volcanoFeatures={features} />
         </div>
 
         <div className="rounded-lg border border-border bg-card">

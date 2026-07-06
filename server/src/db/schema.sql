@@ -191,6 +191,11 @@ CREATE TABLE IF NOT EXISTS analysis_configs (
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS study_type VARCHAR(100) DEFAULT 'metabolomics';
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS visibility VARCHAR(50) DEFAULT 'team';
 
+ALTER TABLE datasets ADD COLUMN IF NOT EXISTS source_format VARCHAR(50) DEFAULT 'csv';
+ALTER TABLE datasets ADD COLUMN IF NOT EXISTS import_status VARCHAR(20) DEFAULT 'ready';
+ALTER TABLE datasets ADD COLUMN IF NOT EXISTS import_error TEXT;
+ALTER TABLE datasets ADD COLUMN IF NOT EXISTS raw_file_path TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_id);
 CREATE INDEX IF NOT EXISTS idx_datasets_project ON datasets(project_id);
 CREATE INDEX IF NOT EXISTS idx_samples_dataset ON samples(dataset_id);

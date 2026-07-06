@@ -1,16 +1,17 @@
 import { Download, ChevronDown } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
-import { downloadCsv, downloadJson, downloadFromApi } from "../../lib/export";
+import { downloadCsv, downloadJson, downloadFromApi, exportPlot } from "../../lib/export";
 
 interface AnalysisExportMenuProps {
   experimentId?: number | null;
   results?: Record<string, unknown> | null;
   analysisType: string;
   filename?: string;
+  plotContainerId?: string;
 }
 
-export function AnalysisExportMenu({ experimentId, results, analysisType, filename }: AnalysisExportMenuProps) {
+export function AnalysisExportMenu({ experimentId, results, analysisType, filename, plotContainerId }: AnalysisExportMenuProps) {
   const base = filename ?? analysisType.toLowerCase().replace(/\s+/g, "-");
 
   function exportClient(fmt: string) {
@@ -20,6 +21,7 @@ export function AnalysisExportMenu({ experimentId, results, analysisType, filena
     }
     if (fmt === "JSON") {
       downloadJson(`${base}.json`, results);
+      toast.success("Exported JSON");
       return;
     }
     if (fmt === "CSV") {
@@ -29,9 +31,18 @@ export function AnalysisExportMenu({ experimentId, results, analysisType, filena
         return;
       }
       downloadCsv(`${base}.csv`, rows);
+      toast.success("Exported CSV");
       return;
     }
-    toast.info(`${fmt} export: use browser screenshot or SVG export from plot`);
+  }
+
+  async function exportFigure(fmt: "SVG" | "PNG") {
+    try {
+      await exportPlot(plotContainerId, base, fmt);
+      toast.success(`Exported ${fmt}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : `Failed to export ${fmt}`);
+    }
   }
 
   return (
@@ -43,13 +54,18 @@ export function AnalysisExportMenu({ experimentId, results, analysisType, filena
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content className="z-50 min-w-[140px] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg" sideOffset={4} align="end">
-          {["CSV", "JSON"].map((fmt) => (
+          {["CSV", "JSON", "SVG", "PNG"].map((fmt) => (
             <DropdownMenu.Item
               key={fmt}
               className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
               onSelect={() => {
+                if (fmt === "SVG" || fmt === "PNG") {
+                  exportFigure(fmt);
+                  return;
+                }
                 if (experimentId) {
                   downloadFromApi(`/experiments/${experimentId}/export?format=${fmt.toLowerCase()}`, `${base}.${fmt.toLowerCase()}`)
+                    .then(() => toast.success(`Exported ${fmt}`))
                     .catch(() => exportClient(fmt));
                 } else {
                   exportClient(fmt);

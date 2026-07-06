@@ -112,25 +112,25 @@ export function ClusteringView() {
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm">Heatmap with Dendrograms</h3>
-            <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Clustering" filename="clustering" />
+            <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Clustering" filename="clustering" plotContainerId="plot-clustering-heatmap" />
           </div>
-          <ChartPlaceholder type="Clustered Heatmap" height="550px" heatmap={heatmap ? { matrix: heatmap.matrix, sampleLabels: heatmap.sampleLabels, featureLabels: heatmap.featureLabels } : undefined} />
+          <ChartPlaceholder type="Clustered Heatmap" height="550px" exportId="plot-clustering-heatmap" heatmap={heatmap ? { matrix: heatmap.matrix, sampleLabels: heatmap.sampleLabels, featureLabels: heatmap.featureLabels } : undefined} />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm">Sample Dendrogram</h3>
-              <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Clustering" filename="clustering-dendrogram" />
+              <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Clustering" filename="clustering-dendrogram" plotContainerId="plot-clustering-dendrogram" />
             </div>
-            <ChartPlaceholder type="Hierarchical Tree" height="250px" dendrogram={dendrogram} />
+            <ChartPlaceholder type="Hierarchical Tree" height="250px" exportId="plot-clustering-dendrogram" dendrogram={dendrogram} />
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm">Silhouette Analysis</h3>
-              <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Clustering" filename="clustering-dendrogram" />
+              <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Clustering" filename="clustering-silhouette" plotContainerId="plot-clustering-silhouette" />
             </div>
-            <ChartPlaceholder type="Cluster Quality" height="250px" silhouette={silhouette} />
+            <ChartPlaceholder type="Cluster Quality" height="250px" exportId="plot-clustering-silhouette" silhouette={silhouette} />
           </div>
         </div>
       </div>
