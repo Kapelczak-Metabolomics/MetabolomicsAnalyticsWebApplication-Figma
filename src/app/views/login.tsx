@@ -6,8 +6,8 @@ import { toast } from "sonner";
 
 export function LoginView() {
   const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState("sarah.chen@university.edu");
-  const [password, setPassword] = useState("password123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
 
@@ -104,7 +104,7 @@ export function LoginView() {
           </form>
 
           <p className="mt-4 text-center text-xs text-muted-foreground">
-            Demo: sarah.chen@university.edu / password123
+            First-time setup? Ask your administrator for credentials.
           </p>
         </div>
 

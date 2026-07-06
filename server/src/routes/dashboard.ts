@@ -1,7 +1,8 @@
 import { Router, Request, Response } from "express";
 import { query } from "../db/index.js";
 import { authMiddleware } from "../middleware/auth.js";
-import { formatRelativeTime } from "../utils/dataset.js";
+import { loadDatasetMatrix, formatRelativeTime } from "../utils/dataset.js";
+import { computeResults } from "../services/compute-analysis.js";
 
 const router = Router();
 
@@ -44,8 +45,13 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
   if (volcanoExp?.results && typeof volcanoExp.results === "object") {
     const r = volcanoExp.results as { significantCount?: number };
     significantFeatures = r.significantCount ?? 0;
-  } else if (dataset) {
-    significantFeatures = Math.floor(dataset.features_count * 0.15);
+  } else if (dataset?.id) {
+    try {
+      const volcano = await computeResults("Volcano", dataset.id, {});
+      significantFeatures = (volcano as { significantCount?: number }).significantCount ?? 0;
+    } catch {
+      significantFeatures = 0;
+    }
   }
 
   const plsdaExp = experiments.rows.find((e) => e.type === "PLS-DA");

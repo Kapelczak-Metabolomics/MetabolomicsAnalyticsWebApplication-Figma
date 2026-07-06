@@ -33,6 +33,8 @@ export function PLSDAView() {
   const r2 = (results?.r2 as number) ?? 0;
   const q2 = (results?.q2 as number) ?? 0;
   const folds = (results?.folds as number) ?? 7;
+  const permutations = (results?.permutations as number) ?? 100;
+  const permutationP = (results?.permutationP as number) ?? null;
   const samplesProcessed = (results?.samplesProcessed as number) ?? dataset?.samples_count ?? 0;
 
   if (loading) {
@@ -173,15 +175,15 @@ export function PLSDAView() {
           <div className="space-y-2 text-xs">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Method</span>
-              <span>7-fold CV</span>
+              <span>{folds}-fold CV</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Permutations</span>
-              <span>1000</span>
+              <span>{permutations}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">p-value</span>
-              <span className="tabular-nums">&lt; 0.001</span>
+              <span className="tabular-nums">{permutationP != null ? (permutationP < 0.001 ? "< 0.001" : permutationP.toFixed(4)) : "—"}</span>
             </div>
           </div>
         </div>

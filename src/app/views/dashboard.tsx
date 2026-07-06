@@ -76,7 +76,7 @@ export function Dashboard() {
           title="Samples Analyzed"
           value={kpis?.samplesAnalyzed.toLocaleString() ?? "0"}
           icon={Users}
-          change="100% complete"
+          change={data?.status === "ready" ? "Dataset ready" : "Import data to begin"}
           changeType="neutral"
         />
         <KPICard

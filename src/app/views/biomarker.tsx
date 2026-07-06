@@ -91,7 +91,7 @@ export function BiomarkerView() {
   const { dataset, results, loading, error, refresh, experimentId } = useAnalysisPage("Biomarker");
 
   const allCandidates = (results?.candidates as Array<{
-    name: string; featureId: string; score: number; log2fc: number; pValue: number; vip: number; pathway?: string; pubmedCount?: number;
+    name: string; featureId: string; score: number; log2fc: number; pValue: number; vip: number; pathway?: string; literatureScore?: number;
   }>) ?? [];
 
   useEffect(() => {
@@ -147,6 +147,19 @@ export function BiomarkerView() {
     }
   }
 
+  function biomarkerRunConfig() {
+    const base = getAnalysisConfig("Biomarker");
+    const fcCrit = criteria.find((c) => /fold/i.test(c.name));
+    const pCrit = criteria.find((c) => /significance|p-value|p value/i.test(c.name));
+    const vipCrit = criteria.find((c) => /vip/i.test(c.name));
+    return {
+      ...base,
+      minFoldChange: fcCrit ? parseFloat(fcCrit.value) || base.minFoldChange : base.minFoldChange,
+      maxPValue: pCrit ? parseFloat(pCrit.value) || base.maxPValue : base.maxPValue,
+      minVip: vipCrit ? parseFloat(vipCrit.value) || base.minVip : base.minVip,
+    };
+  }
+
   if (loading) {
     return <div className="flex h-full items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div>;
   }
@@ -154,7 +167,7 @@ export function BiomarkerView() {
   return (
     <div className="flex h-full">
       <RunAnalysisDialog open={runOpen} onClose={() => { setRunOpen(false); refresh(); }} analysisName="Biomarker Discovery" analysisType="Biomarker"
-        projectId={dataset?.project_id} datasetId={dataset?.id} onComplete={refresh} />
+        projectId={dataset?.project_id} datasetId={dataset?.id} config={biomarkerRunConfig()} onComplete={refresh} />
       <ConfigureDialog open={configOpen} onClose={() => setConfigOpen(false)} title="Configure Biomarker Lenses"
         groups={biomarkerConfig} initialValues={config} onSave={(c) => saveAnalysisConfig("Biomarker", c)} />
       <CriteriaEditor open={criteriaOpen} onClose={() => setCriteriaOpen(false)} criteria={criteria} onSave={setCriteria} />
@@ -228,7 +241,7 @@ export function BiomarkerView() {
                   <th className="p-2 text-right font-medium">VIP</th>
                   <th className="p-2 text-right font-medium">Priority</th>
                   <th className="p-2 text-left font-medium">Pathway</th>
-                  <th className="p-2 text-center font-medium">PubMed</th>
+                  <th className="p-2 text-center font-medium">Lit.</th>
                   <th className="p-2 text-center font-medium">Actions</th>
                 </tr>
               </thead>
@@ -243,7 +256,7 @@ export function BiomarkerView() {
                     <td className="p-2 text-right tabular-nums">{feature.vip.toFixed(2)}</td>
                     <td className="p-2 text-right"><span className="inline-flex rounded bg-primary/10 px-1.5 py-0.5 tabular-nums text-primary">{feature.score}</span></td>
                     <td className="p-2 text-muted-foreground">{feature.pathway ?? "—"}</td>
-                    <td className="p-2 text-center tabular-nums text-muted-foreground">{feature.pubmedCount ?? "—"}</td>
+                    <td className="p-2 text-center tabular-nums text-muted-foreground">{feature.literatureScore != null ? feature.literatureScore.toFixed(2) : "—"}</td>
                     <td className="p-2 text-center">
                       <DropdownMenu.Root>
                         <DropdownMenu.Trigger asChild><button className="rounded px-1.5 py-0.5 text-xs hover:bg-accent">•••</button></DropdownMenu.Trigger>

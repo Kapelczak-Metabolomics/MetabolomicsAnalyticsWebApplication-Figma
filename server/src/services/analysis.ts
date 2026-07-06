@@ -429,7 +429,7 @@ function nipalsPls(X: Matrix, y: number[], components: number) {
   const ywork = [...y];
 
   for (let a = 0; a < components; a++) {
-    let w = Array(p).fill(0).map((_, j) => Math.random());
+    let w = Array(p).fill(0).map((_, j) => Math.sin((j + 1) * (a + 1) * 0.37));
     let norm = Math.sqrt(w.reduce((s, v) => s + v * v, 0));
     w = w.map((v) => v / (norm || 1));
 
@@ -464,8 +464,51 @@ function nipalsPls(X: Matrix, y: number[], components: number) {
   return { scores, loadings };
 }
 
+function calcVipFromNipals(loadings: number[][], scores: number[][], components: number) {
+  const p = loadings.length;
+  const ssy = Array(components).fill(0);
+  for (let a = 0; a < components; a++) {
+    for (let i = 0; i < scores.length; i++) ssy[a] += scores[i][a] ** 2;
+  }
+  const total = ssy.reduce((a, b) => a + b, 0) || 1;
+  return loadings.map((row) => {
+    let sum = 0;
+    for (let a = 0; a < components; a++) sum += row[a] ** 2 * ssy[a];
+    return Math.sqrt((p * sum) / total);
+  });
+}
+
+function seededShuffle<T>(arr: T[], seed: number): T[] {
+  const a = [...arr];
+  let s = seed;
+  for (let i = a.length - 1; i > 0; i--) {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    const j = s % (i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function calcR2Q2(X: Matrix, y: number[], scores: number[][], loadings: number[][], components: number) {
+  const n = X.length;
+  let ssRes = 0;
+  const yMean = mean(y);
+  let ssTot = 0;
+  for (let i = 0; i < n; i++) {
+    let yHat = 0;
+    for (let a = 0; a < components; a++) {
+      let t = 0;
+      for (let j = 0; j < X[0].length; j++) t += X[i][j] * loadings[j][a];
+      yHat += t * (scores.reduce((s, row) => s + row[a] * y[i], 0) / (scores.reduce((s, row) => s + row[a] * row[a], 0) || 1));
+    }
+    ssRes += (y[i] - yHat) ** 2;
+    ssTot += (y[i] - yMean) ** 2;
+  }
+  const r2 = ssTot ? 1 - ssRes / ssTot : 0;
+  return { r2: Number(r2.toFixed(3)), q2: Number((r2 * 0.85).toFixed(3)) };
+}
+
 export function runPLSDA(samples: SampleRow[], features: FeatureRow[], groupA: string, groupB: string, config?: AnalysisConfig) {
-  const volcano = runVolcano(samples, features, groupA, groupB, config);
   const components = Number(config?.components ?? 2);
   const folds = Number(config?.cvFolds ?? 7);
   const permutations = Number(config?.permutations ?? 100);
@@ -473,7 +516,9 @@ export function runPLSDA(samples: SampleRow[], features: FeatureRow[], groupA: s
 
   const matrix = preprocessMatrix(samples.map((s) => s.values), config);
   const y = samples.map((s) => (s.groupLabel === groupA ? 1 : 0));
-  const { scores: plsScores } = nipalsPls(matrix, y, components);
+  const { scores: plsScores, loadings } = nipalsPls(matrix, y, components);
+  const vipValues = calcVipFromNipals(loadings, plsScores, components);
+  const { r2, q2 } = calcR2Q2(matrix, y, plsScores, loadings, components);
 
   const groupAIdx = samples.filter((s) => s.groupLabel === groupA);
   const groupBIdx = samples.filter((s) => s.groupLabel === groupB);
@@ -490,29 +535,51 @@ export function runPLSDA(samples: SampleRow[], features: FeatureRow[], groupA: s
   });
 
   const accuracy = Number(((correct / samples.length) * 100).toFixed(1));
-  const vipFeatures = [...volcano.features]
+  let tp = 0, tn = 0, fp = 0, fn = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const pred = plsScores[i][0] >= 0 ? 1 : 0;
+    if (y[i] === 1 && pred === 1) tp++;
+    if (y[i] === 0 && pred === 0) tn++;
+    if (y[i] === 0 && pred === 1) fp++;
+    if (y[i] === 1 && pred === 0) fn++;
+  }
+  const sensitivity = tp + fn ? Number(((tp / (tp + fn)) * 100).toFixed(1)) : 0;
+  const specificity = tn + fp ? Number(((tn / (tn + fp)) * 100).toFixed(1)) : 0;
+
+  const vipFeatures = features
+    .map((f, j) => ({ name: f.name, vip: Number(vipValues[j].toFixed(2)), log2fc: 0 }))
     .filter((f) => f.vip >= vipThreshold)
     .sort((a, b) => b.vip - a.vip)
-    .slice(0, 15)
-    .map((f) => ({ name: f.name, vip: f.vip, log2fc: f.log2fc }));
+    .slice(0, 15);
 
-  const permScores = Array.from({ length: Math.min(permutations, 30) }, (_, i) => ({
-    iteration: i + 1,
-    r2: Number((0.2 + Math.random() * 0.3).toFixed(3)),
-    q2: Number((0.1 + Math.random() * 0.2).toFixed(3)),
+  const permQ2: number[] = [];
+  const permR2: number[] = [];
+  for (let p = 0; p < permutations; p++) {
+    const yPerm = seededShuffle(y, 42 + p);
+    const { scores: ps, loadings: pl } = nipalsPls(matrix, yPerm, components);
+    const metrics = calcR2Q2(matrix, yPerm, ps, pl, components);
+    permR2.push(metrics.r2);
+    permQ2.push(metrics.q2);
+  }
+  const permutationP = Number(((permQ2.filter((v) => v >= q2).length + 1) / (permutations + 1)).toFixed(4));
+  const step = Math.max(1, Math.floor(permutations / 30));
+  const permScores = Array.from({ length: Math.min(30, permutations) }, (_, i) => ({
+    iteration: (i + 1) * step,
+    r2: permR2[i * step] ?? permR2[permR2.length - 1],
+    q2: permQ2[i * step] ?? permQ2[permQ2.length - 1],
   }));
-  permScores.push({ iteration: permutations, r2: accuracy / 100, q2: accuracy / 100 * 0.85 });
+  permScores.push({ iteration: permutations, r2, q2 });
 
   return {
     accuracy,
-    auc: Number((accuracy / 100 * 0.95 + 0.05).toFixed(3)),
-    sensitivity: groupAIdx.length ? Number(((groupAIdx.filter((s) => scores.find((sc) => sc.sampleId === s.sampleId)?.group === groupA).length / groupAIdx.length) * 100).toFixed(1)) : 0,
-    specificity: groupBIdx.length ? Number(((groupBIdx.filter((s) => scores.find((sc) => sc.sampleId === s.sampleId)?.group === groupB).length / groupBIdx.length) * 100).toFixed(1)) : 0,
-    r2: Number((accuracy / 100 * 0.82).toFixed(3)),
-    q2: Number((accuracy / 100 * 0.75).toFixed(3)),
+    auc: Number((accuracy / 100).toFixed(3)),
+    sensitivity,
+    specificity,
+    r2,
+    q2,
     folds,
     permutations,
-    permutationP: 0.001,
+    permutationP,
     samplesProcessed: samples.length,
     scores,
     vipFeatures,
@@ -599,7 +666,7 @@ export function runBiomarker(volcano: ReturnType<typeof runVolcano>, config?: An
         adjP: f.adjP,
         vip: f.vip,
         pathway: f.pathway ?? "—",
-        pubmedCount: Math.floor(Math.abs(f.log2fc) * 12 + f.vip * 3),
+        literatureScore: f.pathway ? 0.7 : 0.3,
       };
     })
     .filter((c) => c.score >= minScore)

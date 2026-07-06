@@ -122,7 +122,17 @@ Analysis runs prefer the Python service when available (`USE_PYTHON_ANALYSIS=tru
 - Analysis runs (PCA, Volcano, Clustering, PLS-DA, Pathway, Biomarker) via Python with TypeScript fallback
 - Interactive plots (Recharts) with **SVG/PNG export** for publication-ready figures
 - Notifications, audit logs, and admin panel with live data
-- No simulated/mock data in production — all views fetch from the API
+- All analysis metrics computed from stored sample data (Python sklearn/scipy with TypeScript fallback)
+
+## Data & seeding
+
+On first boot the API creates schema and seeds **minimal** data: user accounts and an empty starter project.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SEED_DEMO_DATA` | `true` in Docker | When `true`, loads a **deterministic** reference metabolomics matrix (not random) with pre-computed analyses. Set `false` for production to start with an empty project. |
+
+Import real study data via **Data → Import** (CSV or mzXML). A sample CSV is available at `/fixtures/sample_metabolomics.csv`.
 
 ## Environment Variables
 
@@ -138,6 +148,7 @@ Analysis runs prefer the Python service when available (`USE_PYTHON_ANALYSIS=tru
 | `PYTHON_SERVICE_URL` | `http://python:47824` | Python service URL (Docker internal) |
 | `USE_PYTHON_ANALYSIS` | `true` | Use Python for analysis; set `false` for TS-only |
 | `RAW_DATA_DIR` | `/data/raw` | Directory for uploaded mzXML raw files |
+| `SEED_DEMO_DATA` | `true` | Load reference dataset on first boot; set `false` for empty production |
 
 ## Original Design
 

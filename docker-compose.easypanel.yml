@@ -59,6 +59,8 @@ services:
       PYTHON_SERVICE_URL: http://python:47824
       USE_PYTHON_ANALYSIS: "true"
       RAW_DATA_DIR: /data/raw
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+      RAW_DATA_DIR: /data/raw
     expose:
       - "47822"
     volumes:

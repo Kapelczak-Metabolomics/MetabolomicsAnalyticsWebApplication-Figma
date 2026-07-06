@@ -18,11 +18,11 @@ interface RunAnalysisDialogProps {
 }
 
 const defaultStages = [
-  "Loading dataset into memory",
+  "Submitting analysis job",
+  "Loading dataset from database",
   "Preprocessing & normalization",
-  "Running analysis algorithm",
-  "Generating visualizations",
-  "Compiling results",
+  "Running statistical model",
+  "Saving results",
 ];
 
 export function RunAnalysisDialog({
@@ -55,6 +55,7 @@ export function RunAnalysisDialog({
 
     (async () => {
       if (projectId && datasetId) {
+        setCurrentStage(0);
         try {
           const mergedConfig = { ...(app?.getAnalysisConfig(analysisType) ?? {}), ...(configProp ?? {}) };
           const { id } = await api.runAnalysis({ projectId, datasetId, name: analysisName, type: analysisType, config: mergedConfig });
@@ -64,45 +65,47 @@ export function RunAnalysisDialog({
           setFailed(true);
           return;
         }
-      }
 
-      for (let i = 0; i < stages.length && !cancelled; i++) {
-        setCurrentStage(i);
-        await new Promise((r) => setTimeout(r, 400));
-      }
-
-      if (experimentIdRef.current) {
-        for (let i = 0; i < 60 && !cancelled; i++) {
-          const exp = await api.getExperiment(experimentIdRef.current);
+        for (let poll = 0; poll < 120 && !cancelled; poll++) {
+          const exp = await api.getExperiment(experimentIdRef.current!);
+          if (exp.status === "running") {
+            setCurrentStage(Math.min(stages.length - 2, 1 + Math.floor(poll / 8)));
+          }
           if (exp.status === "completed") {
+            setCurrentStage(stages.length - 1);
             setCompleted(true);
             break;
           }
           if (exp.status === "failed") {
             setFailed(true);
             toast.error(String(exp.errorMessage ?? "Analysis failed"));
-            break;
+            return;
           }
           await new Promise((r) => setTimeout(r, 500));
+        }
+
+        if (!cancelled && !failed && !completed) {
+          setFailed(true);
+          toast.error("Analysis timed out");
+          return;
         }
       } else {
         setCompleted(true);
       }
 
       if (!cancelled && !failed) {
-        setCompleted(true);
         setTimeout(() => {
           onClose();
           onComplete?.();
-          toast.success(`${analysisName} completed`, { description: "Results updated from database" });
-        }, 800);
+          toast.success(`${analysisName} completed`, { description: "Results saved to database" });
+        }, 600);
       }
     })();
 
     return () => { cancelled = true; };
-  }, [open, projectId, datasetId, analysisName, analysisType, configProp, stages, onClose, onComplete, failed, app]);
+  }, [open, projectId, datasetId, analysisName, analysisType, configProp, stages, onClose, onComplete, app]);
 
-  const progress = failed ? 0 : completed ? 100 : currentStage < 0 ? 5 : Math.round(((currentStage + 1) / stages.length) * 90);
+  const progress = failed ? 0 : completed ? 100 : currentStage < 0 ? 5 : Math.round(((currentStage + 1) / stages.length) * 100);
 
   return (
     <Dialog.Root open={open}>
@@ -117,7 +120,7 @@ export function RunAnalysisDialog({
               <div>
                 <Dialog.Title className="text-sm font-semibold">{analysisName}</Dialog.Title>
                 <Dialog.Description className="text-xs text-muted-foreground">
-                  {failed ? "Analysis failed" : completed ? "Analysis complete" : "Analysis in progress · please wait"}
+                  {failed ? "Analysis failed" : completed ? "Analysis complete" : "Running on server — polling for results"}
                 </Dialog.Description>
               </div>
             </div>

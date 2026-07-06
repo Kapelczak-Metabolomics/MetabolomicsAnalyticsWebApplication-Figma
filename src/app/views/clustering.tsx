@@ -28,6 +28,8 @@ export function ClusteringView() {
   const clusters = (results?.clusters as Array<{ name: string; count: number; color: string }>) ?? [];
   const dendrogram = (results?.dendrogram as Array<{ left: string; right: string; height: number }>) ?? heatmap?.dendrogram as Array<{ left: string; right: string; height: number }> ?? [];
   const silhouette = (results?.silhouette as number) ?? heatmap?.silhouette;
+  const linkage = (results?.linkage as string) ?? String(getAnalysisConfig("Clustering").linkageMethod ?? "Average");
+  const distanceMetric = (results?.distanceMetric as string) ?? String(getAnalysisConfig("Clustering").distanceMetric ?? "Euclidean");
   const samplesProcessed = (results?.samplesProcessed as number) ?? dataset?.samples_count ?? 0;
 
   useEffect(() => {
@@ -105,7 +107,7 @@ export function ClusteringView() {
           </div>
           <div className="rounded-md border border-border bg-card p-3">
             <p className="text-xs text-muted-foreground">Linkage</p>
-            <p className="mt-1 text-base">Ward</p>
+            <p className="mt-1 text-base capitalize">{linkage}</p>
           </div>
         </div>
 
@@ -145,11 +147,11 @@ export function ClusteringView() {
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Distance</span>
-              <span>Euclidean</span>
+              <span>{distanceMetric}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Linkage</span>
-              <span>Ward</span>
+              <span className="capitalize">{linkage}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Normalization</span>

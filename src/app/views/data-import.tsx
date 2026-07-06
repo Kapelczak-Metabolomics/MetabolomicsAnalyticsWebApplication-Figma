@@ -232,6 +232,9 @@ export function DataImportView() {
                   <Upload className="mx-auto h-10 w-10 text-muted-foreground mb-4" />
                   <h3 className="text-sm font-medium">Drop your CSV file here</h3>
                   <p className="mt-1 text-xs text-muted-foreground">Must include sample_id and group columns plus feature columns</p>
+                  <a href="/fixtures/sample_metabolomics.csv" download className="mt-2 inline-block text-xs text-primary hover:underline">
+                    Download sample metabolomics CSV (20 features, AD vs Control)
+                  </a>
                 </>
               ) : (
                 <>
