@@ -7,6 +7,7 @@ import {
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
 import { api } from "../../../lib/api";
+import { downloadCsv, downloadJson } from "../../../lib/export";
 import { downloadFromApi } from "../../../lib/export";
 
 type RunStatus = "completed" | "running" | "failed" | "queued";
@@ -92,6 +93,27 @@ export function AdminRuns() {
     return matchSearch && matchStatus && matchType && matchUser;
   });
 
+  const exportRuns = (fmt: string) => {
+    if (!filtered.length) { toast.error("No runs to export"); return; }
+    const rows = filtered.map((r) => ({
+      id: r.id.replace(/^r/, ""),
+      name: r.name,
+      type: r.type,
+      project: r.project,
+      user: r.user,
+      email: r.userEmail,
+      status: r.status,
+      created: r.created,
+      duration: r.duration,
+      samples: r.samples,
+      features: r.features,
+      cpu: r.cpuUsage,
+      memory: r.memUsage,
+    }));
+    if (fmt === "JSON") downloadJson("analysis-runs.json", rows);
+    else downloadCsv("analysis-runs.csv", rows);
+    toast.success(`Exported ${filtered.length} runs as ${fmt}`);
+  };
   const counts = {
     total: runs.length,
     completed: runs.filter((r) => r.status === "completed").length,
@@ -122,9 +144,9 @@ export function AdminRuns() {
               </DropdownMenu.Trigger>
               <DropdownMenu.Portal>
                 <DropdownMenu.Content className="z-50 min-w-[150px] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg" sideOffset={4} align="end">
-                  {["CSV", "Excel (.xlsx)", "JSON"].map((fmt) => (
+                  {["CSV", "JSON"].map((fmt) => (
                     <DropdownMenu.Item key={fmt} className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-                      onSelect={() => toast.success(`Exported run log as ${fmt}`)}>
+                      onSelect={() => exportRuns(fmt)}>
                       {fmt}
                     </DropdownMenu.Item>
                   ))}
@@ -247,13 +269,13 @@ export function AdminRuns() {
                           <DropdownMenu.Content className="z-50 min-w-[160px] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg" sideOffset={4} align="end">
                             {run.status !== "queued" && (
                               <DropdownMenu.Item className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-                                onSelect={() => navigate(`/experiments/${run.id}`)}>
+                                onSelect={() => navigate(`/experiments/${String(run.id).replace(/^r/, "")}`)}>
                                 View Results
                               </DropdownMenu.Item>
                             )}
                             <DropdownMenu.Item className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-                              onSelect={() => toast.info("Opening user profile...")}>
-                              View User Profile
+                              onSelect={() => navigate("/admin/users")}>
+                              View User in Admin
                             </DropdownMenu.Item>
                             <DropdownMenu.Item className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
                               onSelect={() => downloadFromApi(`/experiments/${String(run.id).replace(/^r/, "")}/export?format=csv`, `${run.name}.csv`)}>

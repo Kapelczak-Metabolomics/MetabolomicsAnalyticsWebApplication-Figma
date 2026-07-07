@@ -92,9 +92,20 @@ def _calc_r2_q2(pls: PLSRegression, x: np.ndarray, y: np.ndarray) -> tuple[float
     return float(r2), float(q2)
 
 
-def _linkage_to_dendrogram(z: np.ndarray) -> list[dict[str, Any]]:
+def _cluster_leaves(z: np.ndarray, n_samples: int, idx: float) -> list[int]:
+    if idx < n_samples:
+        return [int(idx)]
+    row = z[int(idx) - n_samples]
+    return _cluster_leaves(z, n_samples, row[0]) + _cluster_leaves(z, n_samples, row[1])
+
+
+def _linkage_to_dendrogram(z: np.ndarray, n_samples: int) -> list[dict[str, Any]]:
     return [
-        {"left": f"C{int(row[0])}", "right": f"C{int(row[1])}", "height": round(float(row[2]), 4)}
+        {
+            "left": _cluster_leaves(z, n_samples, row[0]),
+            "right": _cluster_leaves(z, n_samples, row[1]),
+            "height": round(float(row[2]), 4),
+        }
         for row in z
     ]
 
@@ -211,7 +222,7 @@ def run_clustering(samples: list[dict], features: list[dict], config: dict | Non
     return {
         "clusters": clusters,
         "samplesProcessed": len(samples),
-        "dendrogram": _linkage_to_dendrogram(z),
+        "dendrogram": _linkage_to_dendrogram(z, len(samples)),
         "silhouette": round(sil, 3),
         "sampleOrder": ordered_samples,
         "featureLabels": feat_names[:n_feat_show],

@@ -34,13 +34,19 @@ function NewProjectDialog({ open, onClose, onCreated }: { open: boolean; onClose
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [type, setType] = useState("metabolomics");
+  const [color, setColor] = useState("violet");
+  const [collaborators, setCollaborators] = useState("");
 
   function handleCreate() {
     if (!name.trim()) {
       toast.error("Project name is required");
       return;
     }
-    api.createProject({ name, description, type })
+    const collaboratorEmails = collaborators
+      .split(/[,;\s]+/)
+      .map((e) => e.trim())
+      .filter(Boolean);
+    api.createProject({ name, description, type, color, collaborators: collaboratorEmails })
       .then((project) => {
         onCreated({
           id: project.id,
@@ -54,6 +60,8 @@ function NewProjectDialog({ open, onClose, onCreated }: { open: boolean; onClose
         });
         setName("");
         setDescription("");
+        setCollaborators("");
+        setColor("violet");
         onClose();
         toast.success(`Project "${name}" created successfully`);
       })
@@ -120,7 +128,9 @@ function NewProjectDialog({ open, onClose, onCreated }: { open: boolean; onClose
                   {["violet", "cyan", "emerald", "amber", "rose"].map((c) => (
                     <button
                       key={c}
-                      className={`h-6 w-6 rounded-full bg-gradient-to-br ${colorMap[c]} ring-offset-background hover:ring-2 hover:ring-primary hover:ring-offset-2 transition-all`}
+                      type="button"
+                      onClick={() => setColor(c)}
+                      className={`h-6 w-6 rounded-full bg-gradient-to-br ${colorMap[c]} ring-offset-background transition-all ${color === c ? "ring-2 ring-primary ring-offset-2" : "hover:ring-2 hover:ring-primary/50 hover:ring-offset-2"}`}
                     />
                   ))}
                 </div>
@@ -131,6 +141,8 @@ function NewProjectDialog({ open, onClose, onCreated }: { open: boolean; onClose
               <label className="text-xs font-medium">Collaborators</label>
               <input
                 type="text"
+                value={collaborators}
+                onChange={(e) => setCollaborators(e.target.value)}
                 placeholder="Enter email addresses to share..."
                 className="mt-1.5 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
               />

@@ -549,16 +549,17 @@ export function AdminSystem() {
               </div>
               <span className="text-sm text-muted-foreground">From PostgreSQL pg_database_size()</span>
             </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              Automated PostgreSQL backups are managed outside this application (e.g. provider snapshots or <code className="text-[10px]">pg_dump</code> cron).
+            </p>
             <div className="flex gap-2">
-              {["Backup Now", "Restore", "Optimize"].map((action) => (
-                <button
-                  key={action}
-                  onClick={() => toast.info(`${action} initiated...`)}
-                  className="flex-1 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
-                >
-                  {action}
-                </button>
-              ))}
+              <button
+                disabled
+                className="flex-1 rounded-lg border border-border bg-muted/40 px-4 py-2 text-sm font-medium text-muted-foreground cursor-not-allowed"
+                title="Use your database provider or pg_dump for backups"
+              >
+                Backup via pg_dump
+              </button>
             </div>
           </div>
         </div>

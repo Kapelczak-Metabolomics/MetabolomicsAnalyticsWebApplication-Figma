@@ -170,7 +170,10 @@ export function BiomarkerView() {
         projectId={dataset?.project_id} datasetId={dataset?.id} config={biomarkerRunConfig()} onComplete={refresh} />
       <ConfigureDialog open={configOpen} onClose={() => setConfigOpen(false)} title="Configure Biomarker Lenses"
         groups={biomarkerConfig} initialValues={config} onSave={(c) => saveAnalysisConfig("Biomarker", c)} />
-      <CriteriaEditor open={criteriaOpen} onClose={() => setCriteriaOpen(false)} criteria={criteria} onSave={setCriteria} />
+      <CriteriaEditor open={criteriaOpen} onClose={() => setCriteriaOpen(false)} criteria={criteria} onSave={(next) => {
+        setCriteria(next);
+        saveAnalysisConfig("Biomarker", { ...getAnalysisConfig("Biomarker"), criteria: next });
+      }} />
 
       <div className="flex-1 overflow-auto p-6 space-y-4">
         <div className="flex items-center justify-between">
@@ -216,6 +219,14 @@ export function BiomarkerView() {
               </div>
             ))}
           </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm">Candidate Overview</h3>
+            <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Biomarker" filename="biomarker-plot" plotContainerId="plot-biomarker-main" />
+          </div>
+          <ChartPlaceholder type="Biomarker Discovery Plot" height="400px" exportId="plot-biomarker-main" biomarkerCandidates={candidates} />
         </div>
 
         <div className="rounded-lg border border-border bg-card">

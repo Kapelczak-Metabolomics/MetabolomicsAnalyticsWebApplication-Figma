@@ -212,9 +212,9 @@ function powerIteration(cov: Matrix, k: number) {
 function hierarchicalClusterOrder(matrix: Matrix, linkage = "Average", metric = "Euclidean") {
   const n = matrix.length;
   const distance = distFn(metric);
-  if (n <= 1) return { order: [0], dendrogram: [] as Array<{ left: string; right: string; height: number }> };
+  if (n <= 1) return { order: [0], dendrogram: [] as Array<{ left: number[]; right: number[]; height: number }> };
   const clusters: number[][] = matrix.map((_, i) => [i]);
-  const dendrogram: Array<{ left: string; right: string; height: number }> = [];
+  const dendrogram: Array<{ left: number[]; right: number[]; height: number }> = [];
 
   function clusterDist(a: number[], b: number[]) {
     if (linkage === "Single") {
@@ -242,7 +242,7 @@ function hierarchicalClusterOrder(matrix: Matrix, linkage = "Average", metric = 
         if (dist < minDist) { minDist = dist; ai = i; bi = j; }
       }
     }
-    dendrogram.push({ left: `C${ai}`, right: `C${bi}`, height: Number(minDist.toFixed(4)) });
+    dendrogram.push({ left: [...clusters[ai]], right: [...clusters[bi]], height: Number(minDist.toFixed(4)) });
     const merged = [...clusters[ai], ...clusters[bi]];
     clusters.splice(bi, 1);
     clusters.splice(ai, 1);

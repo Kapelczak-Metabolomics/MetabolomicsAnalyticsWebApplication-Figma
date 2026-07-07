@@ -5,11 +5,13 @@ import { ArrowLeft, CheckCircle2, Loader2, AlertCircle } from "lucide-react";
 import { api } from "../../lib/api";
 import type { PCAScore } from "../components/plots/pca-plot";
 import type { VolcanoPoint } from "../components/plots/volcano-plot";
+import type { DendrogramMerge } from "../components/plots/dendrogram-plot";
 
 export function ExperimentDetailView() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [exp, setExp] = useState<Record<string, unknown> | null>(null);
+  const [heatmap, setHeatmap] = useState<{ matrix: (number | null)[][]; sampleLabels: string[]; featureLabels: string[] } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -20,20 +22,48 @@ export function ExperimentDetailView() {
       .finally(() => setLoading(false));
   }, [id, navigate]);
 
+  const datasetId = exp?.datasetId as number | undefined;
+  const type = String(exp?.type ?? "");
+  const results = exp?.results as Record<string, unknown> | null;
+
+  useEffect(() => {
+    if (type !== "Clustering" || !datasetId) return;
+    api.getDatasetMatrix(datasetId, true).then(setHeatmap).catch(() => setHeatmap(null));
+  }, [type, datasetId]);
+
   if (loading || !exp) {
     return <div className="flex h-full items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div>;
   }
 
-  const results = exp.results as Record<string, unknown> | null;
   const status = String(exp.status);
-  const type = String(exp.type);
-
   const StatusIcon = status === "completed" ? CheckCircle2 : status === "running" ? Loader2 : AlertCircle;
   const statusColor = status === "completed" ? "text-emerald-500" : status === "running" ? "text-amber-500 animate-spin" : "text-destructive";
 
-  let chartType = `${type} Plot`;
-  if (type === "PCA") chartType = "PCA Score Plot";
-  if (type === "Pathway") chartType = "Pathway Enrichment";
+  const chartProps = {
+    pcaScores: type === "PCA" ? (results?.scores as PCAScore[]) : undefined,
+    explainedVariance: type === "PCA" ? (results?.explainedVariance as number[]) : undefined,
+    volcanoFeatures: type === "Volcano" ? (results?.features as VolcanoPoint[]) : undefined,
+    plsdaScores: type === "PLS-DA" ? (results?.scores as Array<{ comp1: number; comp2: number; group: string }>) : undefined,
+    vipFeatures: type === "PLS-DA" ? (results?.vipFeatures as Array<{ name: string; vip: number }>) : undefined,
+    permScores: type === "PLS-DA" ? (results?.permScores as Array<{ iteration: number; r2: number; q2: number }>) : undefined,
+    observedR2: type === "PLS-DA" ? (results?.r2 as number) : undefined,
+    observedQ2: type === "PLS-DA" ? (results?.q2 as number) : undefined,
+    pathways: type === "Pathway" ? (results?.pathways as Array<{ name: string; genes: number; negLogP?: number }>) : undefined,
+    heatmap: type === "Clustering" && heatmap ? heatmap : undefined,
+    dendrogram: type === "Clustering" ? (results?.dendrogram as DendrogramMerge[]) : undefined,
+    dendrogramLabels: type === "Clustering" ? ((results?.sampleOrder as string[]) ?? heatmap?.sampleLabels) : undefined,
+    silhouette: type === "Clustering" ? (results?.silhouette as number) : undefined,
+    biomarkerCandidates: type === "Biomarker" ? (results?.candidates as Array<{ name: string; score: number; log2fc: number; pValue: number }>) : undefined,
+  };
+
+  const chartType =
+    type === "PCA" ? "PCA Score Plot"
+    : type === "Volcano" ? "Volcano Plot"
+    : type === "PLS-DA" ? "PLS-DA Score Plot"
+    : type === "Pathway" ? "Pathway Enrichment"
+    : type === "Clustering" ? "Clustered Heatmap"
+    : type === "Biomarker" ? "Biomarker Discovery Plot"
+    : `${type} Plot`;
 
   return (
     <div className="h-full overflow-auto p-6 space-y-6">
@@ -61,17 +91,35 @@ export function ExperimentDetailView() {
       </div>
 
       {status === "completed" && results && (
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h3 className="text-sm mb-3">Results</h3>
-          <ChartPlaceholder
-            type={chartType}
-            height="420px"
-            pcaScores={type === "PCA" ? (results.scores as PCAScore[]) : undefined}
-            explainedVariance={type === "PCA" ? (results.explainedVariance as number[]) : undefined}
-            volcanoFeatures={type === "Volcano" ? (results.features as VolcanoPoint[]) : undefined}
-            plsdaScores={type === "PLS-DA" ? (results.scores as Array<{ comp1: number; comp2: number; group: string }>) : undefined}
-            pathways={type === "Pathway" ? (results.pathways as Array<{ name: string; genes: number; negLogP?: number }>) : undefined}
-          />
+        <div className="space-y-4">
+          <div className="rounded-lg border border-border bg-card p-4">
+            <h3 className="text-sm mb-3">Primary Result</h3>
+            <ChartPlaceholder type={chartType} height="420px" {...chartProps} />
+          </div>
+          {type === "PLS-DA" && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-lg border border-border bg-card p-4">
+                <h3 className="text-sm mb-3">VIP Scores</h3>
+                <ChartPlaceholder type="Variable Importance in Projection" height="280px" vipFeatures={chartProps.vipFeatures} />
+              </div>
+              <div className="rounded-lg border border-border bg-card p-4">
+                <h3 className="text-sm mb-3">Permutation Test</h3>
+                <ChartPlaceholder type="Model Validation" height="280px" permScores={chartProps.permScores} observedR2={chartProps.observedR2} observedQ2={chartProps.observedQ2} />
+              </div>
+            </div>
+          )}
+          {type === "Clustering" && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-lg border border-border bg-card p-4">
+                <h3 className="text-sm mb-3">Sample Dendrogram</h3>
+                <ChartPlaceholder type="Hierarchical Tree" height="280px" dendrogram={chartProps.dendrogram} dendrogramLabels={chartProps.dendrogramLabels} />
+              </div>
+              <div className="rounded-lg border border-border bg-card p-4">
+                <h3 className="text-sm mb-3">Cluster Quality</h3>
+                <ChartPlaceholder type="Cluster Quality" height="280px" silhouette={chartProps.silhouette} />
+              </div>
+            </div>
+          )}
         </div>
       )}
 

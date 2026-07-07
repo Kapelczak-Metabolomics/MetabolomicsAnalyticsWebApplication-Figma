@@ -17,9 +17,12 @@ export function VolcanoView() {
   const { saveAnalysisConfig, getAnalysisConfig } = useApp();
   const { dataset, results, loading, error, refresh, experimentId } = useAnalysisPage("Volcano");
 
+  const config = getAnalysisConfig("Volcano");
+  const pThreshold = Number(config.pThreshold ?? 0.05);
+  const fcThreshold = Number(config.foldChangeThreshold ?? 0.5);
   const features = (results?.features as VolcanoPoint[]) ?? [];
   const stats = useMemo(() => {
-    const sig = features.filter((f) => f.pValue < 0.05);
+    const sig = features.filter((f) => f.pValue < pThreshold && Math.abs(f.log2fc) > fcThreshold);
     return {
       up: sig.filter((f) => f.log2fc > 0).length,
       down: sig.filter((f) => f.log2fc < 0).length,
@@ -61,7 +64,7 @@ export function VolcanoView() {
 
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="mb-3 flex justify-between"><h3 className="text-sm">Volcano Plot</h3><AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Volcano" filename="volcano-features" plotContainerId="plot-volcano-main" /></div>
-          <ChartPlaceholder type="Volcano Plot" height="500px" exportId="plot-volcano-main" volcanoFeatures={features} />
+          <ChartPlaceholder type="Volcano Plot" height="500px" exportId="plot-volcano-main" volcanoFeatures={features} volcanoConfig={{ pThreshold, fcThreshold }} />
         </div>
 
         <div className="rounded-lg border border-border bg-card">

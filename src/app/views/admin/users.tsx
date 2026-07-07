@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { api } from "../../../lib/api";
 
@@ -50,25 +51,27 @@ function AddUserDialog({ open, onClose, onAdd }: { open: boolean; onClose: () =>
       return;
     }
     setSending(true);
-    setTimeout(() => {
-      setSending(false);
-      onAdd({
-        id: Date.now(),
-        name: name.trim(),
-        email: email.trim(),
-        role,
-        status: "inactive",
-        lastActive: "Never",
-        projects: 0,
-      });
-      toast.success("Invitation sent", {
-        description: `${email} will receive an activation email`,
-      });
-      setName("");
-      setEmail("");
-      setRole("Researcher");
-      onClose();
-    }, 1000);
+    api.admin.createUser({ name: name.trim(), email: email.trim(), role })
+      .then(() => {
+        onAdd({
+          id: Date.now(),
+          name: name.trim(),
+          email: email.trim(),
+          role,
+          status: "inactive",
+          lastActive: "Never",
+          projects: 0,
+        });
+        toast.success("User created", {
+          description: `${email} can log in with the temporary password set by the administrator`,
+        });
+        setName("");
+        setEmail("");
+        setRole("Researcher");
+        onClose();
+      })
+      .catch(() => toast.error("Failed to create user"))
+      .finally(() => setSending(false));
   }
 
   return (
@@ -238,6 +241,7 @@ function UserActions({ user, onRoleChange, onStatusToggle, onDelete, onResetPass
   onDelete: (id: number, name: string) => void;
   onResetPassword: (user: User) => void;
 }) {
+  const navigate = useNavigate();
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -253,7 +257,7 @@ function UserActions({ user, onRoleChange, onStatusToggle, onDelete, onResetPass
         >
           <DropdownMenu.Item
             className="flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-            onSelect={() => toast.info(`Viewing profile: ${user.name}`)}
+            onSelect={() => navigate("/admin/users")}
           >
             <Shield className="h-3.5 w-3.5" />
             View Profile
@@ -415,7 +419,7 @@ export function AdminUsers() {
         <div className="grid grid-cols-4 gap-4">
           {[
             { label: "Total Users", value: users.length.toLocaleString() },
-            { label: "Active Today", value: activeCount.toString() },
+            { label: "Active Accounts", value: activeCount.toString() },
             { label: "New This Month", value: newUsersThisMonth.toString() },
             { label: "Admins", value: adminCount.toString() },
           ].map((stat) => (
