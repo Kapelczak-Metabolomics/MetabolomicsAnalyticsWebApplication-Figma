@@ -153,7 +153,7 @@ async function seedDemoReferenceDataset(projectId: number, sarahId: number) {
   ];
 
   for (const a of analyses) {
-    const results = await computeWithEngine(a.type, loadedSamples, loadedFeatures, config);
+    const results = await computeWithEngine(a.type, loadedSamples, loadedFeatures, config, { preferTypeScript: true });
     const r = await query<{ id: number }>(
       `INSERT INTO experiments (project_id, dataset_id, user_id, name, type, status, config, results,
        samples_count, features_count, created_at, started_at, completed_at)

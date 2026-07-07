@@ -22,6 +22,15 @@ async function latestCompletedExperiment(datasetId: number, type: string) {
   );
 }
 
+async function latestInProgressExperiment(datasetId: number, type: string) {
+  return query<{ id: number; status: string }>(
+    `SELECT id, status FROM experiments
+     WHERE dataset_id = $1 AND type = $2 AND status IN ('pending', 'running')
+     ORDER BY created_at DESC LIMIT 1`,
+    [datasetId, type]
+  );
+}
+
 router.get("/results", authMiddleware, async (req: Request, res: Response) => {
   const datasetId = parseInt(String(req.query.datasetId), 10);
   const type = String(req.query.type || "");
@@ -40,6 +49,18 @@ router.get("/results", authMiddleware, async (req: Request, res: Response) => {
       results: existing.rows[0].results,
       config: existing.rows[0].config,
       source: "experiment",
+    });
+    return;
+  }
+
+  const inProgress = await latestInProgressExperiment(datasetId, type);
+  if (inProgress.rows[0]) {
+    res.json({
+      experimentId: inProgress.rows[0].id,
+      status: inProgress.rows[0].status,
+      results: null,
+      source: "experiment",
+      message: "Analysis in progress.",
     });
     return;
   }

@@ -35,7 +35,7 @@ export function useAnalysisPage(analysisType: string) {
     const data = await api.getAnalysisResults(datasetId, analysisType, groups);
     setResults((data.results as Record<string, unknown> | null) ?? null);
     setExperimentId(data.experimentId);
-    setPendingAnalysis(data.status === "pending");
+    setPendingAnalysis(data.status === "pending" || data.status === "running");
     return data;
   }, [analysisType, app?.selectedLens]);
 
@@ -79,8 +79,8 @@ export function useAnalysisPage(analysisType: string) {
         if (!cancelled) {
           setResults((data.results as Record<string, unknown> | null) ?? null);
           setExperimentId(data.experimentId);
-          setPendingAnalysis(data.status === "pending");
-          setError(data.status === "pending" ? null : null);
+          setPendingAnalysis(data.status === "pending" || data.status === "running");
+          setError(null);
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load analysis");
@@ -95,7 +95,7 @@ export function useAnalysisPage(analysisType: string) {
     if (!dataset) throw new Error("No dataset selected");
     const groups = parseLens(app?.selectedLens ?? "");
     const mergedConfig = { ...groups, ...(config ?? app?.getAnalysisConfig(analysisType) ?? {}) };
-    const { id } = await api.runAnalysis({
+    const { id, status: initialStatus } = await api.runAnalysis({
       projectId: dataset.project_id,
       datasetId: dataset.id,
       name,
@@ -104,12 +104,25 @@ export function useAnalysisPage(analysisType: string) {
     });
     setExperimentId(id);
 
-    let finalStatus = "running";
+    if (initialStatus === "completed") {
+      await loadResults(dataset.id);
+      return id;
+    }
+    if (initialStatus === "failed") {
+      const exp = await api.getExperiment(id);
+      throw new Error(String(exp.errorMessage ?? "Analysis failed"));
+    }
+
+    let finalStatus = initialStatus ?? "running";
     for (let i = 0; i < ANALYSIS_POLL_MAX; i++) {
       await new Promise((r) => setTimeout(r, ANALYSIS_POLL_MS));
-      const exp = await api.getExperiment(id);
-      finalStatus = exp.status;
-      if (exp.status === "completed" || exp.status === "failed") break;
+      try {
+        const exp = await api.getExperiment(id);
+        finalStatus = exp.status;
+        if (exp.status === "completed" || exp.status === "failed") break;
+      } catch {
+        // keep polling on transient errors
+      }
     }
     if (finalStatus === "failed") {
       const exp = await api.getExperiment(id);
