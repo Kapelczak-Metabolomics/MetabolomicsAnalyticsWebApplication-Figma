@@ -164,15 +164,21 @@ router.post("/import/mzxml/preview", authMiddleware, handleUpload, async (req: R
     return;
   }
 
+  const saved = files.map((f) => ({ buffer: f.buffer, filename: f.originalname }));
+  const filenameSamples = saved.map((f) => ({
+    filename: f.filename,
+    sampleId: f.filename.replace(/\.(mzxml|mzml|xml|zip)$/i, ""),
+  }));
+
   if (!(await pythonHealth())) {
-    res.status(503).json({
-      error: "Python analysis service is not running. mzXML import requires the Python service (check PYTHON_SERVICE_URL and that the python container is healthy).",
+    res.json({
+      samples: filenameSamples,
+      warning: "Python analysis service is offline — sample names are from filenames only.",
     });
     return;
   }
 
   try {
-    const saved = files.map((f) => ({ buffer: f.buffer, filename: f.originalname }));
     const preview = await pythonPreviewMzxml(saved);
     res.json(preview);
   } catch (err) {
