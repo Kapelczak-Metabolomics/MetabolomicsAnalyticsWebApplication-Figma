@@ -26,6 +26,8 @@ export function PCAView() {
 
   const scores = (results?.scores as PCAScore[]) ?? [];
   const explainedVariance = (results?.explainedVariance as number[]) ?? [];
+  const pcaDisplayConfig = getAnalysisConfig("PCA");
+  const showGroupEllipses = pcaDisplayConfig.showGroupEllipses !== false;
   const groupCounts = scores.reduce((acc, s) => {
     acc[s.group] = (acc[s.group] ?? 0) + 1;
     return acc;
@@ -98,7 +100,14 @@ export function PCAView() {
             <h3 className="text-sm">Score Plot (PC1 vs PC2)</h3>
             <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PCA" filename="pca-scores" plotContainerId="plot-pca-main" />
           </div>
-          <ChartPlaceholder type="PCA Score Plot" height="450px" exportId="plot-pca-main" pcaScores={scores} explainedVariance={explainedVariance} />
+          <ChartPlaceholder
+            type="PCA Score Plot"
+            height="450px"
+            exportId="plot-pca-main"
+            pcaScores={scores}
+            explainedVariance={explainedVariance}
+            pcaConfig={{ showGroupEllipses }}
+          />
         </div>
       </div>
 

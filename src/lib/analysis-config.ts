@@ -10,6 +10,12 @@ export const pcaConfig = [
       { key: "components", label: "Components", type: "number" as const, value: 2 },
     ],
   },
+  {
+    title: "Display",
+    fields: [
+      { key: "showGroupEllipses", label: "Show group confidence ellipses (95%)", type: "checkbox" as const, value: true, description: "Draw grouping circles around each sample group on the score plot" },
+    ],
+  },
 ];
 
 export const volcanoConfig = [
@@ -19,6 +25,14 @@ export const volcanoConfig = [
       { key: "testMethod", label: "Test Method", type: "select" as const, value: "t-test", options: ["t-test", "Wilcoxon"] },
       { key: "fdrMethod", label: "FDR Correction", type: "select" as const, value: "BH", options: ["BH", "Bonferroni", "None"] },
       { key: "pThreshold", label: "p-value threshold", type: "number" as const, value: 0.05 },
+      { key: "foldChangeThreshold", label: "Fold change threshold", type: "number" as const, value: 0.5 },
+    ],
+  },
+  {
+    title: "Display",
+    fields: [
+      { key: "showLabels", label: "Label significant features", type: "checkbox" as const, value: false, description: "Annotate top significant features on the volcano plot" },
+      { key: "labelTopN", label: "Max labels", type: "number" as const, value: 15, description: "Maximum number of feature names to show when labeling is enabled" },
     ],
   },
 ];

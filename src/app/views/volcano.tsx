@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { ChartPlaceholder } from "../components/chart-placeholder";
 import { Play, Settings2 } from "lucide-react";
 import { RunAnalysisDialog } from "../components/run-analysis-dialog";
@@ -20,6 +20,12 @@ export function VolcanoView() {
   const config = getAnalysisConfig("Volcano");
   const pThreshold = Number(config.pThreshold ?? 0.05);
   const fcThreshold = Number(config.foldChangeThreshold ?? 0.5);
+  const labelTopN = Number(config.labelTopN ?? 15);
+  const [showLabels, setShowLabels] = useState(Boolean(config.showLabels));
+
+  useEffect(() => {
+    setShowLabels(Boolean(config.showLabels));
+  }, [config.showLabels]);
   const features = (results?.features as VolcanoPoint[]) ?? [];
   const stats = useMemo(() => {
     const sig = features.filter((f) => f.pValue < pThreshold && Math.abs(f.log2fc) > fcThreshold);
@@ -63,8 +69,28 @@ export function VolcanoView() {
         </div>
 
         <div className="rounded-lg border border-border bg-card p-4">
-          <div className="mb-3 flex justify-between"><h3 className="text-sm">Volcano Plot</h3><AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Volcano" filename="volcano-features" plotContainerId="plot-volcano-main" /></div>
-          <ChartPlaceholder type="Volcano Plot" height="500px" exportId="plot-volcano-main" volcanoFeatures={features} volcanoConfig={{ pThreshold, fcThreshold }} />
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm">Volcano Plot</h3>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showLabels}
+                  onChange={(e) => setShowLabels(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-border"
+                />
+                Label top features
+              </label>
+              <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Volcano" filename="volcano-features" plotContainerId="plot-volcano-main" />
+            </div>
+          </div>
+          <ChartPlaceholder
+            type="Volcano Plot"
+            height="500px"
+            exportId="plot-volcano-main"
+            volcanoFeatures={features}
+            volcanoConfig={{ pThreshold, fcThreshold, showLabels, labelTopN }}
+          />
         </div>
 
         <div className="rounded-lg border border-border bg-card">
