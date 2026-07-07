@@ -1,52 +1,59 @@
+import { useMemo } from "react";
+import type { Data, Layout } from "plotly.js-dist-min";
+import { PlotlyChart } from "./plotly-chart";
+import { PlotEmpty } from "./plotly-utils";
+
 interface VIPPlotProps {
   features?: Array<{ name: string; vip: number }>;
 }
 
-function PlotEmpty({ message }: { message: string }) {
-  return (
-    <div className="flex h-full min-h-[200px] items-center justify-center text-sm text-muted-foreground">
-      {message}
-    </div>
-  );
-}
-
 export function VIPPlot({ features = [] }: VIPPlotProps) {
+  const plot = useMemo(() => {
+    if (!features.length) return null;
+
+    const sorted = [...features].sort((a, b) => a.vip - b.vip);
+    const names = sorted.map((f) => f.name);
+    const values = sorted.map((f) => f.vip);
+    const colors = values.map((v) => (v >= 1 ? "#6366f1" : "#94a3b8"));
+
+    const traces: Data[] = [
+      {
+        type: "bar",
+        orientation: "h",
+        y: names,
+        x: values,
+        marker: { color: colors, opacity: 0.92 },
+        hovertemplate: "%{y}<br>VIP: %{x:.3f}<extra></extra>",
+      },
+    ];
+
+    const layout: Partial<Layout> = {
+      title: { text: "Variable Importance in Projection", font: { size: 14 } },
+      xaxis: { title: { text: "VIP score" }, zeroline: true },
+      yaxis: { automargin: true },
+      shapes: [
+        {
+          type: "line",
+          x0: 1,
+          x1: 1,
+          y0: 0,
+          y1: 1,
+          yref: "paper",
+          line: { color: "#ef4444", width: 2, dash: "dash" },
+        },
+      ],
+      annotations: [
+        { x: 1, y: 1, xref: "x", yref: "paper", text: "VIP = 1.0", showarrow: false, xanchor: "left", yanchor: "bottom", font: { size: 10, color: "#ef4444" } },
+      ],
+      margin: { l: 140, r: 40, t: 48, b: 48 },
+      height: Math.max(240, names.length * 28 + 80),
+    };
+
+    return { traces, layout };
+  }, [features]);
+
   if (!features.length) return <PlotEmpty message="Run PLS-DA to generate VIP scores" />;
+  if (!plot) return <PlotEmpty message="Unable to render VIP plot" />;
 
-  const width = 600;
-  const labelW = 168;
-  const barStart = labelW + 16;
-  const barMaxW = 320;
-  const barH = 22;
-  const rowGap = 10;
-  const chartH = features.length * (barH + rowGap) + 48;
-  const height = Math.max(chartH, 200);
-  const max = Math.max(...features.map((f) => f.vip), 1.2);
-  const thresholdX = barStart + (1 / max) * barMaxW;
-
-  return (
-    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="VIP score plot">
-      <rect x={0} y={0} width={width} height={height} className="fill-card" />
-      <text x={barStart} y={22} fontSize={12} fontWeight={600} className="fill-foreground">Variable Importance in Projection</text>
-
-      {features.map((f, i) => {
-        const w = (f.vip / max) * barMaxW;
-        const y = 36 + i * (barH + rowGap);
-        const significant = f.vip >= 1;
-        return (
-          <g key={f.name}>
-            <text x={labelW} y={y + barH / 2 + 4} fontSize={11} textAnchor="end" className="fill-foreground">
-              {f.name.length > 24 ? `${f.name.slice(0, 22)}…` : f.name}
-            </text>
-            <rect x={barStart} y={y} width={barMaxW} height={barH} className="fill-muted/50" rx={5} />
-            <rect x={barStart} y={y} width={w} height={barH} fill={significant ? "#6366f1" : "#94a3b8"} rx={5} opacity={0.92} />
-            <text x={barStart + w + 8} y={y + barH / 2 + 4} fontSize={11} className="fill-foreground tabular-nums">{f.vip.toFixed(2)}</text>
-          </g>
-        );
-      })}
-
-      <line x1={thresholdX} y1={32} x2={thresholdX} y2={height - 16} stroke="#ef4444" strokeDasharray="4 4" strokeWidth={1.5} />
-      <text x={thresholdX + 4} y={height - 4} fontSize={10} fill="#ef4444">VIP = 1.0</text>
-    </svg>
-  );
+  return <PlotlyChart data={plot.traces} layout={plot.layout} className="h-full w-full min-h-[200px]" />;
 }

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { Data, Layout, Shape } from "plotly.js-dist-min";
 import { PlotlyChart } from "./plotly-chart";
+import { PlotEmpty } from "./plotly-utils";
 
 export interface VolcanoPoint {
   log2fc: number;
@@ -15,14 +16,6 @@ interface VolcanoPlotProps {
   fcThreshold?: number;
   showLabels?: boolean;
   labelTopN?: number;
-}
-
-function PlotEmpty({ message }: { message: string }) {
-  return (
-    <div className="flex h-full min-h-[280px] items-center justify-center text-sm text-muted-foreground">
-      {message}
-    </div>
-  );
 }
 
 function selectLabelIndices(

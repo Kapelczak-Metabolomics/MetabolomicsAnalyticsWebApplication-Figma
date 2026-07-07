@@ -19,6 +19,7 @@ interface ChartPlaceholderProps {
   volcanoFeatures?: VolcanoPoint[];
   volcanoConfig?: { pThreshold?: number; fcThreshold?: number; showLabels?: boolean; labelTopN?: number };
   pcaConfig?: { showGroupEllipses?: boolean };
+  plsdaConfig?: { showGroupEllipses?: boolean };
   plsdaScores?: Array<{ comp1: number; comp2: number; group: string; sampleId?: string }>;
   pathways?: Array<{ name: string; genes: number; negLogP?: number; pValue?: number }>;
   heatmap?: { matrix: (number | null)[][]; sampleLabels: string[]; featureLabels: string[] };
@@ -41,6 +42,7 @@ export function ChartPlaceholder({
   volcanoFeatures,
   volcanoConfig,
   pcaConfig,
+  plsdaConfig,
   plsdaScores,
   pathways,
   heatmap,
@@ -110,7 +112,13 @@ export function ChartPlaceholder({
     if (lower.includes("permutation") || lower.includes("validation")) {
       return wrap(<PermutationPlot scores={permScores} observedR2={observedR2} observedQ2={observedQ2} />);
     }
-    return wrap(<PLSDAPlot scores={plsdaScores} explainedVariance={explainedVariance} />);
+    return wrap(
+      <PLSDAPlot
+        scores={plsdaScores}
+        explainedVariance={explainedVariance}
+        showGroupEllipses={plsdaConfig?.showGroupEllipses ?? pcaConfig?.showGroupEllipses ?? true}
+      />
+    );
   }
 
   if (lower.includes("dot plot") || lower.includes("enrichment") || lower.includes("pathway")) {

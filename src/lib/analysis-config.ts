@@ -77,6 +77,12 @@ export const plsdaConfig = [
       { key: "vipThreshold", label: "VIP threshold", type: "number" as const, value: 1.0 },
     ],
   },
+  {
+    title: "Display",
+    fields: [
+      { key: "showGroupEllipses", label: "Show group confidence regions (95%)", type: "checkbox" as const, value: true, description: "Draw filled grouping regions around each class on the score plot" },
+    ],
+  },
 ];
 
 export const pathwayConfig = [
