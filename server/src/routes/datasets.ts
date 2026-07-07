@@ -5,8 +5,15 @@ import { authMiddleware, logAudit, createNotification } from "../middleware/auth
 import { loadDatasetMatrix } from "../utils/dataset.js";
 import { computeFeatureStats } from "../services/analysis.js";
 import { bulkLoadMatrix } from "../utils/bulk-import.js";
-import { pythonImportMzxml } from "../services/python-client.js";
+import { pythonImportMzxml, pythonPreviewMzxml } from "../services/python-client.js";
 import { saveRawDatasetFiles, deleteRawDatasetFiles } from "../services/storage.js";
+import {
+  type ColumnMapping,
+  parseDelimitedTable,
+  buildSamplesFromMapping,
+  buildFeaturesFromMapping,
+  autoSampleGroups,
+} from "../utils/csv-parse.js";
 
 const router = Router();
 const upload = multer({
@@ -14,12 +21,24 @@ const upload = multer({
   limits: { fileSize: 500 * 1024 * 1024 },
 });
 
-function parseCsv(csv: string) {
-  const lines = csv.trim().split(/\r?\n/).filter(Boolean);
-  if (lines.length < 2) throw new Error("CSV must have a header row and at least one data row");
-  const headers = lines[0].split(",").map((h) => h.trim());
-  const rows = lines.slice(1).map((line) => line.split(",").map((c) => c.trim()));
-  return { headers, rows };
+function normalizeMapping(body: Record<string, unknown>): ColumnMapping | null {
+  const sampleColumn = typeof body.sampleColumn === "string" ? body.sampleColumn : null;
+  if (!sampleColumn) return null;
+  const mapping: ColumnMapping = { sampleColumn };
+  if (typeof body.groupColumn === "string" && body.groupColumn) {
+    mapping.groupColumn = body.groupColumn;
+  } else if (body.groupColumn === null) {
+    mapping.groupColumn = null;
+  }
+  if (Array.isArray(body.featureColumns)) {
+    mapping.featureColumns = body.featureColumns.filter((c): c is string => typeof c === "string");
+  }
+  if (body.sampleGroups && typeof body.sampleGroups === "object" && !Array.isArray(body.sampleGroups)) {
+    mapping.sampleGroups = Object.fromEntries(
+      Object.entries(body.sampleGroups as Record<string, unknown>).map(([k, v]) => [k, String(v)])
+    );
+  }
+  return mapping;
 }
 
 async function finalizeDatasetImport(
@@ -44,22 +63,53 @@ async function finalizeDatasetImport(
 }
 
 router.post("/import", authMiddleware, async (req: Request, res: Response) => {
-  const { projectId, name, type, csv } = req.body as { projectId: number; name: string; type?: string; csv: string };
+  const body = req.body as {
+    projectId: number;
+    name: string;
+    type?: string;
+    csv: string;
+    sampleColumn?: string;
+    groupColumn?: string | null;
+    featureColumns?: string[];
+    sampleGroups?: Record<string, string>;
+  };
+  const { projectId, name, type, csv } = body;
   if (!projectId || !name?.trim() || !csv?.trim()) {
     res.status(400).json({ error: "projectId, name, and csv are required" });
     return;
   }
 
   try {
-    const { headers, rows } = parseCsv(csv);
-    const sampleIdIdx = headers.findIndex((h) => /sample/i.test(h));
-    const groupIdx = headers.findIndex((h) => /group|class/i.test(h));
-    if (sampleIdIdx < 0 || groupIdx < 0) {
-      res.status(400).json({ error: "CSV must include sample ID and group columns" });
+    const table = parseDelimitedTable(csv);
+    if (!table.headers.length || !table.rows.length) {
+      res.status(400).json({ error: "CSV must have a header row and at least one data row" });
       return;
     }
 
-    const featureHeaders = headers.map((h, i) => ({ h, i })).filter(({ i }) => i !== sampleIdIdx && i !== groupIdx);
+    let mapping = normalizeMapping(body);
+    if (!mapping) {
+      const sampleIdx = table.headers.findIndex((h) => /sample|specimen/i.test(h));
+      const groupIdx = table.headers.findIndex((h) => /group|class|condition|cohort/i.test(h));
+      if (sampleIdx < 0) {
+        res.status(400).json({ error: "CSV must include a sample ID column (or provide sampleColumn mapping)" });
+        return;
+      }
+      mapping = { sampleColumn: table.headers[sampleIdx] };
+      if (groupIdx >= 0) mapping.groupColumn = table.headers[groupIdx];
+    }
+
+    if (!mapping.groupColumn) {
+      if (!mapping.sampleGroups || !Object.keys(mapping.sampleGroups).length) {
+        mapping.sampleGroups = autoSampleGroups(table, mapping.sampleColumn);
+      }
+    }
+
+    const samples = buildSamplesFromMapping(table, mapping);
+    const features = buildFeaturesFromMapping(table, mapping);
+    if (!features.length) {
+      res.status(400).json({ error: "No feature columns found in CSV" });
+      return;
+    }
 
     const ds = await query<{ id: number }>(
       `INSERT INTO datasets (project_id, name, type, samples_count, features_count, status, missing_pct, source_format, import_status)
@@ -68,23 +118,28 @@ router.post("/import", authMiddleware, async (req: Request, res: Response) => {
     );
     const datasetId = ds.rows[0].id;
 
-    const samples = rows.map((row) => ({ sampleId: row[sampleIdIdx], groupLabel: row[groupIdx] }));
-    const features = featureHeaders.map(({ h, i: colIdx }, idx) => ({
-      featureId: `F${String(idx + 1).padStart(4, "0")}`,
-      name: h,
-      values: rows.map((row) => {
-        const raw = row[colIdx];
-        const val = raw === "" || raw == null ? null : parseFloat(raw);
-        return val != null && !isNaN(val) ? val : null;
-      }),
-    }));
-
     const { samplesCount, featuresCount, missingPct } = await bulkLoadMatrix(datasetId, samples, features);
     await finalizeDatasetImport(datasetId, projectId, name.trim(), samplesCount, featuresCount, missingPct, "csv", req.user!.id, req);
 
     res.status(201).json({ id: datasetId, samples: samplesCount, features: featuresCount, missingPct, status: "ready" });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "Import failed" });
+  }
+});
+
+router.post("/import/mzxml/preview", authMiddleware, upload.array("files", 50), async (req: Request, res: Response) => {
+  const files = req.files as Express.Multer.File[] | undefined;
+  if (!files?.length) {
+    res.status(400).json({ error: "At least one mzXML file is required" });
+    return;
+  }
+
+  try {
+    const saved = files.map((f) => ({ buffer: f.buffer, filename: f.originalname }));
+    const preview = await pythonPreviewMzxml(saved);
+    res.json(preview);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "mzXML preview failed" });
   }
 });
 

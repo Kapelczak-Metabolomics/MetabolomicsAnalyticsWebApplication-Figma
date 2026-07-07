@@ -12,23 +12,25 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../lib/api";
+import {
+  type ColumnRole,
+  type ParsedTable,
+  autoSampleGroups,
+  collectUniqueGroups,
+  guessColumnRoles,
+  guessGroupFromSampleId,
+  parseDelimitedTable,
+} from "../../lib/csv-parse";
 
 const csvSteps = ["Upload File", "Map Columns", "Validate", "Import"];
 const mzxmlSteps = ["Upload mzXML", "Sample Groups", "Import"];
 
-function parseCsvPreview(csv: string) {
-  const lines = csv.trim().split(/\r?\n/).filter(Boolean);
-  if (lines.length < 2) return { headers: [] as string[], rows: [] as string[][], sampleCount: 0, featureCount: 0, sampleIdx: -1, groupIdx: -1, groups: [] as string[] };
-  const headers = lines[0].split(",").map((h) => h.trim());
-  const rows = lines.slice(1).map((line) => line.split(",").map((c) => c.trim()));
-  const sampleIdx = headers.findIndex((h) => /sample/i.test(h));
-  const groupIdx = headers.findIndex((h) => /group|class/i.test(h));
-  const featureCount = headers.filter((_, i) => i !== sampleIdx && i !== groupIdx).length;
-  const groups = groupIdx >= 0 ? [...new Set(rows.map((r) => r[groupIdx]).filter(Boolean))] : [];
-  return { headers, rows, sampleCount: rows.length, featureCount, sampleIdx, groupIdx, groups };
-}
-
 type ImportFormat = "csv" | "mzxml";
+
+interface MzxmlSampleRow {
+  filename: string;
+  sampleId: string;
+}
 
 export function DataImportView() {
   const [format, setFormat] = useState<ImportFormat>("csv");
@@ -36,6 +38,8 @@ export function DataImportView() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [csvContent, setCsvContent] = useState("");
   const [mzxmlFiles, setMzxmlFiles] = useState<File[]>([]);
+  const [mzxmlSamples, setMzxmlSamples] = useState<MzxmlSampleRow[]>([]);
+  const [mzxmlPreviewLoading, setMzxmlPreviewLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [importing, setImporting] = useState(false);
   const [polling, setPolling] = useState(false);
@@ -43,6 +47,9 @@ export function DataImportView() {
   const [projectId, setProjectId] = useState<number | null>(null);
   const [datasetName, setDatasetName] = useState("");
   const [groupMappings, setGroupMappings] = useState<Record<string, string>>({});
+  const [columnRoles, setColumnRoles] = useState<Record<string, ColumnRole>>({});
+  const [sampleGroups, setSampleGroups] = useState<Record<string, string>>({});
+  const [customGroups, setCustomGroups] = useState<string[]>([]);
   const navigate = useNavigate();
 
   const steps = format === "csv" ? csvSteps : mzxmlSteps;
@@ -56,18 +63,55 @@ export function DataImportView() {
       .catch(() => toast.error("Failed to load projects"));
   }, []);
 
-  const preview = useMemo(() => parseCsvPreview(csvContent), [csvContent]);
+  const table: ParsedTable = useMemo(() => parseDelimitedTable(csvContent), [csvContent]);
+
+  const sampleColumn = useMemo(
+    () => Object.entries(columnRoles).find(([, role]) => role === "sample")?.[0] ?? "",
+    [columnRoles]
+  );
+
+  const groupColumn = useMemo(
+    () => Object.entries(columnRoles).find(([, role]) => role === "group")?.[0] ?? null,
+    [columnRoles]
+  );
+
+  const featureCount = useMemo(
+    () => Object.values(columnRoles).filter((r) => r === "feature").length,
+    [columnRoles]
+  );
+
+  const resolvedSampleGroups = useMemo(() => {
+    if (!sampleColumn) return {};
+    if (Object.keys(sampleGroups).length) return sampleGroups;
+    return autoSampleGroups(table, sampleColumn);
+  }, [sampleColumn, sampleGroups, table]);
+
+  const detectedGroups = useMemo(() => {
+    if (groupColumn) return collectUniqueGroups(table, sampleColumn, groupColumn, {});
+    return [...new Set(Object.values(resolvedSampleGroups).filter(Boolean))];
+  }, [table, sampleColumn, groupColumn, resolvedSampleGroups]);
+
+  const allMzxmlGroups = useMemo(() => {
+    const defaults = ["Control", "Treatment", "Group1", "Group2", "AD"];
+    return [...new Set([...defaults, ...customGroups, ...Object.values(groupMappings)])];
+  }, [groupMappings, customGroups]);
 
   const validationResults = useMemo(() => {
     if (format !== "csv" || !csvContent) return [];
     const results: Array<{ type: "success" | "warning"; message: string }> = [];
-    if (preview.sampleCount > 0) results.push({ type: "success", message: `${preview.sampleCount} samples detected` });
-    if (preview.featureCount > 0) results.push({ type: "success", message: `${preview.featureCount} metabolite features detected` });
-    if (preview.groups.length) results.push({ type: "success", message: `${preview.groups.length} sample groups: ${preview.groups.join(", ")}` });
-    if (preview.sampleIdx < 0) results.push({ type: "warning", message: "No sample ID column detected — ensure a column named sample_id" });
-    if (preview.groupIdx < 0) results.push({ type: "warning", message: "No group column detected — ensure a column named group" });
+    if (table.rows.length > 0) results.push({ type: "success", message: `${table.rows.length} samples detected` });
+    if (featureCount > 0) results.push({ type: "success", message: `${featureCount} metabolite features mapped` });
+    if (detectedGroups.length) {
+      results.push({ type: "success", message: `${detectedGroups.length} sample groups: ${detectedGroups.join(", ")}` });
+    }
+    if (!sampleColumn) results.push({ type: "warning", message: "Select which column contains sample IDs" });
+    if (!groupColumn && !sampleColumn) {
+      results.push({ type: "warning", message: "No group column — groups will be guessed from sample IDs" });
+    }
     return results;
-  }, [csvContent, preview, format]);
+  }, [csvContent, table.rows.length, featureCount, detectedGroups, sampleColumn, groupColumn, sampleGroups, format]);
+
+  const canProceedCsvValidate = Boolean(sampleColumn) && (Boolean(groupColumn) || table.rows.length > 0);
 
   function resetForFormat(f: ImportFormat) {
     setFormat(f);
@@ -75,21 +119,77 @@ export function DataImportView() {
     setFileName(null);
     setCsvContent("");
     setMzxmlFiles([]);
+    setMzxmlSamples([]);
     setGroupMappings({});
+    setColumnRoles({});
+    setSampleGroups({});
+    setCustomGroups([]);
     setDatasetName("");
+  }
+
+  function initColumnMapping(parsed: ParsedTable) {
+    const roles = guessColumnRoles(parsed.headers);
+    setColumnRoles(roles);
+    const sampleCol = Object.entries(roles).find(([, r]) => r === "sample")?.[0];
+    if (sampleCol && !Object.entries(roles).some(([, r]) => r === "group")) {
+      setSampleGroups(autoSampleGroups(parsed, sampleCol));
+    } else {
+      setSampleGroups({});
+    }
   }
 
   function handleCsvFile(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
       const text = String(reader.result ?? "");
+      const parsed = parseDelimitedTable(text);
       setCsvContent(text);
       setFileName(file.name);
       setDatasetName(file.name.replace(/\.[^.]+$/, ""));
+      initColumnMapping(parsed);
       setStep(1);
     };
     reader.onerror = () => toast.error("Failed to read file");
     reader.readAsText(file);
+  }
+
+  async function loadMzxmlPreview(files: File[]) {
+    setMzxmlPreviewLoading(true);
+    try {
+      const preview = await api.previewMzxml(files);
+      const samples = preview.samples.length
+        ? preview.samples
+        : files.map((f) => ({
+            filename: f.name,
+            sampleId: f.name.replace(/\.(mzxml|xml|zip)$/i, ""),
+          }));
+
+      const mappings: Record<string, string> = {};
+      samples.forEach((s) => {
+        mappings[s.sampleId] = guessGroupFromSampleId(s.sampleId);
+        mappings[s.filename] = mappings[s.sampleId];
+      });
+
+      setMzxmlSamples(samples);
+      setGroupMappings(mappings);
+      setStep(1);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to read mzXML files");
+      const fallback = files.map((f) => ({
+        filename: f.name,
+        sampleId: f.name.replace(/\.(mzxml|xml|zip)$/i, ""),
+      }));
+      const mappings: Record<string, string> = {};
+      fallback.forEach((s) => {
+        mappings[s.sampleId] = guessGroupFromSampleId(s.sampleId);
+        mappings[s.filename] = mappings[s.sampleId];
+      });
+      setMzxmlSamples(fallback);
+      setGroupMappings(mappings);
+      setStep(1);
+    } finally {
+      setMzxmlPreviewLoading(false);
+    }
   }
 
   function handleMzxmlFiles(fileList: FileList | File[]) {
@@ -103,14 +203,7 @@ export function DataImportView() {
     setMzxmlFiles(files);
     setFileName(files.length === 1 ? files[0].name : `${files.length} files`);
     setDatasetName(files[0].name.replace(/\.[^.]+$/, "").replace(/\.mzxml$/i, ""));
-    const mappings: Record<string, string> = {};
-    files.forEach((f, i) => {
-      const sid = f.name.replace(/\.(mzxml|xml|zip)$/i, "");
-      mappings[sid] = i % 2 === 0 ? "Group1" : "Group2";
-      mappings[f.name] = mappings[sid];
-    });
-    setGroupMappings(mappings);
-    setStep(1);
+    void loadMzxmlPreview(files);
   }
 
   function handleFileSelect(input?: HTMLInputElement | null) {
@@ -118,6 +211,37 @@ export function DataImportView() {
     if (!file) return;
     if (format === "csv") handleCsvFile(file);
     else if (input?.files) handleMzxmlFiles(input.files);
+  }
+
+  function setColumnRole(header: string, role: ColumnRole) {
+    setColumnRoles((prev) => {
+      const next = { ...prev, [header]: role };
+      if (role === "sample") {
+        for (const h of Object.keys(next)) {
+          if (h !== header && next[h] === "sample") next[h] = "feature";
+        }
+      }
+      if (role === "group") {
+        for (const h of Object.keys(next)) {
+          if (h !== header && next[h] === "group") next[h] = "feature";
+        }
+      }
+      return next;
+    });
+
+    if (role === "sample" && table.headers.length) {
+      const hasGroup = Object.entries(columnRoles).some(([h, r]) => r === "group" && h !== header) || role === "group";
+      if (!hasGroup) setSampleGroups(autoSampleGroups(table, header));
+    }
+    if (role === "group") {
+      setSampleGroups({});
+    }
+  }
+
+  function addCustomGroup(name: string) {
+    const g = name.trim();
+    if (!g) return;
+    setCustomGroups((prev) => (prev.includes(g) ? prev : [...prev, g]));
   }
 
   async function pollImportStatus(datasetId: number) {
@@ -148,11 +272,23 @@ export function DataImportView() {
     setImporting(true);
     try {
       if (format === "csv") {
-        if (!csvContent.trim()) {
-          toast.error("CSV content is required");
+        if (!csvContent.trim() || !sampleColumn) {
+          toast.error("CSV content and sample column are required");
           return;
         }
-        const result = await api.importDataset({ projectId, name: datasetName.trim(), csv: csvContent });
+        const featureColumns = Object.entries(columnRoles)
+          .filter(([, role]) => role === "feature")
+          .map(([h]) => h);
+
+        const result = await api.importDataset({
+          projectId,
+          name: datasetName.trim(),
+          csv: csvContent,
+          sampleColumn,
+          groupColumn: groupColumn || null,
+          featureColumns,
+          sampleGroups: groupColumn ? undefined : resolvedSampleGroups,
+        });
         toast.success("Dataset imported successfully", {
           description: `${result.samples} samples · ${result.features} features`,
         });
@@ -231,7 +367,7 @@ export function DataImportView() {
                 <>
                   <Upload className="mx-auto h-10 w-10 text-muted-foreground mb-4" />
                   <h3 className="text-sm font-medium">Drop your CSV file here</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Must include sample_id and group columns plus feature columns</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Sample ID and group columns are auto-detected; you can map them manually in the next step</p>
                   <a href="/fixtures/sample_metabolomics.csv" download className="mt-2 inline-block text-xs text-primary hover:underline">
                     Download sample metabolomics CSV (20 features, AD vs Control)
                   </a>
@@ -263,7 +399,7 @@ export function DataImportView() {
                   </div>
                   <div className="rounded-lg border border-border bg-card p-3 flex items-start gap-2">
                     <Check className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                    <div><p className="text-xs font-medium">Required columns</p><p className="text-xs text-muted-foreground">sample_id, group, features</p></div>
+                    <div><p className="text-xs font-medium">Flexible columns</p><p className="text-xs text-muted-foreground">Map sample, group, and features manually</p></div>
                   </div>
                 </>
               ) : (
@@ -286,10 +422,92 @@ export function DataImportView() {
           <div className="space-y-4">
             <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-700 dark:text-emerald-400">
               <Check className="h-4 w-4 flex-shrink-0" />
-              <span><strong>{fileName}</strong> loaded — {preview.sampleCount} rows, {preview.headers.length} columns</span>
+              <span><strong>{fileName}</strong> loaded — {table.rows.length} rows, {table.headers.length} columns</span>
             </div>
-            <div className="flex justify-end">
-              <button onClick={() => setStep(2)} className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90">
+
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              <div className="border-b bg-muted/30 px-4 py-2">
+                <p className="text-xs font-medium">Column mapping</p>
+                <p className="text-xs text-muted-foreground">Assign each column a role. If no group column exists, assign groups per sample below.</p>
+              </div>
+              <table className="w-full text-xs">
+                <thead className="border-b bg-muted/20">
+                  <tr>
+                    <th className="p-3 text-left">Column</th>
+                    <th className="p-3 text-left">Preview</th>
+                    <th className="p-3 text-left">Role</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {table.headers.map((header, colIdx) => (
+                    <tr key={header} className="border-b border-border">
+                      <td className="p-3 font-medium">{header}</td>
+                      <td className="p-3 text-muted-foreground font-mono">{table.rows[0]?.[colIdx] ?? "—"}</td>
+                      <td className="p-3">
+                        <select
+                          value={columnRoles[header] ?? "feature"}
+                          onChange={(e) => setColumnRole(header, e.target.value as ColumnRole)}
+                          className="rounded border border-border bg-background px-2 py-1"
+                        >
+                          <option value="sample">Sample ID</option>
+                          <option value="group">Group</option>
+                          <option value="feature">Feature</option>
+                          <option value="skip">Skip</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {sampleColumn && !groupColumn && (
+              <div className="rounded-xl border border-border bg-card overflow-hidden">
+                <div className="border-b bg-muted/30 px-4 py-2">
+                  <p className="text-xs font-medium">Per-sample groups</p>
+                  <p className="text-xs text-muted-foreground">Groups were guessed from sample IDs — adjust as needed.</p>
+                </div>
+                <table className="w-full text-xs">
+                  <thead className="border-b bg-muted/20">
+                    <tr><th className="p-3 text-left">Sample ID</th><th className="p-3 text-left">Group</th></tr>
+                  </thead>
+                  <tbody>
+                    {table.rows.map((row) => {
+                      const sid = row[table.headers.indexOf(sampleColumn)] ?? "";
+                      if (!sid) return null;
+                      const resolved = sampleGroups[sid] ?? resolvedSampleGroups[sid] ?? guessGroupFromSampleId(sid);
+                      const groupOptions = [...new Set([...detectedGroups, resolved, "Control", "Treatment", "Group1", "Group2"])];
+                      return (
+                        <tr key={sid} className="border-b border-border">
+                          <td className="p-3 font-mono">{sid}</td>
+                          <td className="p-3">
+                            <input
+                              list={`groups-${sid}`}
+                              value={resolved}
+                              onChange={(e) => setSampleGroups((g) => ({ ...g, [sid]: e.target.value }))}
+                              className="w-full rounded border border-border bg-background px-2 py-1"
+                            />
+                            <datalist id={`groups-${sid}`}>
+                              {groupOptions.map((g) => <option key={g} value={g} />)}
+                            </datalist>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="flex justify-between">
+              <button onClick={() => setStep(0)} className="flex items-center gap-1.5 rounded-md border border-border px-4 py-2 text-xs hover:bg-accent">
+                <ArrowLeft className="h-3.5 w-3.5" /> Back
+              </button>
+              <button
+                onClick={() => setStep(2)}
+                disabled={!sampleColumn}
+                className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
                 Validate Data <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -308,7 +526,7 @@ export function DataImportView() {
             </div>
             <div className="flex justify-between">
               <button onClick={() => setStep(1)} className="flex items-center gap-1.5 rounded-md border border-border px-4 py-2 text-xs hover:bg-accent"><ArrowLeft className="h-3.5 w-3.5" /> Back</button>
-              <button onClick={() => setStep(3)} disabled={preview.sampleIdx < 0 || preview.groupIdx < 0} className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+              <button onClick={() => setStep(3)} disabled={!canProceedCsvValidate} className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
                 Proceed to Import <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -318,39 +536,64 @@ export function DataImportView() {
         {format === "mzxml" && step === 1 && (
           <div className="space-y-4">
             <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-700 dark:text-emerald-400">
-              <Check className="h-4 w-4 flex-shrink-0" />
-              <span><strong>{fileName}</strong> ready for import</span>
+              {mzxmlPreviewLoading ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Reading mzXML files...</>
+              ) : (
+                <><Check className="h-4 w-4 flex-shrink-0" /><span><strong>{fileName}</strong> — {mzxmlSamples.length} sample(s) detected</span></>
+              )}
             </div>
             <div className="rounded-xl border border-border bg-card overflow-hidden">
               <table className="w-full text-xs">
                 <thead className="border-b bg-muted/30"><tr><th className="p-3 text-left">File</th><th className="p-3 text-left">Sample ID</th><th className="p-3 text-left">Group</th></tr></thead>
                 <tbody>
-                  {mzxmlFiles.map((f) => {
-                    const sid = f.name.replace(/\.(mzxml|xml|zip)$/i, "");
-                    return (
-                      <tr key={f.name} className="border-b border-border">
-                        <td className="p-3 font-mono text-muted-foreground">{f.name}</td>
-                        <td className="p-3">{sid}</td>
-                        <td className="p-3">
-                          <select
-                            value={groupMappings[sid] ?? "Group1"}
-                            onChange={(e) => setGroupMappings((m) => ({ ...m, [sid]: e.target.value, [f.name]: e.target.value }))}
-                            className="rounded border border-border bg-background px-2 py-1"
-                          >
-                            <option>Group1</option>
-                            <option>Group2</option>
-                            <option>Control</option>
-                            <option>Treatment</option>
-                          </select>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {mzxmlSamples.map((s) => (
+                    <tr key={s.filename} className="border-b border-border">
+                      <td className="p-3 font-mono text-muted-foreground">{s.filename}</td>
+                      <td className="p-3">{s.sampleId}</td>
+                      <td className="p-3">
+                        <input
+                          list={`mz-groups-${s.sampleId}`}
+                          value={groupMappings[s.sampleId] ?? guessGroupFromSampleId(s.sampleId)}
+                          onChange={(e) => setGroupMappings((m) => ({ ...m, [s.sampleId]: e.target.value, [s.filename]: e.target.value }))}
+                          className="w-full rounded border border-border bg-background px-2 py-1"
+                        />
+                        <datalist id={`mz-groups-${s.sampleId}`}>
+                          {allMzxmlGroups.map((g) => <option key={g} value={g} />)}
+                        </datalist>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="mzxml-custom-group"
+                placeholder="Add custom group name"
+                className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-xs outline-none"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    addCustomGroup((e.target as HTMLInputElement).value);
+                    (e.target as HTMLInputElement).value = "";
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById("mzxml-custom-group") as HTMLInputElement | null;
+                  if (el) {
+                    addCustomGroup(el.value);
+                    el.value = "";
+                  }
+                }}
+                className="rounded-md border border-border px-3 py-2 text-xs hover:bg-accent"
+              >
+                Add
+              </button>
+            </div>
             <div className="flex justify-end">
-              <button onClick={() => setStep(2)} className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90">
+              <button onClick={() => setStep(2)} disabled={mzxmlPreviewLoading || !mzxmlSamples.length} className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
                 Continue <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>

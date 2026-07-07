@@ -120,11 +120,36 @@ export const api = {
       `/analysis/dataset-matrix?datasetId=${datasetId}${clustered ? "&clustered=true" : ""}`
     ),
 
-  importDataset: (data: { projectId: number; name: string; type?: string; csv: string }) =>
+  importDataset: (data: {
+    projectId: number;
+    name: string;
+    type?: string;
+    csv: string;
+    sampleColumn: string;
+    groupColumn?: string | null;
+    featureColumns?: string[];
+    sampleGroups?: Record<string, string>;
+  }) =>
     request<{ id: number; samples: number; features: number; missingPct: number }>("/datasets/import", {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  previewMzxml: async (files: File[]) => {
+    const form = new FormData();
+    files.forEach((f) => form.append("files", f));
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/datasets/import/mzxml/preview`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new ApiError(res.status, body.error || res.statusText);
+    }
+    return res.json() as Promise<{ samples: Array<{ filename: string; sampleId: string }> }>;
+  },
 
   importMzxml: async (data: { projectId: number; name: string; files: File[]; groups?: Record<string, string> }) => {
     const form = new FormData();

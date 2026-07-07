@@ -1,4 +1,41 @@
+import FormData from "form-data";
+
 const PYTHON_URL = process.env.PYTHON_SERVICE_URL || "http://127.0.0.1:47824";
+const MZXML_TIMEOUT_MS = 10 * 60 * 1000;
+
+type MzxmlFile = { buffer: Buffer; filename: string };
+
+type MzxmlImportResult = {
+  samples: Array<{ sampleId: string; groupLabel: string; values: number[] }>;
+  features: Array<{ featureId: string; name: string; featureClass: string | null; pathway: string | null; values: (number | null)[] }>;
+  samplesCount: number;
+  featuresCount: number;
+  missingPct: number;
+  sourceFormat: string;
+};
+
+function buildMultipartBody(files: MzxmlFile[], groups?: Record<string, string>): FormData {
+  const form = new FormData();
+  for (const f of files) {
+    form.append("files", f.buffer, { filename: f.filename, contentType: "application/octet-stream" });
+  }
+  if (groups) {
+    form.append("groups", JSON.stringify(groups));
+  }
+  return form;
+}
+
+async function postMzxmlForm(path: string, files: MzxmlFile[], groups?: Record<string, string>): Promise<Response> {
+  const form = buildMultipartBody(files, groups);
+  const headers = form.getHeaders();
+  const res = await fetch(`${PYTHON_URL}${path}`, {
+    method: "POST",
+    headers,
+    body: form as unknown as BodyInit,
+    signal: AbortSignal.timeout(MZXML_TIMEOUT_MS),
+  });
+  return res;
+}
 
 export async function pythonHealth(): Promise<boolean> {
   try {
@@ -9,35 +46,23 @@ export async function pythonHealth(): Promise<boolean> {
   }
 }
 
-export async function pythonImportMzxml(
-  files: Array<{ buffer: Buffer; filename: string }>,
-  groups?: Record<string, string>
-): Promise<{
-  samples: Array<{ sampleId: string; groupLabel: string; values: number[] }>;
-  features: Array<{ featureId: string; name: string; featureClass: string | null; pathway: string | null; values: (number | null)[] }>;
-  samplesCount: number;
-  featuresCount: number;
-  missingPct: number;
-  sourceFormat: string;
-}> {
-  const form = new FormData();
-  for (const f of files) {
-    form.append("files", new Blob([new Uint8Array(f.buffer)]), f.filename);
+export async function pythonPreviewMzxml(
+  files: MzxmlFile[]
+): Promise<{ samples: Array<{ filename: string; sampleId: string }> }> {
+  const res = await postMzxmlForm("/import/mzxml/preview", files);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(body.detail || body.error || "mzXML preview failed");
   }
-  if (groups) {
-    form.append("groups", JSON.stringify(groups));
-  }
+  return res.json();
+}
 
-  const res = await fetch(`${PYTHON_URL}/import/mzxml`, {
-    method: "POST",
-    body: form,
-  });
-
+export async function pythonImportMzxml(files: MzxmlFile[], groups?: Record<string, string>): Promise<MzxmlImportResult> {
+  const res = await postMzxmlForm("/import/mzxml", files, groups);
   if (!res.ok) {
     const body = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(body.detail || body.error || "mzXML import failed");
   }
-
   return res.json();
 }
 

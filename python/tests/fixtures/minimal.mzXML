@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mzXML xmlns="http://sashimi.sourceforge.net/schema_revision/mzXML_3.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://sashimi.sourceforge.net/schema_revision/mzXML_3.1 http://sashimi.sourceforge.net/schema_revision/mzXML_3.1/mzXML_3.1.xsd" version="3.1">
+  <msRun scanCount="1" startTime="PT0S">
+    <parentFile fileName="minimal.mzXML" fileType="mzXML"/>
+    <spectrum index="0" id="scan=1" msLevel="1" peaksCount="3" polarity="+" scanDesc="scan=1" lowMz="100" highMz="200" basePeakMz="150" basePeakIntensity="1000" totIonCurrent="3000" precursorScanNum="0">
+      <mzXMLPeaks precision="32" byteOrder="network" contentType="m/z-int" compressionType="none" compressedLen="0" len="24">AAAAPwAAQEAAAEBAAABCQA==</mzXMLPeaks>
+    </spectrum>
+  </msRun>
+</mzXML>
