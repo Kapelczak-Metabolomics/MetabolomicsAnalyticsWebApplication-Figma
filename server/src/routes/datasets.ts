@@ -216,7 +216,12 @@ router.post("/import/mzxml", authMiddleware, upload.array("files", 50), async (r
         "View dataset"
       );
     } catch (err) {
-      const message = err instanceof Error ? err.message : "mzXML import failed";
+      const message = err instanceof Error && err.message.trim()
+        ? err.message
+        : err != null
+          ? String(err)
+          : "mzXML import failed";
+      console.error("mzXML import failed for dataset", datasetId, err);
       await query(
         `UPDATE datasets SET status = 'failed', import_status = 'failed', import_error = $1 WHERE id = $2`,
         [message, datasetId]

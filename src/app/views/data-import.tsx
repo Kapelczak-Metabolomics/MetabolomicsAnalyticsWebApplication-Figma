@@ -257,7 +257,7 @@ export function DataImportView() {
         return;
       }
       if (status.status === "failed") {
-        toast.error(status.error || "mzXML import failed");
+        toast.error(status.error?.trim() || "mzXML import failed — check that the Python analysis service is running");
         return;
       }
     }
@@ -308,7 +308,7 @@ export function DataImportView() {
         await pollImportStatus(id);
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Import failed");
+      toast.error(e instanceof Error && e.message.trim() ? e.message : "Import failed");
     } finally {
       setImporting(false);
       setPolling(false);

@@ -16,6 +16,14 @@ export function setToken(token: string | null) {
   else localStorage.removeItem("token");
 }
 
+function formatApiError(body: unknown, fallback: string): string {
+  if (!body || typeof body !== "object") return fallback;
+  const record = body as Record<string, unknown>;
+  if (typeof record.error === "string" && record.error.trim()) return record.error;
+  if (typeof record.message === "string" && record.message.trim()) return record.message;
+  return fallback;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -27,7 +35,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new ApiError(res.status, body.error || res.statusText);
+    throw new ApiError(res.status, formatApiError(body, res.statusText || "Request failed"));
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -146,7 +154,7 @@ export const api = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: res.statusText }));
-      throw new ApiError(res.status, body.error || res.statusText);
+      throw new ApiError(res.status, formatApiError(body, res.statusText || "Request failed"));
     }
     return res.json() as Promise<{ samples: Array<{ filename: string; sampleId: string }> }>;
   },
@@ -165,7 +173,7 @@ export const api = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: res.statusText }));
-      throw new ApiError(res.status, body.error || res.statusText);
+      throw new ApiError(res.status, formatApiError(body, res.statusText || "Request failed"));
     }
     return res.json() as Promise<{ id: number; status: string; message: string }>;
   },

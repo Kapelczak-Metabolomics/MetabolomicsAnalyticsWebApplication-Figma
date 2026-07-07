@@ -1,5 +1,3 @@
-import FormData from "form-data";
-
 const PYTHON_URL = process.env.PYTHON_SERVICE_URL || "http://127.0.0.1:47824";
 const MZXML_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -14,10 +12,29 @@ type MzxmlImportResult = {
   sourceFormat: string;
 };
 
+function formatServiceError(body: unknown, fallback: string): string {
+  if (!body || typeof body !== "object") return fallback;
+  const record = body as Record<string, unknown>;
+  if (typeof record.error === "string" && record.error.trim()) return record.error;
+  const detail = record.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && "msg" in item) return String((item as { msg: unknown }).msg);
+        return "";
+      })
+      .filter(Boolean);
+    if (parts.length) return parts.join("; ");
+  }
+  return fallback;
+}
+
 function buildMultipartBody(files: MzxmlFile[], groups?: Record<string, string>): FormData {
   const form = new FormData();
   for (const f of files) {
-    form.append("files", f.buffer, { filename: f.filename, contentType: "application/octet-stream" });
+    form.append("files", new Blob([new Uint8Array(f.buffer)], { type: "application/octet-stream" }), f.filename);
   }
   if (groups) {
     form.append("groups", JSON.stringify(groups));
@@ -27,14 +44,11 @@ function buildMultipartBody(files: MzxmlFile[], groups?: Record<string, string>)
 
 async function postMzxmlForm(path: string, files: MzxmlFile[], groups?: Record<string, string>): Promise<Response> {
   const form = buildMultipartBody(files, groups);
-  const headers = form.getHeaders();
-  const res = await fetch(`${PYTHON_URL}${path}`, {
+  return fetch(`${PYTHON_URL}${path}`, {
     method: "POST",
-    headers,
-    body: form as unknown as BodyInit,
+    body: form,
     signal: AbortSignal.timeout(MZXML_TIMEOUT_MS),
   });
-  return res;
 }
 
 export async function pythonHealth(): Promise<boolean> {
@@ -49,19 +63,31 @@ export async function pythonHealth(): Promise<boolean> {
 export async function pythonPreviewMzxml(
   files: MzxmlFile[]
 ): Promise<{ samples: Array<{ filename: string; sampleId: string }> }> {
-  const res = await postMzxmlForm("/import/mzxml/preview", files);
+  let res: Response;
+  try {
+    res = await postMzxmlForm("/import/mzxml/preview", files);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Python service unreachable at ${PYTHON_URL}: ${msg}`);
+  }
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(body.detail || body.error || "mzXML preview failed");
+    const body = await res.json().catch(() => ({}));
+    throw new Error(formatServiceError(body, `mzXML preview failed (${res.status})`));
   }
   return res.json();
 }
 
 export async function pythonImportMzxml(files: MzxmlFile[], groups?: Record<string, string>): Promise<MzxmlImportResult> {
-  const res = await postMzxmlForm("/import/mzxml", files, groups);
+  let res: Response;
+  try {
+    res = await postMzxmlForm("/import/mzxml", files, groups);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Python service unreachable at ${PYTHON_URL}: ${msg}`);
+  }
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(body.detail || body.error || "mzXML import failed");
+    const body = await res.json().catch(() => ({}));
+    throw new Error(formatServiceError(body, `mzXML import failed (${res.status})`));
   }
   return res.json();
 }
@@ -79,8 +105,8 @@ export async function pythonRunAnalysis(
   });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(body.detail || body.error || `Python analysis failed: ${type}`);
+    const body = await res.json().catch(() => ({}));
+    throw new Error(formatServiceError(body, `Python analysis failed: ${type}`));
   }
 
   return res.json();
