@@ -225,6 +225,7 @@ def run_clustering(samples: list[dict], features: list[dict], config: dict | Non
         "dendrogram": _linkage_to_dendrogram(z, len(samples)),
         "silhouette": round(sil, 3),
         "sampleOrder": ordered_samples,
+        "sampleIds": [s["sampleId"] for s in samples],
         "featureLabels": feat_names[:n_feat_show],
         "heatmapMatrix": heatmap,
         "linkage": link_method,

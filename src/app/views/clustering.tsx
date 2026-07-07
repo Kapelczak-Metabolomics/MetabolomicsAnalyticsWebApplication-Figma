@@ -29,6 +29,8 @@ export function ClusteringView() {
   const clusters = (results?.clusters as Array<{ name: string; count: number; color: string }>) ?? [];
   const dendrogram = (results?.dendrogram as DendrogramMerge[]) ?? heatmap?.dendrogram as DendrogramMerge[] ?? [];
   const sampleOrder = (results?.sampleOrder as string[]) ?? heatmap?.sampleLabels ?? [];
+  // Dendrogram leaf indices reference the original sample order, not the reordered one.
+  const dendrogramLabels = (results?.sampleIds as string[]) ?? sampleOrder;
   const silhouette = (results?.silhouette as number) ?? heatmap?.silhouette;
   const linkage = (results?.linkage as string) ?? String(getAnalysisConfig("Clustering").linkageMethod ?? "Average");
   const distanceMetric = (results?.distanceMetric as string) ?? String(getAnalysisConfig("Clustering").distanceMetric ?? "Euclidean");
@@ -140,7 +142,7 @@ export function ClusteringView() {
               <h3 className="text-sm">Sample Dendrogram</h3>
               <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Clustering" filename="clustering-dendrogram" plotContainerId="plot-clustering-dendrogram" />
             </div>
-            <ChartPlaceholder type="Hierarchical Tree" height="280px" exportId="plot-clustering-dendrogram" dendrogram={dendrogram} dendrogramLabels={sampleOrder} />
+            <ChartPlaceholder type="Hierarchical Tree" height="280px" exportId="plot-clustering-dendrogram" dendrogram={dendrogram} dendrogramLabels={dendrogramLabels} />
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">

@@ -129,7 +129,7 @@ export function ChartPlaceholder({
   }
 
   if (lower.includes("dendrogram") || lower.includes("hierarchical tree")) {
-    return wrap(<DendrogramPlot data={dendrogram} labels={dendrogramLabels} height={parseInt(height) || 280} />);
+    return wrap(<DendrogramPlot data={dendrogram} labels={dendrogramLabels} />);
   }
 
   if (lower.includes("vip") || lower.includes("importance")) {
