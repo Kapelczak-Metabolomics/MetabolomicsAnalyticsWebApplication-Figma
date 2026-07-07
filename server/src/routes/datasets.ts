@@ -13,6 +13,7 @@ import {
   buildSamplesFromMapping,
   buildFeaturesFromMapping,
   autoSampleGroups,
+  guessColumnRoles,
 } from "../utils/csv-parse.js";
 
 const router = Router();
@@ -88,14 +89,18 @@ router.post("/import", authMiddleware, async (req: Request, res: Response) => {
 
     let mapping = normalizeMapping(body);
     if (!mapping) {
-      const sampleIdx = table.headers.findIndex((h) => /sample|specimen/i.test(h));
-      const groupIdx = table.headers.findIndex((h) => /group|class|condition|cohort/i.test(h));
-      if (sampleIdx < 0) {
+      const roles = guessColumnRoles(table);
+      const sampleColumn = Object.entries(roles).find(([, role]) => role === "sample")?.[0];
+      const groupColumn = Object.entries(roles).find(([, role]) => role === "group")?.[0];
+      if (!sampleColumn) {
         res.status(400).json({ error: "CSV must include a sample ID column (or provide sampleColumn mapping)" });
         return;
       }
-      mapping = { sampleColumn: table.headers[sampleIdx] };
-      if (groupIdx >= 0) mapping.groupColumn = table.headers[groupIdx];
+      mapping = { sampleColumn };
+      if (groupColumn) mapping.groupColumn = groupColumn;
+      mapping.featureColumns = Object.entries(roles)
+        .filter(([, role]) => role === "feature")
+        .map(([header]) => header);
     }
 
     if (!mapping.groupColumn) {

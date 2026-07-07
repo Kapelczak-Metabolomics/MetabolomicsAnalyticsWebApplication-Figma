@@ -128,7 +128,7 @@ export function DataImportView() {
   }
 
   function initColumnMapping(parsed: ParsedTable) {
-    const roles = guessColumnRoles(parsed.headers);
+    const roles = guessColumnRoles(parsed);
     setColumnRoles(roles);
     const sampleCol = Object.entries(roles).find(([, r]) => r === "sample")?.[0];
     if (sampleCol && !Object.entries(roles).some(([, r]) => r === "group")) {

@@ -60,23 +60,143 @@ export function parseDelimitedTable(text: string): ParsedTable {
   return { headers, rows, delimiter };
 }
 
-export function guessColumnRoles(headers: string[]): Record<string, ColumnRole> {
-  const roles: Record<string, ColumnRole> = {};
-  let sampleSet = false;
-  let groupSet = false;
+const SAMPLE_ALIASES = new Set([
+  "sample",
+  "sample_id",
+  "sampleid",
+  "specimen",
+  "specimen_id",
+  "subject",
+  "subject_id",
+  "patient_id",
+  "patient",
+]);
 
+const GROUP_ALIASES = new Set([
+  "group",
+  "group_label",
+  "grouplabel",
+  "class",
+  "condition",
+  "cohort",
+  "treatment",
+  "phenotype",
+  "disease",
+  "diagnosis",
+  "category",
+  "status",
+  "arm",
+  "batch_group",
+]);
+
+function normalizeHeader(header: string): string {
+  return header
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function parseNumeric(value: string): number | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const val = parseFloat(raw.replace(/,/g, ""));
+  return Number.isFinite(val) ? val : null;
+}
+
+interface ColumnStats {
+  header: string;
+  index: number;
+  numericRatio: number;
+  uniqueCount: number;
+}
+
+function columnStats(table: ParsedTable, colIdx: number): ColumnStats {
+  const values = table.rows.map((row) => (row[colIdx] ?? "").trim()).filter(Boolean);
+  const numericCount = values.filter((v) => parseNumeric(v) != null).length;
+  const uniqueCount = new Set(values).size;
+  return {
+    header: table.headers[colIdx],
+    index: colIdx,
+    numericRatio: values.length ? numericCount / values.length : 0,
+    uniqueCount,
+  };
+}
+
+function isLikelySampleColumn(stats: ColumnStats, rowCount: number): boolean {
+  if (stats.numericRatio > 0.6) return false;
+  if (stats.uniqueCount < rowCount * 0.5) return false;
+  return stats.uniqueCount >= Math.min(rowCount, 3);
+}
+
+function isLikelyGroupColumn(stats: ColumnStats, rowCount: number): boolean {
+  if (stats.numericRatio > 0.2) return false;
+  if (stats.uniqueCount < 2) return false;
+  if (stats.uniqueCount > Math.max(24, Math.ceil(rowCount * 0.5))) return false;
+  return true;
+}
+
+function isLikelyFeatureColumn(stats: ColumnStats): boolean {
+  return stats.numericRatio >= 0.7;
+}
+
+/** Infer column roles using exact header aliases and column content (not substring matching). */
+export function guessColumnRoles(table: ParsedTable): Record<string, ColumnRole> {
+  const { headers, rows } = table;
+  const roles: Record<string, ColumnRole> = {};
   headers.forEach((h) => {
-    const lower = h.toLowerCase();
-    if (!sampleSet && /sample|sample.?id|specimen/i.test(lower)) {
-      roles[h] = "sample";
-      sampleSet = true;
-    } else if (!groupSet && /group|class|condition|cohort|treatment/i.test(lower)) {
-      roles[h] = "group";
-      groupSet = true;
-    } else {
-      roles[h] = "feature";
-    }
+    roles[h] = "feature";
   });
+  if (!headers.length || !rows.length) return roles;
+
+  const stats = headers.map((_, i) => columnStats(table, i));
+  let sampleHeader: string | null = null;
+  let groupHeader: string | null = null;
+
+  for (const s of stats) {
+    const norm = normalizeHeader(s.header);
+    if (!sampleHeader && SAMPLE_ALIASES.has(norm)) {
+      sampleHeader = s.header;
+      roles[s.header] = "sample";
+    } else if (!groupHeader && GROUP_ALIASES.has(norm)) {
+      groupHeader = s.header;
+      roles[s.header] = "group";
+    }
+  }
+
+  if (!sampleHeader) {
+    const candidate = stats.find((s) => isLikelySampleColumn(s, rows.length));
+    if (candidate) {
+      sampleHeader = candidate.header;
+      roles[candidate.header] = "sample";
+    }
+  }
+
+  if (!groupHeader) {
+    const candidate = stats.find(
+      (s) => s.header !== sampleHeader && isLikelyGroupColumn(s, rows.length)
+    );
+    if (candidate) {
+      groupHeader = candidate.header;
+      roles[candidate.header] = "group";
+    }
+  }
+
+  for (const s of stats) {
+    if (s.header === sampleHeader || s.header === groupHeader) continue;
+    if (isLikelyFeatureColumn(s)) {
+      roles[s.header] = "feature";
+    }
+  }
+
+  // Demote mis-detected group columns that are clearly numeric feature data.
+  for (const s of stats) {
+    if (roles[s.header] === "group" && isLikelyFeatureColumn(s)) {
+      roles[s.header] = "feature";
+      if (groupHeader === s.header) groupHeader = null;
+    }
+  }
+
   return roles;
 }
 
@@ -137,8 +257,7 @@ export function buildFeaturesFromMapping(
     values: table.rows.map((row) => {
       const raw = row[i];
       if (raw === "" || raw == null) return null;
-      const val = parseFloat(String(raw).replace(/,/g, ""));
-      return Number.isFinite(val) ? val : null;
+      return parseNumeric(String(raw));
     }),
   }));
 }
