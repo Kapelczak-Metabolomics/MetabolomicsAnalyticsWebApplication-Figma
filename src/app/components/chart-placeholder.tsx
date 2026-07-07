@@ -23,6 +23,7 @@ interface ChartPlaceholderProps {
   plsdaScores?: Array<{ comp1: number; comp2: number; group: string; sampleId?: string }>;
   pathways?: Array<{ name: string; genes: number; negLogP?: number; pValue?: number }>;
   heatmap?: { matrix: (number | null)[][]; sampleLabels: string[]; featureLabels: string[] };
+  heatmapOrientation?: "samples-y" | "samples-x";
   dendrogram?: DendrogramMerge[];
   dendrogramLabels?: string[];
   vipFeatures?: Array<{ name: string; vip: number }>;
@@ -46,6 +47,7 @@ export function ChartPlaceholder({
   plsdaScores,
   pathways,
   heatmap,
+  heatmapOrientation,
   dendrogram,
   dendrogramLabels,
   vipFeatures,
@@ -80,7 +82,7 @@ export function ChartPlaceholder({
   );
 
   if (lower.includes("heatmap") && heatmap) {
-    return wrap(<HeatmapPlot {...heatmap} />);
+    return wrap(<HeatmapPlot {...heatmap} orientation={heatmapOrientation} />);
   }
 
   if (lower.includes("volcano")) {

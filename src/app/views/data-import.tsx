@@ -48,6 +48,8 @@ export function DataImportView() {
   const [mzxmlSamples, setMzxmlSamples] = useState<MzxmlSampleRow[]>([]);
   const [mzxmlPreviewLoading, setMzxmlPreviewLoading] = useState(false);
   const [mzxmlPreviewWarning, setMzxmlPreviewWarning] = useState<string | null>(null);
+  const [mzxmlSessionId, setMzxmlSessionId] = useState<string | null>(null);
+  const [mzxmlUploadProgress, setMzxmlUploadProgress] = useState<{ file: number; pct: number } | null>(null);
   const [pythonReady, setPythonReady] = useState<boolean | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [csvReading, setCsvReading] = useState(false);
@@ -140,6 +142,8 @@ export function DataImportView() {
     setMzxmlSamples([]);
     setGroupMappings({});
     setMzxmlPreviewWarning(null);
+    setMzxmlSessionId(null);
+    setMzxmlUploadProgress(null);
     setColumnRoles({});
     setSampleGroups({});
     setCustomGroups([]);
@@ -232,8 +236,13 @@ export function DataImportView() {
     }
     setMzxmlPreviewLoading(true);
     setMzxmlPreviewWarning(null);
+    setMzxmlUploadProgress({ file: 0, pct: 0 });
     try {
-      const preview = await api.previewMzxml(mzxmlFiles);
+      const sessionId = await api.stageMzxmlFiles(mzxmlFiles, (fileIndex, pct) => {
+        setMzxmlUploadProgress({ file: fileIndex, pct });
+      });
+      setMzxmlSessionId(sessionId);
+      const preview = await api.previewMzxmlSession(sessionId);
       const localSamples = buildMzxmlSamplesFromFiles(mzxmlFiles);
       const samples = preview.samples.length ? preview.samples : localSamples;
       setMzxmlSamples(samples);
@@ -250,6 +259,7 @@ export function DataImportView() {
       toast.error(message);
     } finally {
       setMzxmlPreviewLoading(false);
+      setMzxmlUploadProgress(null);
     }
   }
 
@@ -372,9 +382,11 @@ export function DataImportView() {
         const { id } = await api.importMzxml({
           projectId,
           name: datasetName.trim(),
-          files: mzxmlFiles,
+          sessionId: mzxmlSessionId ?? undefined,
+          files: mzxmlSessionId ? undefined : mzxmlFiles,
           groups: groupMappings,
         });
+        setMzxmlSessionId(null);
         toast.info("mzXML import started", { description: "Processing spectra with Python backend..." });
         await pollImportStatus(id);
       }
@@ -636,7 +648,12 @@ export function DataImportView() {
             )}
             <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-700 dark:text-emerald-400">
               {mzxmlPreviewLoading ? (
-                <><Loader2 className="h-4 w-4 animate-spin" /> Verifying mzXML with Python...</>
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {mzxmlUploadProgress
+                    ? `Uploading file ${mzxmlUploadProgress.file + 1}/${mzxmlFiles.length} (${mzxmlUploadProgress.pct}%)…`
+                    : "Verifying mzXML with Python..."}
+                </>
               ) : (
                 <><Check className="h-4 w-4 flex-shrink-0" /><span><strong>{fileName}</strong> — {mzxmlSamples.length} sample(s) from filenames</span></>
               )}
@@ -646,10 +663,15 @@ export function DataImportView() {
                   onClick={() => void verifyMzxmlWithPython()}
                   className="ml-auto rounded-md border border-emerald-600/30 bg-background/80 px-2.5 py-1 text-[11px] font-medium text-emerald-800 hover:bg-background dark:text-emerald-300"
                 >
-                  Verify spectra (optional)
+                  {mzxmlSessionId ? "Re-verify spectra" : "Verify spectra (optional)"}
                 </button>
               )}
             </div>
+            {mzxmlSessionId && !mzxmlPreviewLoading && (
+              <p className="text-[11px] text-muted-foreground">
+                Files staged on server — import will reuse the uploaded session (one file at a time, avoids proxy timeouts).
+              </p>
+            )}
             <div className="rounded-xl border border-border bg-card overflow-hidden">
               <table className="w-full text-xs">
                 <thead className="border-b bg-muted/30"><tr><th className="p-3 text-left">File</th><th className="p-3 text-left">Sample ID</th><th className="p-3 text-left">Group</th></tr></thead>

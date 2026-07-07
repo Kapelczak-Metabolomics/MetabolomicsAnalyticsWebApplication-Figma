@@ -70,6 +70,9 @@ export function ExperimentDetailView() {
     observedQ2: type === "PLS-DA" ? (results?.q2 as number) : undefined,
     pathways: type === "Pathway" ? (results?.pathways as Array<{ name: string; genes: number; negLogP?: number }>) : undefined,
     heatmap: type === "Clustering" && heatmap ? heatmap : undefined,
+    heatmapOrientation: type === "Clustering"
+      ? ((results?.config as { heatmapOrientation?: "samples-y" | "samples-x" })?.heatmapOrientation ?? "samples-y")
+      : undefined,
     dendrogram: type === "Clustering" ? (results?.dendrogram as DendrogramMerge[]) : undefined,
     dendrogramLabels: type === "Clustering" ? ((results?.sampleOrder as string[]) ?? heatmap?.sampleLabels) : undefined,
     silhouette: type === "Clustering" ? (results?.silhouette as number) : undefined,

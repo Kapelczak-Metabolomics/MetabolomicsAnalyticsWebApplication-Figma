@@ -23,6 +23,7 @@ export function ClusteringView() {
   const [configOpen, setConfigOpen] = useState(false);
   const { saveAnalysisConfig, getAnalysisConfig } = useApp();
   const { dataset, results, loading, error, refresh, experimentId } = useAnalysisPage("Clustering");
+  const heatmapOrientation = (getAnalysisConfig("Clustering").heatmapOrientation as "samples-y" | "samples-x") ?? "samples-y";
   const [heatmap, setHeatmap] = useState<{ matrix: (number | null)[][]; sampleLabels: string[]; featureLabels: string[]; dendrogram?: unknown[]; silhouette?: number } | null>(null);
 
   const clusters = (results?.clusters as Array<{ name: string; count: number; color: string }>) ?? [];
@@ -130,7 +131,7 @@ export function ClusteringView() {
             <h3 className="text-sm">Heatmap with Dendrograms</h3>
             <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Clustering" filename="clustering" plotContainerId="plot-clustering-heatmap" />
           </div>
-          <ChartPlaceholder type="Clustered Heatmap" height="550px" exportId="plot-clustering-heatmap" heatmap={heatmap ? { matrix: heatmap.matrix, sampleLabels: heatmap.sampleLabels, featureLabels: heatmap.featureLabels } : undefined} />
+          <ChartPlaceholder type="Clustered Heatmap" height="550px" exportId="plot-clustering-heatmap" heatmap={heatmap ? { matrix: heatmap.matrix, sampleLabels: heatmap.sampleLabels, featureLabels: heatmap.featureLabels } : undefined} heatmapOrientation={heatmapOrientation} />
         </div>
 
         <div className="grid grid-cols-2 gap-4">

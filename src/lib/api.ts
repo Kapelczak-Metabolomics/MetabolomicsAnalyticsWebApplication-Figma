@@ -177,51 +177,78 @@ export const api = {
     }),
 
   previewMzxml: async (files: File[]) => {
-    const form = new FormData();
-    files.forEach((f) => form.append("files", f));
-    const token = getToken();
-    let res: Response;
-    try {
-      res = await fetch(`${API_BASE}/datasets/import/mzxml/preview`, {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: form,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Network error";
-      throw new ApiError(0, `Could not upload files for preview: ${msg}`);
-    }
-    if (!res.ok) {
-      throw new ApiError(res.status, await parseErrorResponse(res));
-    }
-    return res.json() as Promise<{
-      samples: Array<{ filename: string; sampleId: string }>;
-      warning?: string;
-    }>;
+    const sessionId = await api.stageMzxmlFiles(files);
+    return api.previewMzxmlSession(sessionId);
   },
 
-  importMzxml: async (data: { projectId: number; name: string; files: File[]; groups?: Record<string, string> }) => {
-    const form = new FormData();
-    form.append("projectId", String(data.projectId));
-    form.append("name", data.name);
-    if (data.groups) form.append("groups", JSON.stringify(data.groups));
-    data.files.forEach((f) => form.append("files", f));
-    const token = getToken();
-    let res: Response;
-    try {
-      res = await fetch(`${API_BASE}/datasets/import/mzxml`, {
+  createMzxmlSession: () =>
+    request<{ sessionId: string }>("/datasets/import/mzxml/session", { method: "POST" }),
+
+  stageMzxmlFile: (sessionId: string, file: File, onProgress?: (pct: number) => void) =>
+    new Promise<{ sessionId: string; filename: string; fileCount: number }>((resolve, reject) => {
+      const form = new FormData();
+      form.append("file", file);
+      const token = getToken();
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${API_BASE}/datasets/import/mzxml/session/${sessionId}/file`);
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          onProgress(Math.round((event.loaded / event.total) * 100));
+        }
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch {
+            reject(new ApiError(xhr.status, "Invalid upload response"));
+          }
+          return;
+        }
+        reject(new ApiError(xhr.status, xhr.responseText || "Upload failed"));
+      };
+      xhr.onerror = () => reject(new ApiError(0, "Network error during file upload"));
+      xhr.send(form);
+    }),
+
+  stageMzxmlFiles: async (files: File[], onFileProgress?: (fileIndex: number, pct: number) => void) => {
+    const { sessionId } = await api.createMzxmlSession();
+    for (let i = 0; i < files.length; i++) {
+      await api.stageMzxmlFile(sessionId, files[i], (pct) => onFileProgress?.(i, pct));
+    }
+    return sessionId;
+  },
+
+  previewMzxmlSession: (sessionId: string) =>
+    request<{ samples: Array<{ filename: string; sampleId: string }>; warning?: string }>(
+      "/datasets/import/mzxml/preview-session",
+      { method: "POST", body: JSON.stringify({ sessionId }) }
+    ),
+
+  importMzxml: async (data: {
+    projectId: number;
+    name: string;
+    files?: File[];
+    sessionId?: string;
+    groups?: Record<string, string>;
+  }) => {
+    if (data.sessionId) {
+      return request<{ id: number; status: string; message: string }>("/datasets/import/mzxml", {
         method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: form,
+        body: JSON.stringify({
+          sessionId: data.sessionId,
+          projectId: data.projectId,
+          name: data.name,
+          groups: data.groups,
+        }),
       });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Network error";
-      throw new ApiError(0, `Could not upload mzXML files: ${msg}`);
     }
-    if (!res.ok) {
-      throw new ApiError(res.status, await parseErrorResponse(res));
+    if (!data.files?.length) {
+      throw new ApiError(400, "No mzXML files to import");
     }
-    return res.json() as Promise<{ id: number; status: string; message: string }>;
+    const sessionId = await api.stageMzxmlFiles(data.files);
+    return api.importMzxml({ ...data, sessionId });
   },
 
   getImportStatus: (datasetId: number) =>

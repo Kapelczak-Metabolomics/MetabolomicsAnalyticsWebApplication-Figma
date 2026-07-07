@@ -6,6 +6,15 @@ import { computeFeatureStats } from "../services/analysis.js";
 import { bulkLoadMatrix } from "../utils/bulk-import.js";
 import { pythonHealth, pythonImportMzxml, pythonPreviewMzxml } from "../services/python-client.js";
 import { saveRawDatasetFiles, deleteRawDatasetFiles } from "../services/storage.js";
+import fs from "fs";
+import path from "path";
+import {
+  addFileToMzxmlSession,
+  cleanupMzxmlSession,
+  createMzxmlSession,
+  getSessionUploadFiles,
+  loadMzxmlSession,
+} from "../utils/mzxml-session.js";
 import {
   cleanupUploadFiles,
   MAX_MZXML_UPLOAD_BYTES,
@@ -161,13 +170,28 @@ router.post("/import", authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-router.post("/import/mzxml/preview", authMiddleware, handleUpload, async (req: Request, res: Response) => {
-  const uploads = uploadsFromRequest(req.files as Express.Multer.File[] | undefined);
-  if (!uploads.length) {
-    res.status(400).json({ error: "At least one mzXML file is required" });
-    return;
-  }
+function handleSingleUpload(req: Request, res: Response, next: NextFunction) {
+  mzxmlUpload.single("file")(req, res, (err: unknown) => {
+    if (!err) {
+      next();
+      return;
+    }
+    if (err && typeof err === "object" && "code" in err) {
+      const code = String((err as { code: string }).code);
+      const message =
+        code === "LIMIT_FILE_SIZE"
+          ? `File too large — maximum upload size is ${MAX_MZXML_UPLOAD_BYTES / (1024 * 1024)} MB`
+          : err instanceof Error
+            ? err.message
+            : "Upload failed";
+      res.status(400).json({ error: message });
+      return;
+    }
+    res.status(400).json({ error: err instanceof Error ? err.message : "Upload failed" });
+  });
+}
 
+async function previewMzxmlUploads(uploads: MzxmlUploadFile[], res: Response, cleanup = true) {
   const filenameSamples = uploads.map((f) => ({
     filename: f.filename,
     sampleId: f.filename.replace(/\.(mzxml|mzml|xml|zip)$/i, ""),
@@ -192,28 +216,111 @@ router.post("/import/mzxml/preview", authMiddleware, handleUpload, async (req: R
     }
     res.json({ samples, warning });
   } finally {
-    await cleanupUploadFiles(uploads);
+    if (cleanup) await cleanupUploadFiles(uploads);
   }
+}
+
+router.post("/import/mzxml/session", authMiddleware, (req: Request, res: Response) => {
+  const session = createMzxmlSession(req.user!.id);
+  res.json({ sessionId: session.id });
 });
 
-router.post("/import/mzxml", authMiddleware, handleUpload, async (req: Request, res: Response) => {
+router.post(
+  "/import/mzxml/session/:sessionId/file",
+  authMiddleware,
+  handleSingleUpload,
+  async (req: Request, res: Response) => {
+    const sessionId = String(req.params.sessionId);
+    const session = loadMzxmlSession(sessionId, req.user!.id);
+    if (!session) {
+      res.status(404).json({ error: "Upload session not found or expired — select files again." });
+      return;
+    }
+
+    const uploaded = req.file;
+    if (!uploaded) {
+      res.status(400).json({ error: "No file received" });
+      return;
+    }
+
+    const filename = uploaded.originalname || path.basename(uploaded.path);
+    const dest = path.join(session.dir, path.basename(filename));
+    try {
+      if (uploaded.path !== dest) {
+        fs.renameSync(uploaded.path, dest);
+      }
+      addFileToMzxmlSession(sessionId, req.user!.id, { path: dest, filename: path.basename(filename) });
+      const updated = loadMzxmlSession(sessionId, req.user!.id);
+      res.json({
+        sessionId,
+        filename: path.basename(filename),
+        fileCount: updated?.files.length ?? 0,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : "Failed to store uploaded file" });
+    }
+  }
+);
+
+router.post("/import/mzxml/preview-session", authMiddleware, async (req: Request, res: Response) => {
+  const sessionId = String(req.body?.sessionId ?? "");
+  if (!sessionId) {
+    res.status(400).json({ error: "sessionId is required" });
+    return;
+  }
+  const uploads = getSessionUploadFiles(sessionId, req.user!.id);
+  if (!uploads.length) {
+    res.status(400).json({ error: "No files in upload session" });
+    return;
+  }
+  await previewMzxmlUploads(uploads, res, false);
+});
+
+router.post("/import/mzxml/preview", authMiddleware, handleUpload, async (req: Request, res: Response) => {
+  const uploads = uploadsFromRequest(req.files as Express.Multer.File[] | undefined);
+  if (!uploads.length) {
+    res.status(400).json({ error: "At least one mzXML file is required" });
+    return;
+  }
+  await previewMzxmlUploads(uploads, res, true);
+});
+
+router.post("/import/mzxml", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  if (req.is("multipart/form-data")) {
+    handleUpload(req, res, () => processMzxmlImport(req, res));
+    return;
+  }
+  if (req.body?.sessionId) {
+    await processMzxmlImport(req, res);
+    return;
+  }
+  res.status(400).json({ error: "Provide multipart files or a sessionId from staged uploads" });
+});
+
+async function processMzxmlImport(req: Request, res: Response) {
+  const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
   const projectId = parseInt(String(req.body.projectId), 10);
   const name = String(req.body.name || "").trim();
-  const groupsRaw = req.body.groups as string | undefined;
+  const groupsRaw = req.body.groups as string | Record<string, string> | undefined;
 
   if (!projectId || Number.isNaN(projectId) || !name) {
     res.status(400).json({ error: "projectId and name are required" });
     return;
   }
 
-  const uploads = uploadsFromRequest(req.files as Express.Multer.File[] | undefined);
+  let uploads: MzxmlUploadFile[];
+  if (sessionId) {
+    uploads = getSessionUploadFiles(sessionId, req.user!.id);
+  } else {
+    uploads = uploadsFromRequest(req.files as Express.Multer.File[] | undefined);
+  }
   if (!uploads.length) {
     res.status(400).json({ error: "At least one mzXML file is required" });
     return;
   }
 
   if (!(await pythonHealth())) {
-    await cleanupUploadFiles(uploads);
+    if (!sessionId) await cleanupUploadFiles(uploads);
     res.status(503).json({
       error: "Python analysis service is not running. mzXML import requires the Python service to be healthy before upload.",
     });
@@ -223,9 +330,9 @@ router.post("/import/mzxml", authMiddleware, handleUpload, async (req: Request, 
   let groups: Record<string, string> = {};
   if (groupsRaw) {
     try {
-      groups = JSON.parse(groupsRaw);
+      groups = typeof groupsRaw === "string" ? JSON.parse(groupsRaw) : (groupsRaw as Record<string, string>);
     } catch {
-      await cleanupUploadFiles(uploads);
+      if (!sessionId) await cleanupUploadFiles(uploads);
       res.status(400).json({ error: "Invalid groups JSON" });
       return;
     }
@@ -248,8 +355,9 @@ router.post("/import/mzxml", authMiddleware, handleUpload, async (req: Request, 
     userId,
     uploads,
     groups,
+    sessionId: sessionId || undefined,
   }).catch((err) => console.error("mzXML import launcher failed for dataset", datasetId, err));
-});
+}
 
 async function launchMzxmlImport(opts: {
   datasetId: number;
@@ -258,8 +366,9 @@ async function launchMzxmlImport(opts: {
   userId: number;
   uploads: MzxmlUploadFile[];
   groups: Record<string, string>;
+  sessionId?: string;
 }) {
-  const { datasetId, projectId, name, userId, uploads, groups } = opts;
+  const { datasetId, projectId, name, userId, uploads, groups, sessionId } = opts;
   try {
     const storagePath = await saveRawDatasetFiles(
       datasetId,
@@ -305,7 +414,11 @@ async function launchMzxmlImport(opts: {
     );
     await createNotification(userId, "error", "mzXML Import Failed", message, "/data/import", "Retry import");
   } finally {
-    await cleanupUploadFiles(uploads);
+    if (sessionId) {
+      await cleanupMzxmlSession(sessionId);
+    } else {
+      await cleanupUploadFiles(uploads);
+    }
   }
 }
 

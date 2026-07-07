@@ -109,7 +109,7 @@ export function VolcanoPlot({
     const shapes: Partial<Shape>[] = [
       { type: "line", x0: -fcThreshold, x1: -fcThreshold, y0: 0, y1: plotYMax, line: { color: "#0891b2", width: 1.5, dash: "dash" } },
       { type: "line", x0: fcThreshold, x1: fcThreshold, y0: 0, y1: plotYMax, line: { color: "#dc2626", width: 1.5, dash: "dash" } },
-      { type: "line", x0: -xMaxAbs, x1: xMaxAbs, y0: pLine, y1: plotYMax, line: { color: "#64748b", width: 1.5, dash: "dash" } },
+      { type: "line", x0: -xMaxAbs, x1: xMaxAbs, y0: pLine, y1: pLine, line: { color: "#64748b", width: 1.5, dash: "dash" } },
       { type: "line", x0: 0, x1: 0, y0: 0, y1: plotYMax, line: { color: "#cbd5e1", width: 1 } },
     ];
 

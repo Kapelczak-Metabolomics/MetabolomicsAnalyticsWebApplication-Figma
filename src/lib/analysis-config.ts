@@ -53,6 +53,19 @@ export const clusteringConfig = [
       { key: "logTransform", label: "Log transform", type: "checkbox" as const, value: true },
     ],
   },
+  {
+    title: "Display",
+    fields: [
+      {
+        key: "heatmapOrientation",
+        label: "Heatmap axes",
+        type: "select" as const,
+        value: "samples-y",
+        options: ["samples-y", "samples-x"],
+        description: "samples-y: samples on rows (Y), compounds on columns (X). samples-x: swap axes.",
+      },
+    ],
+  },
 ];
 
 export const plsdaConfig = [
