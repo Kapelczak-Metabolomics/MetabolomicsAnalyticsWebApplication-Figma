@@ -17,9 +17,9 @@ function PlotEmpty({ message }: { message: string }) {
 export function PermutationPlot({ scores = [], observedR2, observedQ2 }: PermutationPlotProps) {
   if (!scores.length) return <PlotEmpty message="Run PLS-DA to generate permutation test" />;
 
-  const width = 520;
-  const height = 300;
-  const pad = { l: 52, r: 24, t: 28, b: 48 };
+  const width = 560;
+  const height = 340;
+  const pad = { l: 56, r: 28, t: 36, b: 56 };
   const plotW = width - pad.l - pad.r;
   const plotH = height - pad.t - pad.b;
   const maxVal = Math.max(...scores.map((s) => Math.max(s.r2, s.q2)), observedR2 ?? 0, observedQ2 ?? 0, 0.1) * 1.1;
@@ -54,11 +54,20 @@ export function PermutationPlot({ scores = [], observedR2, observedQ2 }: Permuta
         {yTicks.map((t) => (
           <text key={t} x={-8} y={yScale(t) + 4} fontSize={10} textAnchor="end" className="fill-muted-foreground">{formatTick(t)}</text>
         ))}
-        <text x={plotW / 2} y={plotH + 34} fontSize={12} textAnchor="middle" className="fill-foreground">Permutation iteration</text>
-        <text x={-plotH / 2} y={-34} fontSize={12} textAnchor="middle" transform={`rotate(-90, ${-plotH / 2}, -34)`} className="fill-foreground">R² / Q²</text>
+        <text x={plotW / 2} y={plotH + 36} fontSize={12} textAnchor="middle" className="fill-foreground">Permutation iteration</text>
+        <text
+          x={-44}
+          y={plotH / 2}
+          fontSize={12}
+          textAnchor="middle"
+          transform={`rotate(-90, -44, ${plotH / 2})`}
+          className="fill-foreground"
+        >
+          R² / Q²
+        </text>
       </g>
 
-      <g transform={`translate(${width - 150}, ${pad.t})`}>
+      <g transform={`translate(${width - 158}, ${pad.t})`}>
         <rect width={126} height={58} className="fill-card stroke-border" strokeWidth={1} rx={6} />
         <circle cx={12} cy={16} r={4} fill="#7c3aed" />
         <text x={22} y={20} fontSize={10} className="fill-foreground">Permuted R²</text>

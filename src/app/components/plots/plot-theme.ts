@@ -1,8 +1,14 @@
 export const GROUP_COLORS = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#8b5cf6"];
 
-export const PLOT_SIZE = { width: 720, height: 520 };
+/** SVG canvas — padding keeps axis titles and legends inside the viewBox. */
+export const PLOT_SIZE = { width: 760, height: 560 };
 
-export const PLOT_PAD = { left: 84, right: 148, top: 40, bottom: 76 };
+export const PLOT_PAD = { left: 96, right: 168, top: 52, bottom: 96 };
+
+/** X position for rotated Y-axis titles (inside left margin). */
+export const Y_AXIS_LABEL_X = -68;
+
+export const PLOT_ASPECT = `${PLOT_SIZE.width} / ${PLOT_SIZE.height}`;
 
 export function linearScale(domain: [number, number], range: [number, number]) {
   const [d0, d1] = domain;

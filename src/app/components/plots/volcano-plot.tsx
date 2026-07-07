@@ -1,4 +1,4 @@
-import { PLOT_PAD, PLOT_SIZE, formatTick, linearScale, niceTicks, symmetricDomain } from "./plot-theme";
+import { PLOT_PAD, PLOT_SIZE, Y_AXIS_LABEL_X, formatTick, linearScale, niceTicks, symmetricDomain } from "./plot-theme";
 
 export interface VolcanoPoint {
   log2fc: number;
@@ -25,7 +25,7 @@ export function VolcanoPlot({ features = [], pThreshold = 0.05, fcThreshold = 0.
   if (!features.length) return <PlotEmpty message="Run analysis to generate volcano plot from your dataset" />;
 
   const { width, height } = PLOT_SIZE;
-  const pad = { ...PLOT_PAD, right: 40 };
+  const pad = { ...PLOT_PAD, right: 48 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
 
@@ -48,7 +48,7 @@ export function VolcanoPlot({ features = [], pThreshold = 0.05, fcThreshold = 0.
   const pLine = -Math.log10(pThreshold);
 
   return (
-    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Volcano plot">
+    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Volcano plot">
       <rect x={0} y={0} width={width} height={height} className="fill-card" />
       <g transform={`translate(${pad.left}, ${pad.top})`}>
         <rect x={0} y={0} width={plotW} height={plotH} rx={6} className="fill-muted/15 stroke-border/50" strokeWidth={1} />
@@ -79,11 +79,21 @@ export function VolcanoPlot({ features = [], pThreshold = 0.05, fcThreshold = 0.
         {yTicks.map((t) => (
           <text key={`ty-${t}`} x={-10} y={yScale(t) + 4} fontSize={11} textAnchor="end" className="fill-muted-foreground">{formatTick(t)}</text>
         ))}
-        <text x={plotW / 2} y={plotH + 48} fontSize={13} fontWeight={500} textAnchor="middle" className="fill-foreground">log₂ fold change</text>
-        <text x={-plotH / 2} y={-48} fontSize={13} fontWeight={500} textAnchor="middle" transform={`rotate(-90, ${-plotH / 2}, -48)`} className="fill-foreground">−log₁₀ p-value</text>
+        <text x={plotW / 2} y={plotH + 40} fontSize={13} fontWeight={500} textAnchor="middle" className="fill-foreground">log₂ fold change</text>
+        <text
+          x={Y_AXIS_LABEL_X}
+          y={plotH / 2}
+          fontSize={13}
+          fontWeight={500}
+          textAnchor="middle"
+          transform={`rotate(-90, ${Y_AXIS_LABEL_X}, ${plotH / 2})`}
+          className="fill-foreground"
+        >
+          −log₁₀ p-value
+        </text>
       </g>
 
-      <g transform={`translate(${width - 148}, ${pad.top + 8})`}>
+      <g transform={`translate(${width - 156}, ${pad.top + 8})`}>
         <rect x={0} y={0} width={132} height={88} className="fill-card stroke-border" strokeWidth={1} rx={6} />
         <circle cx={12} cy={18} r={4} fill="#dc2626" />
         <text x={22} y={22} fontSize={10} className="fill-foreground">Upregulated ({up})</text>

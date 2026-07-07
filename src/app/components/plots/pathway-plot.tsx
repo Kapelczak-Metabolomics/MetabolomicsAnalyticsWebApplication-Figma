@@ -15,9 +15,9 @@ function PlotEmpty({ message }: { message: string }) {
 export function PathwayPlot({ pathways = [] }: PathwayPlotProps) {
   if (!pathways.length) return <PlotEmpty message="Run pathway enrichment to see results" />;
 
-  const width = 640;
-  const height = 420;
-  const pad = { left: 72, right: 24, top: 24, bottom: 72 };
+  const width = 680;
+  const height = 460;
+  const pad = { left: 88, right: 32, top: 36, bottom: 88 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
 
@@ -36,7 +36,7 @@ export function PathwayPlot({ pathways = [] }: PathwayPlotProps) {
   const maxY = Math.max(...points.map((p) => p.y), 0.01);
 
   return (
-    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Pathway enrichment dot plot">
+    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Pathway enrichment dot plot">
       <rect x={0} y={0} width={width} height={height} className="fill-card" />
       <g transform={`translate(${pad.left}, ${pad.top})`}>
         {yTicks.map((t) => (
@@ -69,10 +69,20 @@ export function PathwayPlot({ pathways = [] }: PathwayPlotProps) {
         {yTicks.map((t) => (
           <text key={`ty-${t}`} x={-10} y={yScale(t) + 4} fontSize={11} textAnchor="end" className="fill-muted-foreground">{formatTick(t)}</text>
         ))}
-        <text x={plotW / 2} y={plotH + 48} fontSize={13} fontWeight={500} textAnchor="middle" className="fill-foreground">Feature count in pathway</text>
-        <text x={-plotH / 2} y={-48} fontSize={13} fontWeight={500} textAnchor="middle" transform={`rotate(-90, ${-plotH / 2}, -48)`} className="fill-foreground">−log₁₀ p-value</text>
+        <text x={plotW / 2} y={plotH + 40} fontSize={13} fontWeight={500} textAnchor="middle" className="fill-foreground">Feature count in pathway</text>
+        <text
+          x={-64}
+          y={plotH / 2}
+          fontSize={13}
+          fontWeight={500}
+          textAnchor="middle"
+          transform={`rotate(-90, -64, ${plotH / 2})`}
+          className="fill-foreground"
+        >
+          −log₁₀ p-value
+        </text>
       </g>
-      <text x={pad.left} y={16} fontSize={10} className="fill-muted-foreground">Bubble size reflects significance</text>
+      <text x={pad.left} y={22} fontSize={10} className="fill-muted-foreground">Bubble size reflects significance</text>
     </svg>
   );
 }

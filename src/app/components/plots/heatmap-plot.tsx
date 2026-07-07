@@ -23,7 +23,7 @@ export function HeatmapPlot({ matrix = [], sampleLabels = [], featureLabels = []
   const rows = matrix.length;
   const cols = matrix[0].length;
   const cell = 22;
-  const pad = { left: 112, top: 80, right: 96, bottom: 28 };
+  const pad = { left: 120, top: 96, right: 100, bottom: 32 };
   const width = pad.left + cols * cell + pad.right;
   const height = pad.top + rows * cell + pad.bottom;
 

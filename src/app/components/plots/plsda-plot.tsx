@@ -1,4 +1,4 @@
-import { GROUP_COLORS, PLOT_PAD, PLOT_SIZE, formatTick, groupColor, linearScale, niceTicks, paddedDomain } from "./plot-theme";
+import { GROUP_COLORS, PLOT_PAD, PLOT_SIZE, Y_AXIS_LABEL_X, formatTick, groupColor, linearScale, niceTicks, paddedDomain } from "./plot-theme";
 
 interface PLSDAPlotProps {
   scores?: Array<{ comp1: number; comp2: number; group: string; sampleId?: string }>;
@@ -32,7 +32,7 @@ export function PLSDAPlot({ scores = [], explainedVariance = [] }: PLSDAPlotProp
   const yTicks = niceTicks(yMin, yMax, 5);
 
   return (
-    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="PLS-DA score plot">
+    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="PLS-DA score plot">
       <rect x={0} y={0} width={width} height={height} className="fill-card" />
       <g transform={`translate(${pad.left}, ${pad.top})`}>
         <rect x={0} y={0} width={plotW} height={plotH} rx={6} className="fill-muted/20 stroke-border/50" strokeWidth={1} />
@@ -66,15 +66,23 @@ export function PLSDAPlot({ scores = [], explainedVariance = [] }: PLSDAPlotProp
         {yTicks.map((t) => (
           <text key={`ty-${t}`} x={-10} y={yScale(t) + 4} fontSize={11} textAnchor="end" className="fill-muted-foreground">{formatTick(t)}</text>
         ))}
-        <text x={plotW / 2} y={plotH + 48} fontSize={13} fontWeight={500} textAnchor="middle" className="fill-foreground">
+        <text x={plotW / 2} y={plotH + 40} fontSize={13} fontWeight={500} textAnchor="middle" className="fill-foreground">
           Component 1{explainedVariance[0] != null ? ` (${explainedVariance[0]}%)` : ""}
         </text>
-        <text x={-plotH / 2} y={-48} fontSize={13} fontWeight={500} textAnchor="middle" transform={`rotate(-90, ${-plotH / 2}, -48)`} className="fill-foreground">
+        <text
+          x={Y_AXIS_LABEL_X}
+          y={plotH / 2}
+          fontSize={13}
+          fontWeight={500}
+          textAnchor="middle"
+          transform={`rotate(-90, ${Y_AXIS_LABEL_X}, ${plotH / 2})`}
+          className="fill-foreground"
+        >
           Component 2{explainedVariance[1] != null ? ` (${explainedVariance[1]}%)` : ""}
         </text>
       </g>
 
-      <g transform={`translate(${width - pad.right + 8}, ${pad.top})`}>
+      <g transform={`translate(${width - pad.right + 12}, ${pad.top})`}>
         <rect x={0} y={0} width={120} height={24 + groups.length * 22} className="fill-card stroke-border" strokeWidth={1} rx={6} />
         <text x={10} y={16} fontSize={10} fontWeight={600} className="fill-muted-foreground">Classes</text>
         {groups.map((g, i) => (
