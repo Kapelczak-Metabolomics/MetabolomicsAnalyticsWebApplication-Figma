@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   CheckCircle2,
   AlertCircle,
@@ -10,22 +10,9 @@ import {
 } from "lucide-react";
 import { Link } from "react-router";
 import { toast } from "sonner";
-import { api } from "../../lib/api";
+import { useNotifications, type NotificationType } from "../../contexts/notifications-context";
 
-type NotifType = "success" | "warning" | "info" | "error";
-
-interface Notification {
-  id: number;
-  type: NotifType;
-  title: string;
-  message: string;
-  time: string;
-  read: boolean;
-  link?: string;
-  linkLabel?: string;
-}
-
-const iconMap: Record<NotifType, { icon: typeof CheckCircle2; color: string; bg: string }> = {
+const iconMap: Record<NotificationType, { icon: typeof CheckCircle2; color: string; bg: string }> = {
   success: { icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-500/10" },
   warning: { icon: AlertCircle, color: "text-amber-500", bg: "bg-amber-500/10" },
   error: { icon: AlertCircle, color: "text-destructive", bg: "bg-destructive/10" },
@@ -33,41 +20,25 @@ const iconMap: Record<NotifType, { icon: typeof CheckCircle2; color: string; bg:
 };
 
 export function NotificationsView() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const { notifications, loading, unreadCount, markRead, markAllRead, deleteNotification } = useNotifications();
   const [filter, setFilter] = useState<"all" | "unread">("all");
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    api.getNotifications()
-      .then(setNotifications)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
   const filtered = filter === "unread" ? notifications.filter((n) => !n.read) : notifications;
 
-  function markAllRead() {
-    api.markAllNotificationsRead()
-      .then(() => {
-        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-        toast.success("All notifications marked as read");
-      })
+  function handleMarkAllRead() {
+    markAllRead()
+      .then(() => toast.success("All notifications marked as read"))
       .catch(() => toast.error("Failed to mark notifications as read"));
   }
 
-  function markRead(id: number) {
-    api.markNotificationRead(id)
-      .then(() => setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n))));
+  function handleMarkRead(id: number) {
+    markRead(id).catch(() => toast.error("Failed to mark notification as read"));
   }
 
-  function deleteNotif(id: number) {
-    api.deleteNotification(id)
-      .then(() => {
-        setNotifications((prev) => prev.filter((n) => n.id !== id));
-        toast.success("Notification deleted");
-      })
-      .catch(() => toast.error("Failed to delete notification"));
+  function handleDelete(id: number) {
+    deleteNotification(id)
+      .then(() => toast.success("Notification dismissed"))
+      .catch(() => toast.error("Failed to dismiss notification"));
   }
 
   if (loading) {
@@ -98,7 +69,7 @@ export function NotificationsView() {
             </button>
             {unreadCount > 0 && (
               <button
-                onClick={markAllRead}
+                onClick={handleMarkAllRead}
                 className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-accent"
               >
                 <Check className="h-3.5 w-3.5" />
@@ -116,7 +87,7 @@ export function NotificationsView() {
             </div>
           ) : (
             filtered.map((notif) => {
-              const { icon: Icon, color, bg } = iconMap[notif.type as NotifType] ?? iconMap.info;
+              const { icon: Icon, color, bg } = iconMap[notif.type] ?? iconMap.info;
               return (
                 <div
                   key={notif.id}
@@ -134,18 +105,22 @@ export function NotificationsView() {
                     <div className="mt-2 flex items-center gap-3">
                       <span className="text-xs text-muted-foreground">{notif.time}</span>
                       {notif.link && (
-                        <Link to={notif.link} className="text-xs font-medium text-primary hover:underline" onClick={() => markRead(notif.id)}>
+                        <Link to={notif.link} className="text-xs font-medium text-primary hover:underline" onClick={() => handleMarkRead(notif.id)}>
                           {notif.linkLabel ?? "View"}
                         </Link>
                       )}
                       {!notif.read && (
-                        <button onClick={() => markRead(notif.id)} className="text-xs text-muted-foreground hover:text-foreground">
+                        <button onClick={() => handleMarkRead(notif.id)} className="text-xs text-muted-foreground hover:text-foreground">
                           Mark read
                         </button>
                       )}
                     </div>
                   </div>
-                  <button onClick={() => deleteNotif(notif.id)} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
+                  <button
+                    onClick={() => handleDelete(notif.id)}
+                    className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    title="Dismiss"
+                  >
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>

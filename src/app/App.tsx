@@ -30,6 +30,7 @@ import { AdminRuns } from "./views/admin/runs";
 import { AdminAudit } from "./views/admin/audit";
 import { AuthProvider, ProtectedRoute, AdminRoute } from "../contexts/auth-context";
 import { AppProvider } from "../contexts/app-context";
+import { NotificationsProvider } from "../contexts/notifications-context";
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -66,6 +67,7 @@ export default function App() {
     <ThemeProvider>
       <BrowserRouter>
         <AuthProvider>
+          <NotificationsProvider>
           <AppProvider>
           <Routes>
             <Route path="/login" element={<LoginView />} />
@@ -95,6 +97,7 @@ export default function App() {
             <Route path="/admin/audit" element={<AdminLayout><AdminAudit /></AdminLayout>} />
           </Routes>
           </AppProvider>
+          </NotificationsProvider>
           <Toaster
             position="bottom-right"
             toastOptions={{
