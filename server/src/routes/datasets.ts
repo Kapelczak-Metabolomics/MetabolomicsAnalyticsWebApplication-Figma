@@ -170,20 +170,28 @@ router.post("/import/mzxml/preview", authMiddleware, handleUpload, async (req: R
     sampleId: f.filename.replace(/\.(mzxml|mzml|xml|zip)$/i, ""),
   }));
 
+  let samples = filenameSamples;
+  let warning: string | undefined;
+
   if (!(await pythonHealth())) {
-    res.json({
-      samples: filenameSamples,
-      warning: "Python analysis service is offline — sample names are from filenames only.",
-    });
+    warning = "Python analysis service is offline — sample names are from filenames only.";
+    res.json({ samples, warning });
     return;
   }
 
   try {
     const preview = await pythonPreviewMzxml(saved);
-    res.json(preview);
+    if (preview.samples?.length) {
+      samples = preview.samples;
+    }
   } catch (err) {
-    res.status(400).json({ error: err instanceof Error ? err.message : "mzXML preview failed" });
+    warning =
+      err instanceof Error
+        ? err.message
+        : "Could not parse mzXML spectra — sample names are from filenames only.";
   }
+
+  res.json({ samples, warning });
 });
 
 router.post("/import/mzxml", authMiddleware, handleUpload, async (req: Request, res: Response) => {

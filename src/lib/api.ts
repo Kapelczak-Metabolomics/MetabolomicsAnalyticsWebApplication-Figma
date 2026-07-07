@@ -25,9 +25,9 @@ function formatApiError(body: unknown, fallback: string): string {
 }
 
 function httpStatusFallback(status: number): string {
-  if (status === 413) return "File too large — maximum upload size is 500 MB";
+  if (status === 413) return "File too large — maximum upload size is 500 MB (check proxy limits on your host)";
   if (status === 401) return "Not signed in — please log in and try again";
-  if (status === 502) return "API server unreachable";
+  if (status === 502) return "Upload proxy error — your host may block large file uploads before they reach the API";
   if (status === 503) return "Analysis service unavailable";
   if (status === 504) return "Upload timed out — try fewer or smaller files";
   return "Request failed";
@@ -178,15 +178,24 @@ export const api = {
     const form = new FormData();
     files.forEach((f) => form.append("files", f));
     const token = getToken();
-    const res = await fetch(`${API_BASE}/datasets/import/mzxml/preview`, {
-      method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}/datasets/import/mzxml/preview`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Network error";
+      throw new ApiError(0, `Could not upload files for preview: ${msg}`);
+    }
     if (!res.ok) {
       throw new ApiError(res.status, await parseErrorResponse(res));
     }
-    return res.json() as Promise<{ samples: Array<{ filename: string; sampleId: string }> }>;
+    return res.json() as Promise<{
+      samples: Array<{ filename: string; sampleId: string }>;
+      warning?: string;
+    }>;
   },
 
   importMzxml: async (data: { projectId: number; name: string; files: File[]; groups?: Record<string, string> }) => {
