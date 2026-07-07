@@ -67,6 +67,7 @@ services:
       PYTHON_SERVICE_URL: http://python:47824
       USE_PYTHON_ANALYSIS: "true"
       RAW_DATA_DIR: /data/raw
+      # APP_URL is only used for password-reset email links — not for API routing or uploads.
       APP_URL: https://CHANGE_ME_YOUR_DOMAIN
       SEED_DEMO_DATA: "false"
     expose:
@@ -90,11 +91,14 @@ services:
       start_period: 45s
 
   web:
+    # Point your EasyPanel domain at this web service (internal port 80).
+    # Do NOT set VITE_API_URL unless the API runs on a separate public domain.
     build:
       context: .
       dockerfile: Dockerfile
       args:
         METABO_API_PORT: "47822"
+        # VITE_API_URL: ""  # leave empty — browser uses same-origin /api
     restart: unless-stopped
     expose:
       - "80"

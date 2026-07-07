@@ -1,5 +1,4 @@
 import { Router, Request, Response, NextFunction } from "express";
-import multer from "multer";
 import { query } from "../db/index.js";
 import { authMiddleware, logAudit, createNotification } from "../middleware/auth.js";
 import { loadDatasetMatrix } from "../utils/dataset.js";
@@ -7,6 +6,13 @@ import { computeFeatureStats } from "../services/analysis.js";
 import { bulkLoadMatrix } from "../utils/bulk-import.js";
 import { pythonHealth, pythonImportMzxml, pythonPreviewMzxml } from "../services/python-client.js";
 import { saveRawDatasetFiles, deleteRawDatasetFiles } from "../services/storage.js";
+import {
+  cleanupUploadFiles,
+  MAX_MZXML_UPLOAD_BYTES,
+  mzxmlUpload,
+  uploadsFromRequest,
+  type MzxmlUploadFile,
+} from "../utils/mzxml-upload.js";
 import {
   type ColumnMapping,
   parseDelimitedTable,
@@ -17,29 +23,27 @@ import {
 } from "../utils/csv-parse.js";
 
 const router = Router();
-const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_UPLOAD_BYTES, files: 50 },
-});
 
 function handleUpload(
   req: Request,
   res: Response,
   next: NextFunction
 ) {
-  upload.array("files", 50)(req, res, (err: unknown) => {
+  mzxmlUpload.array("files", 50)(req, res, (err: unknown) => {
     if (!err) {
       next();
       return;
     }
-    if (err instanceof multer.MulterError) {
+    if (err && typeof err === "object" && "code" in err) {
+      const code = String((err as { code: string }).code);
       const message =
-        err.code === "LIMIT_FILE_SIZE"
-          ? `File too large — maximum upload size is ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB`
-          : err.code === "LIMIT_FILE_COUNT"
+        code === "LIMIT_FILE_SIZE"
+          ? `File too large — maximum upload size is ${MAX_MZXML_UPLOAD_BYTES / (1024 * 1024)} MB`
+          : code === "LIMIT_FILE_COUNT"
             ? "Too many files — maximum is 50 per upload"
-            : err.message;
+            : err instanceof Error
+              ? err.message
+              : "Upload failed";
       res.status(400).json({ error: message });
       return;
     }
@@ -158,14 +162,13 @@ router.post("/import", authMiddleware, async (req: Request, res: Response) => {
 });
 
 router.post("/import/mzxml/preview", authMiddleware, handleUpload, async (req: Request, res: Response) => {
-  const files = req.files as Express.Multer.File[] | undefined;
-  if (!files?.length) {
+  const uploads = uploadsFromRequest(req.files as Express.Multer.File[] | undefined);
+  if (!uploads.length) {
     res.status(400).json({ error: "At least one mzXML file is required" });
     return;
   }
 
-  const saved = files.map((f) => ({ buffer: f.buffer, filename: f.originalname }));
-  const filenameSamples = saved.map((f) => ({
+  const filenameSamples = uploads.map((f) => ({
     filename: f.filename,
     sampleId: f.filename.replace(/\.(mzxml|mzml|xml|zip)$/i, ""),
   }));
@@ -173,25 +176,24 @@ router.post("/import/mzxml/preview", authMiddleware, handleUpload, async (req: R
   let samples = filenameSamples;
   let warning: string | undefined;
 
-  if (!(await pythonHealth())) {
-    warning = "Python analysis service is offline — sample names are from filenames only.";
-    res.json({ samples, warning });
-    return;
-  }
-
   try {
-    const preview = await pythonPreviewMzxml(saved);
-    if (preview.samples?.length) {
-      samples = preview.samples;
+    if (!(await pythonHealth())) {
+      warning = "Python analysis service is offline — sample names are from filenames only.";
+    } else {
+      try {
+        const preview = await pythonPreviewMzxml(uploads);
+        if (preview.samples?.length) samples = preview.samples;
+      } catch (err) {
+        warning =
+          err instanceof Error
+            ? err.message
+            : "Could not parse mzXML spectra — sample names are from filenames only.";
+      }
     }
-  } catch (err) {
-    warning =
-      err instanceof Error
-        ? err.message
-        : "Could not parse mzXML spectra — sample names are from filenames only.";
+    res.json({ samples, warning });
+  } finally {
+    await cleanupUploadFiles(uploads);
   }
-
-  res.json({ samples, warning });
 });
 
 router.post("/import/mzxml", authMiddleware, handleUpload, async (req: Request, res: Response) => {
@@ -204,13 +206,14 @@ router.post("/import/mzxml", authMiddleware, handleUpload, async (req: Request, 
     return;
   }
 
-  const files = req.files as Express.Multer.File[] | undefined;
-  if (!files?.length) {
+  const uploads = uploadsFromRequest(req.files as Express.Multer.File[] | undefined);
+  if (!uploads.length) {
     res.status(400).json({ error: "At least one mzXML file is required" });
     return;
   }
 
   if (!(await pythonHealth())) {
+    await cleanupUploadFiles(uploads);
     res.status(503).json({
       error: "Python analysis service is not running. mzXML import requires the Python service to be healthy before upload.",
     });
@@ -222,15 +225,11 @@ router.post("/import/mzxml", authMiddleware, handleUpload, async (req: Request, 
     try {
       groups = JSON.parse(groupsRaw);
     } catch {
+      await cleanupUploadFiles(uploads);
       res.status(400).json({ error: "Invalid groups JSON" });
       return;
     }
   }
-
-  const saved: Array<{ buffer: Buffer; filename: string }> = files.map((f) => ({
-    buffer: f.buffer,
-    filename: f.originalname,
-  }));
 
   const ds = await query<{ id: number }>(
     `INSERT INTO datasets (project_id, name, type, samples_count, features_count, status, missing_pct, source_format, import_status)
@@ -242,13 +241,12 @@ router.post("/import/mzxml", authMiddleware, handleUpload, async (req: Request, 
 
   res.status(202).json({ id: datasetId, status: "processing", message: "mzXML import started" });
 
-  // Background processing — files are copied above so multer buffers stay alive.
   launchMzxmlImport({
     datasetId,
     projectId,
     name,
     userId,
-    saved,
+    uploads,
     groups,
   }).catch((err) => console.error("mzXML import launcher failed for dataset", datasetId, err));
 });
@@ -258,15 +256,18 @@ async function launchMzxmlImport(opts: {
   projectId: number;
   name: string;
   userId: number;
-  saved: Array<{ buffer: Buffer; filename: string }>;
+  uploads: MzxmlUploadFile[];
   groups: Record<string, string>;
 }) {
-  const { datasetId, projectId, name, userId, saved, groups } = opts;
+  const { datasetId, projectId, name, userId, uploads, groups } = opts;
   try {
-    const storagePath = await saveRawDatasetFiles(datasetId, saved);
+    const storagePath = await saveRawDatasetFiles(
+      datasetId,
+      uploads.map((f) => ({ filename: f.filename, path: f.path })),
+    );
     await query(`UPDATE datasets SET raw_file_path = $1 WHERE id = $2`, [storagePath, datasetId]);
 
-    const parsed = await pythonImportMzxml(saved, groups);
+    const parsed = await pythonImportMzxml(uploads, groups);
     const samples = parsed.samples.map((s) => ({ sampleId: s.sampleId, groupLabel: s.groupLabel }));
     const features = parsed.features.map((f) => ({
       featureId: f.featureId,
@@ -303,6 +304,8 @@ async function launchMzxmlImport(opts: {
       [message, datasetId]
     );
     await createNotification(userId, "error", "mzXML Import Failed", message, "/data/import", "Retry import");
+  } finally {
+    await cleanupUploadFiles(uploads);
   }
 }
 

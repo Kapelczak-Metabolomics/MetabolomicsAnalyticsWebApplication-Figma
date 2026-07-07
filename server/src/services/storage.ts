@@ -7,7 +7,8 @@ const RAW_DIR = process.env.RAW_DATA_DIR || "/data/raw";
 
 export interface RawFileInput {
   filename: string;
-  buffer: Buffer;
+  buffer?: Buffer;
+  path?: string;
 }
 
 export interface StorageSettings {
@@ -60,7 +61,8 @@ export async function saveRawDatasetFiles(datasetId: number, files: RawFileInput
     const prefix = s3DatasetPrefix(datasetId);
     for (const file of files) {
       const key = `${prefix}/${path.basename(file.filename)}`;
-      await uploadS3Object(s3, key, file.buffer, "application/octet-stream");
+      const body = file.buffer ?? (file.path ? fs.readFileSync(file.path) : Buffer.alloc(0));
+      await uploadS3Object(s3, key, body, "application/octet-stream");
     }
     return formatStoragePath("s3", datasetId, s3.bucket);
   }
@@ -68,7 +70,12 @@ export async function saveRawDatasetFiles(datasetId: number, files: RawFileInput
   const dir = localDatasetDir(datasetId);
   fs.mkdirSync(dir, { recursive: true });
   for (const file of files) {
-    fs.writeFileSync(path.join(dir, path.basename(file.filename)), file.buffer);
+    const dest = path.join(dir, path.basename(file.filename));
+    if (file.path) {
+      fs.copyFileSync(file.path, dest);
+    } else if (file.buffer) {
+      fs.writeFileSync(dest, file.buffer);
+    }
   }
   return dir;
 }

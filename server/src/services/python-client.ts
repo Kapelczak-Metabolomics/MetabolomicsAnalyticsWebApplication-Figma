@@ -1,3 +1,7 @@
+import { createReadStream } from "fs";
+import FormData from "form-data";
+import { Readable } from "stream";
+
 const PYTHON_URL = process.env.PYTHON_SERVICE_URL || "http://127.0.0.1:47824";
 const MZXML_TIMEOUT_MS = 10 * 60 * 1000;
 /** Short timeout so unreachable Python falls back to TypeScript quickly. */
@@ -6,7 +10,7 @@ const HEALTH_CACHE_MS = 30_000;
 
 let pythonHealthCache: { ok: boolean; checkedAt: number } | null = null;
 
-type MzxmlFile = { buffer: Buffer; filename: string };
+export type MzxmlFile = { path: string; filename: string };
 
 type MzxmlImportResult = {
   samples: Array<{ sampleId: string; groupLabel: string; values: number[] }>;
@@ -36,10 +40,14 @@ function formatServiceError(body: unknown, fallback: string): string {
   return fallback;
 }
 
-function buildMultipartBody(files: MzxmlFile[], groups?: Record<string, string>): FormData {
+function buildMultipartForm(files: MzxmlFile[], groups?: Record<string, string>): FormData {
   const form = new FormData();
   for (const f of files) {
-    form.append("files", new Blob([new Uint8Array(f.buffer)], { type: "application/octet-stream" }), f.filename);
+    form.append("files", createReadStream(f.path), {
+      filename: f.filename,
+      contentType: "application/octet-stream",
+      knownLength: undefined,
+    });
   }
   if (groups) {
     form.append("groups", JSON.stringify(groups));
@@ -48,12 +56,21 @@ function buildMultipartBody(files: MzxmlFile[], groups?: Record<string, string>)
 }
 
 async function postMzxmlForm(path: string, files: MzxmlFile[], groups?: Record<string, string>): Promise<Response> {
-  const form = buildMultipartBody(files, groups);
+  const form = buildMultipartForm(files, groups);
+  const headers = form.getHeaders();
+
   return fetch(`${PYTHON_URL}${path}`, {
     method: "POST",
-    body: form,
+    headers,
+    body: Readable.toWeb(form) as BodyInit,
     signal: AbortSignal.timeout(MZXML_TIMEOUT_MS),
+    // @ts-expect-error duplex required for streaming request bodies in Node fetch
+    duplex: "half",
   });
+}
+
+export function getPythonServiceUrl(): string {
+  return PYTHON_URL;
 }
 
 export async function pythonHealth(): Promise<boolean> {

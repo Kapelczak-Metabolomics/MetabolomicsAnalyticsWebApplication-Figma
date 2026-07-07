@@ -13,7 +13,7 @@ import profileRoutes from "./routes/profile.js";
 import analysisRoutes from "./routes/analysis.js";
 import lensesRoutes from "./routes/lenses.js";
 import helpRoutes from "./routes/help.js";
-import { pythonHealth } from "./services/python-client.js";
+import { pythonHealth, getPythonServiceUrl } from "./services/python-client.js";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "47822", 10);
@@ -23,7 +23,16 @@ app.use(express.json({ limit: "10mb" }));
 
 app.get("/api/health", async (_req, res) => {
   const python = await pythonHealth();
-  res.json({ status: "ok", timestamp: new Date().toISOString(), python });
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    python,
+    pythonUrl: getPythonServiceUrl(),
+    upload: {
+      maxMb: 500,
+      storage: "disk",
+    },
+  });
 });
 
 app.use("/api/auth", authRoutes);
