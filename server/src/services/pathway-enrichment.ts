@@ -145,14 +145,20 @@ function parseKeggBatchTitles(text: string): Map<string, string> {
   const titles = new Map<string, string>();
   const blocks = text.split(/\n\/\/\/\n/);
   for (const block of blocks) {
-    const entry = block.match(/^ENTRY\s+(\S+)/m);
-    const pathwayId = entry?.[1];
-    if (!pathwayId) continue;
-    const nameLine = block.split("\n").find((line) => line.startsWith("NAME"));
+    // KEGG pathway entries look like: ENTRY       PATHWAY       map00020
+    const entryMatch =
+      block.match(/^ENTRY\s+PATHWAY\s+(\S+)/m) ?? block.match(/^ENTRY\s+\S+\s+(\S+)/m);
+    const mapId = entryMatch?.[1] ?? block.match(/\b(map\d{5})\b/)?.[1];
+    if (!mapId) continue;
+
+    const nameLine = block.split("\n").find((line) => /^\s*NAME\b/.test(line));
     const title = nameLine
-      ? nameLine.replace("NAME", "").trim().split(" - ")[0]?.trim() || pathwayId
-      : pathwayId.replace("path:", "");
-    titles.set(pathwayId, title);
+      ? nameLine.replace(/^\s*NAME\s+/, "").trim().split(" - ")[0]?.trim() || mapId
+      : mapId;
+
+    const withPrefix = mapId.startsWith("path:") ? mapId : `path:${mapId}`;
+    titles.set(withPrefix, title);
+    titles.set(mapId, title);
   }
   return titles;
 }
@@ -196,6 +202,16 @@ export async function runLivePathwayEnrichment(
   if (database.toLowerCase().startsWith("reactome")) {
     const { enrichReactome } = await import("./pathway-reactome.js");
     return enrichReactome(sigNames, config);
+  }
+
+  if (database.toLowerCase().includes("go")) {
+    const { enrichGProfiler } = await import("./pathway-gprofiler.js");
+    return enrichGProfiler(sigNames, config, "GO Biological Process", "go");
+  }
+
+  if (database.toLowerCase().includes("metacyc")) {
+    const { enrichGProfiler } = await import("./pathway-gprofiler.js");
+    return enrichGProfiler(sigNames, config, "MetaCyc", "metacyc");
   }
 
   const compoundMap = await mapCompoundsParallel(bgNames);
@@ -266,7 +282,8 @@ export async function runLivePathwayEnrichment(
 
   const titleMap = await keggPathwayTitles(top.map((p) => p.pathwayId));
   const pathways = top.map((p) => {
-    const title = titleMap.get(p.pathwayId) ?? p.name;
+    const bareId = p.pathwayId.replace(/^path:/, "");
+    const title = titleMap.get(p.pathwayId) ?? titleMap.get(bareId) ?? p.name;
     return {
       name: title,
       genes: p.genes,

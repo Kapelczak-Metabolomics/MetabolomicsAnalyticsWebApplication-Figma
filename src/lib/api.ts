@@ -46,6 +46,9 @@ async function parseErrorResponse(res: Response): Promise<string> {
       if (text.includes("413") || text.toLowerCase().includes("too large")) {
         return "File too large — maximum upload size is 500 MB";
       }
+      if (text.includes("Service is not reachable") || text.includes("<!DOCTYPE")) {
+        return "Service is not reachable — the API may have restarted. Wait a moment and try again.";
+      }
       const trimmed = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
       if (trimmed.length > 0 && trimmed.length < 300) return trimmed;
     }
@@ -63,11 +66,23 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new ApiError(res.status, formatApiError(body, res.statusText || "Request failed"));
+    const message = await parseErrorResponse(res);
+    throw new ApiError(res.status, message);
   }
   if (res.status === 204) return undefined as T;
-  return res.json();
+  const text = await res.text();
+  if (!text.trim()) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    if (text.includes("<!DOCTYPE") || text.includes("<html")) {
+      throw new ApiError(
+        res.status || 502,
+        "Service is not reachable — the API may have restarted. Wait a moment and try again."
+      );
+    }
+    throw new ApiError(res.status, "Invalid response from server");
+  }
 }
 
 export const api = {

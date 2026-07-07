@@ -83,13 +83,20 @@ def _extract_ms1_bins_xml(path: str, mz_decimals: int = 2) -> dict[float, float]
     root = ET.parse(path).getroot()
 
     for spectrum in root.iter():
-        if _local_tag(spectrum.tag) != "spectrum":
+        tag = _local_tag(spectrum.tag)
+        if tag not in ("spectrum", "scan"):
             continue
-        ms_level = spectrum.get("msLevel") or spectrum.get("ms_level") or "1"
+        ms_level = (
+            spectrum.get("msLevel")
+            or spectrum.get("ms_level")
+            or spectrum.get("level")
+            or "1"
+        )
         if int(ms_level) != 1:
             continue
         for child in spectrum:
-            if _local_tag(child.tag) != "mzXMLPeaks":
+            child_tag = _local_tag(child.tag)
+            if child_tag not in ("mzXMLPeaks", "peaks"):
                 continue
             precision = child.get("precision", "32")
             if not child.text:
@@ -126,21 +133,35 @@ def _extract_ms1_bins_pymzml(path: str, mz_decimals: int = 2) -> dict[float, flo
 def _extract_ms1_bins(path: str, mz_decimals: int = 2) -> dict[float, float]:
     """Sum intensities per rounded m/z from MS1 spectra in one mzXML/mzML file."""
     errors: list[str] = []
+    is_mzxml = path.lower().endswith((".mzxml", ".xml"))
+
+    # Prefer native XML parsing for mzXML — pymzML often mis-handles mzXML structure
+    if is_mzxml:
+        try:
+            bins = _extract_ms1_bins_xml(path, mz_decimals)
+            if bins:
+                return bins
+            errors.append("XML: no MS1 peaks found")
+        except Exception as exc:
+            errors.append(f"XML: {exc}")
 
     if pymzml is not None:
         try:
             bins = _extract_ms1_bins_pymzml(path, mz_decimals)
             if bins:
                 return bins
+            errors.append("pymzML: no MS1 peaks found")
         except Exception as exc:
             errors.append(f"pymzML: {exc}")
 
-    try:
-        bins = _extract_ms1_bins_xml(path, mz_decimals)
-        if bins:
-            return bins
-    except Exception as exc:
-        errors.append(f"XML: {exc}")
+    if not is_mzxml:
+        try:
+            bins = _extract_ms1_bins_xml(path, mz_decimals)
+            if bins:
+                return bins
+            errors.append("XML: no MS1 peaks found")
+        except Exception as exc:
+            errors.append(f"XML: {exc}")
 
     detail = "; ".join(errors) if errors else "no MS1 peaks found"
     raise ValueError(f"Could not parse mzXML ({detail})")

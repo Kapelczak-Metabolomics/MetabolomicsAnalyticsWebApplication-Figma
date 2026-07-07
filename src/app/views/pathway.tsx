@@ -78,7 +78,13 @@ export function PathwayView() {
             {pathwayWarning && <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">{pathwayWarning}</p>}
             {dataSource && (
               <p className="text-[11px] text-muted-foreground mt-1">
-                Data source: {dataSource.includes("kegg") ? "KEGG REST API (live)" : dataSource.includes("reactome") ? "Reactome Analysis API (live)" : dataSource}
+                Data source: {dataSource.includes("kegg")
+                  ? "KEGG REST API (live)"
+                  : dataSource.includes("reactome")
+                    ? "Reactome Analysis API (live)"
+                    : dataSource.includes("gprofiler")
+                      ? "g:Profiler API (live)"
+                      : dataSource}
               </p>
             )}
           </div>

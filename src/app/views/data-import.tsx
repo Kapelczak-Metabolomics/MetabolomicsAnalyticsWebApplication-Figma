@@ -329,16 +329,22 @@ export function DataImportView() {
     setPolling(true);
     for (let i = 0; i < 120; i++) {
       await new Promise((r) => setTimeout(r, 2000));
-      const status = await api.getImportStatus(datasetId);
-      if (status.status === "ready") {
-        toast.success("mzXML import complete", {
-          description: `${status.samples} samples · ${status.features} m/z features`,
-        });
-        navigate("/data");
-        return;
-      }
-      if (status.status === "failed") {
-        toast.error(status.error?.trim() || "mzXML import failed — check that the Python analysis service is running");
+      try {
+        const status = await api.getImportStatus(datasetId);
+        if (status.status === "ready") {
+          toast.success("mzXML import complete", {
+            description: `${status.samples} samples · ${status.features} m/z features`,
+          });
+          navigate("/data");
+          return;
+        }
+        if (status.status === "failed") {
+          toast.error(status.error?.trim() || "mzXML import failed — check that the Python analysis service is running");
+          return;
+        }
+      } catch (e) {
+        const message = e instanceof ApiError ? e.message : "Lost connection while checking import status";
+        toast.error(message);
         return;
       }
     }
