@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router";
 import { ChartPlaceholder } from "../components/chart-placeholder";
-import { ArrowLeft, CheckCircle2, Loader2, AlertCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, AlertCircle, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "../../lib/api";
+import { useAuth } from "../../contexts/auth-context";
 import type { PCAScore } from "../components/plots/pca-plot";
 import type { VolcanoPoint } from "../components/plots/volcano-plot";
 import type { DendrogramMerge } from "../components/plots/dendrogram-plot";
@@ -10,6 +12,7 @@ import type { DendrogramMerge } from "../components/plots/dendrogram-plot";
 export function ExperimentDetailView() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const [exp, setExp] = useState<Record<string, unknown> | null>(null);
   const [heatmap, setHeatmap] = useState<{ matrix: (number | null)[][]; sampleLabels: string[]; featureLabels: string[] } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,8 +39,25 @@ export function ExperimentDetailView() {
   }
 
   const status = String(exp.status);
+  const canDelete = Boolean(exp.canDelete) || isAdmin;
   const StatusIcon = status === "completed" ? CheckCircle2 : status === "running" ? Loader2 : AlertCircle;
   const statusColor = status === "completed" ? "text-emerald-500" : status === "running" ? "text-amber-500 animate-spin" : "text-destructive";
+
+  async function handleDelete() {
+    if (!id) return;
+    if (!window.confirm(`Delete analysis run "${String(exp.name)}"? This cannot be undone.`)) return;
+    try {
+      if (isAdmin && (status === "running" || status === "pending")) {
+        await api.admin.deleteRun(parseInt(id, 10));
+      } else {
+        await api.deleteExperiment(parseInt(id, 10));
+      }
+      toast.success("Analysis run deleted");
+      navigate("/projects");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete run");
+    }
+  }
 
   const chartProps = {
     pcaScores: type === "PCA" ? (results?.scores as PCAScore[]) : undefined,
@@ -71,7 +91,7 @@ export function ExperimentDetailView() {
         <ArrowLeft className="h-4 w-4" /> Back
       </button>
 
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">{String(exp.name)}</h2>
@@ -81,6 +101,14 @@ export function ExperimentDetailView() {
           <p className="text-sm text-muted-foreground mt-1">{String(exp.projectName)} · {String(exp.datasetName ?? "—")}</p>
           {exp.errorMessage && <p className="text-sm text-destructive mt-2">{String(exp.errorMessage)}</p>}
         </div>
+        {canDelete && (
+          <button
+            onClick={handleDelete}
+            className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Delete run
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-4 gap-3">

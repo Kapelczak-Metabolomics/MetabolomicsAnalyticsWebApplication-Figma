@@ -108,17 +108,34 @@ function AddMemberDialog({ open, onClose, projectId, onAdd }: {
 export function ProjectDetailView() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [project, setProject] = useState<Awaited<ReturnType<typeof api.getProject>> | null>(null);
   const [loading, setLoading] = useState(true);
   const [datasets, setDatasets] = useState<Array<{ id: string; name: string; type: string; samples: number; features: number; created: string; status: string }>>([]);
-  const [experiments, setExperiments] = useState<Array<{ id: string; name: string; type: string; status: string; created: string }>>([]);
+  const [experiments, setExperiments] = useState<Array<{ id: string; name: string; type: string; status: string; created: string; userId?: number | null }>>([]);
   const [members, setMembers] = useState<Array<{ id: number; name: string; email: string; role: string; joined: string; avatar: string }>>([]);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get("tab") ?? "datasets";
   const [activeTab, setActiveTab] = useState(initialTab);
+
+  function deleteExperiment(exp: { id: string; name: string }) {
+    if (!window.confirm(`Delete analysis run "${exp.name}"? This cannot be undone.`)) return;
+    api.deleteExperiment(parseInt(exp.id, 10))
+      .then(() => {
+        setExperiments((prev) => prev.filter((e) => e.id !== exp.id));
+        toast.success(`"${exp.name}" deleted`);
+      })
+      .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to delete run"));
+  }
+
+  function canDeleteExperiment(exp: { userId?: number | null; status: string }) {
+    if (exp.status === "running" || exp.status === "pending") return false;
+    if (isAdmin) return true;
+    if (exp.userId === user?.id) return true;
+    return members.some((m) => m.role === "Owner" && m.email === user?.email);
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -378,10 +395,21 @@ export function ProjectDetailView() {
                     <td className="p-3 text-xs tabular-nums text-muted-foreground">—</td>
                     <td className="p-3"><StatusChip status={exp.status} /></td>
                     <td className="p-3 text-right">
-                      <button onClick={() => navigate(`/experiments/${exp.id}`)}
-                        className="rounded border border-border bg-background px-2.5 py-1 text-xs hover:bg-accent">
-                        View
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => navigate(`/experiments/${exp.id}`)}
+                          className="rounded border border-border bg-background px-2.5 py-1 text-xs hover:bg-accent">
+                          View
+                        </button>
+                        {canDeleteExperiment(exp) && (
+                          <button
+                            onClick={() => deleteExperiment(exp)}
+                            className="rounded border border-destructive/30 px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
+                            title="Delete run"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

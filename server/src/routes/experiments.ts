@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { query } from "../db/index.js";
-import { authMiddleware, logAudit, createNotification } from "../middleware/auth.js";
+import { authMiddleware, logAudit, createNotification, type AuthUser } from "../middleware/auth.js";
 import { loadDatasetMatrix, formatRelativeTime, formatDuration, analysisMaxFeatures } from "../utils/dataset.js";
 import { getProcessUsage } from "../utils/metrics.js";
 import { computeWithEngine } from "../services/compute-analysis.js";
@@ -62,18 +62,55 @@ async function datasetCellCount(datasetId: number): Promise<number> {
   return (row?.samples_count ?? 0) * (row?.features_count ?? 0);
 }
 
+type ExperimentRow = {
+  id: number;
+  name: string;
+  type: string;
+  status: string;
+  user_id: number | null;
+  project_id: number;
+  owner_id: number | null;
+};
+
+async function getExperimentForAuth(id: number): Promise<ExperimentRow | null> {
+  const result = await query<ExperimentRow>(
+    `SELECT e.id, e.name, e.type, e.status, e.user_id, e.project_id, p.owner_id
+     FROM experiments e
+     JOIN projects p ON p.id = e.project_id
+     WHERE e.id = $1`,
+    [id]
+  );
+  return result.rows[0] ?? null;
+}
+
+function canDeleteExperiment(user: AuthUser, exp: ExperimentRow): boolean {
+  if (user.role === "Administrator") return true;
+  if (exp.user_id === user.id) return true;
+  if (exp.owner_id === user.id) return true;
+  return false;
+}
+
+function isInProgress(status: string): boolean {
+  return status === "running" || status === "pending";
+}
+
 router.get("/", authMiddleware, async (req: Request, res: Response) => {
   const projectId = req.query.projectId;
-  let sql = `SELECT e.id, e.name, e.type, e.status, e.created_at, p.name AS project
+  let sql = `SELECT e.id, e.name, e.type, e.status, e.created_at, e.user_id, p.name AS project, p.owner_id
              FROM experiments e JOIN projects p ON p.id = e.project_id`;
   const params: unknown[] = [];
   if (projectId) {
     sql += " WHERE e.project_id = $1";
     params.push(projectId);
   }
-  sql += " ORDER BY e.created_at DESC LIMIT 20";
+  sql += " ORDER BY e.created_at DESC LIMIT 50";
 
-  const result = await query<{ id: number; name: string; type: string; status: string; created_at: Date; project: string }>(sql, params);
+  const result = await query<{
+    id: number; name: string; type: string; status: string; created_at: Date;
+    user_id: number | null; project: string; owner_id: number | null;
+  }>(sql, params);
+
+  const user = req.user!;
   res.json(
     result.rows.map((e) => ({
       id: String(e.id),
@@ -82,6 +119,16 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
       type: e.type,
       created: formatRelativeTime(e.created_at),
       status: e.status,
+      userId: e.user_id,
+      canDelete: canDeleteExperiment(user, {
+        id: e.id,
+        name: e.name,
+        type: e.type,
+        status: e.status,
+        user_id: e.user_id,
+        project_id: 0,
+        owner_id: e.owner_id,
+      }) && (user.role === "Administrator" || !isInProgress(e.status)),
     }))
   );
 });
@@ -92,7 +139,8 @@ router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
     id: number; name: string; type: string; status: string; config: unknown; results: unknown;
     error_message: string | null; samples_count: number; features_count: number;
     created_at: Date; started_at: Date | null; completed_at: Date | null;
-    project_name: string; dataset_name: string | null; dataset_id: number | null; user_name: string | null;
+    project_name: string; dataset_name: string | null; dataset_id: number | null;
+    user_name: string | null; user_id: number | null; project_id: number;
   }>(
     `SELECT e.*, p.name AS project_name, d.name AS dataset_name, u.name AS user_name
      FROM experiments e
@@ -109,6 +157,19 @@ router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
   }
 
   const e = result.rows[0];
+  const user = req.user!;
+  const expRow: ExperimentRow = {
+    id: e.id,
+    name: e.name,
+    type: e.type,
+    status: e.status,
+    user_id: e.user_id,
+    project_id: e.project_id,
+    owner_id: null,
+  };
+  const owner = await query<{ owner_id: number | null }>("SELECT owner_id FROM projects WHERE id = $1", [e.project_id]);
+  expRow.owner_id = owner.rows[0]?.owner_id ?? null;
+
   res.json({
     id: e.id,
     name: e.name,
@@ -122,11 +183,13 @@ router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
     projectName: e.project_name,
     datasetName: e.dataset_name,
     datasetId: e.dataset_id,
+    userId: e.user_id,
     userName: e.user_name,
     createdAt: e.created_at,
     startedAt: e.started_at,
     completedAt: e.completed_at,
     duration: e.started_at && e.completed_at ? formatDuration(new Date(e.started_at), new Date(e.completed_at)) : null,
+    canDelete: canDeleteExperiment(user, expRow) && (user.role === "Administrator" || !isInProgress(e.status)),
   });
 });
 
@@ -169,6 +232,38 @@ router.post("/:id/cancel", authMiddleware, async (req: Request, res: Response) =
   const id = parseInt(String(req.params.id), 10);
   await query(`UPDATE experiments SET status = 'failed', error_message = 'Cancelled by user', completed_at = NOW() WHERE id = $1 AND status IN ('pending', 'running')`, [id]);
   await logAudit(req.user, "CANCEL_RUN", "analysis", `Experiment #${id}`, "Run cancelled", req);
+  res.json({ success: true });
+});
+
+router.delete("/:id", authMiddleware, async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params.id), 10);
+  const exp = await getExperimentForAuth(id);
+
+  if (!exp) {
+    res.status(404).json({ error: "Experiment not found" });
+    return;
+  }
+
+  const user = req.user!;
+  if (!canDeleteExperiment(user, exp)) {
+    res.status(403).json({ error: "You do not have permission to delete this analysis run" });
+    return;
+  }
+
+  if (isInProgress(exp.status) && user.role !== "Administrator") {
+    res.status(400).json({ error: "Cannot delete a run in progress. Cancel it first or wait for it to finish." });
+    return;
+  }
+
+  await query("DELETE FROM experiments WHERE id = $1", [id]);
+  await logAudit(
+    user,
+    "DELETE_RUN",
+    "analysis",
+    `Experiment: ${exp.name}`,
+    `Deleted ${exp.type} run #${id} (${exp.status})`,
+    req
+  );
   res.json({ success: true });
 });
 

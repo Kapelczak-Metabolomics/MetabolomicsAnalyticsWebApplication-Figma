@@ -18,6 +18,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
 import { api } from "../../lib/api";
+import { useAuth } from "../../contexts/auth-context";
 
 const colorMap: Record<string, string> = {
   violet: "from-violet-500 to-violet-600",
@@ -173,6 +174,7 @@ export function ProjectsView() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
 
   useEffect(() => {
     Promise.all([api.getProjects(), api.getExperiments()])
@@ -183,6 +185,16 @@ export function ProjectsView() {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
+
+  function deleteExperiment(exp: Experiment) {
+    if (!window.confirm(`Delete analysis run "${exp.name}"? This cannot be undone.`)) return;
+    api.deleteExperiment(parseInt(exp.id, 10))
+      .then(() => {
+        setExperiments((prev) => prev.filter((e) => e.id !== exp.id));
+        toast.success(`"${exp.name}" deleted`);
+      })
+      .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to delete run"));
+  }
 
   function handleCreated(project: Project) {
     setProjects((prev) => [project, ...prev]);
@@ -419,12 +431,23 @@ export function ProjectsView() {
                         </span>
                       </td>
                       <td className="p-3 text-right">
-                        <button
-                          onClick={() => navigate(`/experiments/${exp.id}`)}
-                          className="rounded-lg border border-border bg-background px-3 py-1 text-xs hover:bg-accent"
-                        >
-                          View
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => navigate(`/experiments/${exp.id}`)}
+                            className="rounded-lg border border-border bg-background px-3 py-1 text-xs hover:bg-accent"
+                          >
+                            View
+                          </button>
+                          {(exp.canDelete || isAdmin) && exp.status !== "running" && exp.status !== "pending" && (
+                            <button
+                              onClick={() => deleteExperiment(exp)}
+                              className="rounded-lg border border-destructive/30 px-2.5 py-1 text-xs text-destructive hover:bg-destructive/10"
+                              title="Delete run"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
