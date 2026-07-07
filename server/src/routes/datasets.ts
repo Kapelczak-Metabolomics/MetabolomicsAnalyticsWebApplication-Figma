@@ -201,7 +201,7 @@ async function previewMzxmlUploads(uploads: MzxmlUploadFile[], res: Response, cl
   let warning: string | undefined;
 
   try {
-    if (!(await pythonHealth())) {
+    if (!(await pythonHealth()).ok) {
       warning = "Python analysis service is offline — sample names are from filenames only.";
     } else {
       try {
@@ -319,7 +319,7 @@ async function processMzxmlImport(req: Request, res: Response) {
     return;
   }
 
-  if (!(await pythonHealth())) {
+  if (!(await pythonHealth()).ok) {
     if (!sessionId) await cleanupUploadFiles(uploads);
     res.status(503).json({
       error: "Python analysis service is not running. mzXML import requires the Python service to be healthy before upload.",

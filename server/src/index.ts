@@ -26,12 +26,16 @@ app.get("/api/health", async (_req, res) => {
   res.json({
     status: "ok",
     timestamp: new Date().toISOString(),
-    python,
+    python: python.ok,
     pythonUrl: getPythonServiceUrl(),
+    pythonError: python.ok ? undefined : python.error,
     upload: {
       maxMb: 500,
       storage: "disk",
     },
+    help: python.ok
+      ? undefined
+      : "Python service unreachable. In EasyPanel: open the compose stack → ensure the python service is running (green) → check python logs → redeploy python + api.",
   });
 });
 

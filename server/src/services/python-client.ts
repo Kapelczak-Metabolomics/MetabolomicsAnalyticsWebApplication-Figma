@@ -89,13 +89,20 @@ export function getPythonServiceUrl(): string {
   return PYTHON_URL;
 }
 
-export async function pythonHealth(): Promise<boolean> {
+export async function pythonHealth(): Promise<{ ok: boolean; error?: string }> {
   try {
     const res = await fetch(`${PYTHON_URL}/health`, { signal: AbortSignal.timeout(3000) });
-    return res.ok;
-  } catch {
-    return false;
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    return { ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
   }
+}
+
+/** Cached boolean health — used before analysis/mzXML calls. */
+export async function isPythonHealthy(): Promise<boolean> {
+  return (await pythonHealth()).ok;
 }
 
 /** Cached health check — avoids a 15s analysis timeout when Python is down. */
@@ -106,8 +113,8 @@ export async function isPythonAnalysisAvailable(): Promise<boolean> {
     return pythonHealthCache.ok;
   }
   const ok = await pythonHealth();
-  pythonHealthCache = { ok, checkedAt: now };
-  return ok;
+  pythonHealthCache = { ok: ok.ok, checkedAt: now };
+  return ok.ok;
 }
 
 export function invalidatePythonHealthCache(): void {
