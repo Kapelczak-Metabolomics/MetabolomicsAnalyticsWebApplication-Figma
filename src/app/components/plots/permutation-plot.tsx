@@ -1,4 +1,7 @@
-import { formatTick, linearScale, niceTicks } from "./plot-theme";
+import { useMemo } from "react";
+import type { Data, Layout, Shape } from "plotly.js-dist-min";
+import { PlotlyChart } from "./plotly-chart";
+import { PlotEmpty } from "./plotly-utils";
 
 interface PermutationPlotProps {
   scores?: Array<{ iteration: number; r2: number; q2: number }>;
@@ -6,75 +9,57 @@ interface PermutationPlotProps {
   observedQ2?: number;
 }
 
-function PlotEmpty({ message }: { message: string }) {
-  return (
-    <div className="flex h-full min-h-[200px] items-center justify-center text-sm text-muted-foreground">
-      {message}
-    </div>
-  );
-}
-
 export function PermutationPlot({ scores = [], observedR2, observedQ2 }: PermutationPlotProps) {
+  const plot = useMemo(() => {
+    if (!scores.length) return null;
+
+    const iterations = scores.map((_, i) => i);
+    const maxVal = Math.max(...scores.map((s) => Math.max(s.r2, s.q2)), observedR2 ?? 0, observedQ2 ?? 0, 0.1) * 1.1;
+
+    const traces: Data[] = [
+      {
+        type: "scatter",
+        mode: "markers",
+        name: "Permuted R²",
+        x: iterations,
+        y: scores.map((s) => s.r2),
+        marker: { color: "#7c3aed", size: 7, opacity: 0.6 },
+        hovertemplate: "Iteration %{x}<br>R²: %{y:.3f}<extra></extra>",
+      },
+      {
+        type: "scatter",
+        mode: "markers",
+        name: "Permuted Q²",
+        x: iterations,
+        y: scores.map((s) => s.q2),
+        marker: { color: "#0891b2", size: 6, opacity: 0.55 },
+        hovertemplate: "Iteration %{x}<br>Q²: %{y:.3f}<extra></extra>",
+      },
+    ];
+
+    const shapes: Partial<Shape>[] = [];
+    if (observedR2 != null) {
+      shapes.push({ type: "line", x0: 0, x1: iterations.length - 1, y0: observedR2, y1: observedR2, line: { color: "#7c3aed", width: 2, dash: "dash" } });
+    }
+    if (observedQ2 != null) {
+      shapes.push({ type: "line", x0: 0, x1: iterations.length - 1, y0: observedQ2, y1: observedQ2, line: { color: "#0891b2", width: 2, dash: "dash" } });
+    }
+
+    const layout: Partial<Layout> = {
+      title: { text: "Permutation validation", font: { size: 14 } },
+      xaxis: { title: { text: "Permutation iteration" } },
+      yaxis: { title: { text: "R² / Q²" }, range: [0, maxVal] },
+      shapes,
+      annotations: observedR2 != null || observedQ2 != null
+        ? [{ x: 0.02, y: 0.98, xref: "paper", yref: "paper", text: "Dashed lines = observed model", showarrow: false, font: { size: 10, color: "#64748b" }, xanchor: "left", yanchor: "top" }]
+        : [],
+    };
+
+    return { traces, layout };
+  }, [scores, observedR2, observedQ2]);
+
   if (!scores.length) return <PlotEmpty message="Run PLS-DA to generate permutation test" />;
+  if (!plot) return <PlotEmpty message="Unable to render permutation plot" />;
 
-  const width = 560;
-  const height = 340;
-  const pad = { l: 56, r: 28, t: 36, b: 56 };
-  const plotW = width - pad.l - pad.r;
-  const plotH = height - pad.t - pad.b;
-  const maxVal = Math.max(...scores.map((s) => Math.max(s.r2, s.q2)), observedR2 ?? 0, observedQ2 ?? 0, 0.1) * 1.1;
-  const yScale = linearScale([0, maxVal], [plotH, 0]);
-  const xScale = linearScale([0, Math.max(scores.length - 1, 1)], [0, plotW]);
-  const yTicks = niceTicks(0, maxVal, 5);
-
-  return (
-    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Permutation validation plot">
-      <rect x={0} y={0} width={width} height={height} className="fill-card" />
-      <g transform={`translate(${pad.l}, ${pad.t})`}>
-        {yTicks.map((t) => (
-          <line key={t} x1={0} y1={yScale(t)} x2={plotW} y2={yScale(t)} className="stroke-border/60" strokeWidth={1} />
-        ))}
-
-        {scores.map((s, i) => (
-          <g key={i}>
-            <circle cx={xScale(i)} cy={yScale(s.r2)} r={3.5} fill="#7c3aed" opacity={0.55} />
-            <circle cx={xScale(i)} cy={yScale(s.q2)} r={3} fill="#0891b2" opacity={0.45} />
-          </g>
-        ))}
-
-        {observedR2 != null && (
-          <line x1={0} y1={yScale(observedR2)} x2={plotW} y2={yScale(observedR2)} stroke="#7c3aed" strokeWidth={2} strokeDasharray="6 4" />
-        )}
-        {observedQ2 != null && (
-          <line x1={0} y1={yScale(observedQ2)} x2={plotW} y2={yScale(observedQ2)} stroke="#0891b2" strokeWidth={2} strokeDasharray="6 4" />
-        )}
-
-        <line x1={0} y1={plotH} x2={plotW} y2={plotH} className="stroke-foreground/80" strokeWidth={1.5} />
-        <line x1={0} y1={0} x2={0} y2={plotH} className="stroke-foreground/80" strokeWidth={1.5} />
-        {yTicks.map((t) => (
-          <text key={t} x={-8} y={yScale(t) + 4} fontSize={10} textAnchor="end" className="fill-muted-foreground">{formatTick(t)}</text>
-        ))}
-        <text x={plotW / 2} y={plotH + 36} fontSize={12} textAnchor="middle" className="fill-foreground">Permutation iteration</text>
-        <text
-          x={-44}
-          y={plotH / 2}
-          fontSize={12}
-          textAnchor="middle"
-          transform={`rotate(-90, -44, ${plotH / 2})`}
-          className="fill-foreground"
-        >
-          R² / Q²
-        </text>
-      </g>
-
-      <g transform={`translate(${width - 158}, ${pad.t})`}>
-        <rect width={126} height={58} className="fill-card stroke-border" strokeWidth={1} rx={6} />
-        <circle cx={12} cy={16} r={4} fill="#7c3aed" />
-        <text x={22} y={20} fontSize={10} className="fill-foreground">Permuted R²</text>
-        <circle cx={12} cy={34} r={4} fill="#0891b2" />
-        <text x={22} y={38} fontSize={10} className="fill-foreground">Permuted Q²</text>
-        <text x={10} y={52} fontSize={9} className="fill-muted-foreground">Dashed = observed model</text>
-      </g>
-    </svg>
-  );
+  return <PlotlyChart data={plot.traces} layout={plot.layout} className="h-full w-full min-h-[200px]" />;
 }

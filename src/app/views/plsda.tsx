@@ -32,6 +32,8 @@ export function PLSDAView() {
   const specificity = (results?.specificity as number) ?? 0;
   const r2 = (results?.r2 as number) ?? 0;
   const q2 = (results?.q2 as number) ?? 0;
+  const plsdaDisplayConfig = getAnalysisConfig("PLS-DA");
+  const showGroupEllipses = plsdaDisplayConfig.showGroupEllipses !== false;
   const folds = (results?.folds as number) ?? 7;
   const permutations = (results?.permutations as number) ?? 100;
   const permutationP = (results?.permutationP as number) ?? null;
@@ -107,7 +109,13 @@ export function PLSDAView() {
             <h3 className="text-sm">Score Plot (LV1 vs LV2)</h3>
             <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PLS-DA" filename="plsda-scores" plotContainerId="plot-plsda-main" />
           </div>
-          <ChartPlaceholder type="PLS-DA Score Plot" height="450px" exportId="plot-plsda-main" plsdaScores={scores} />
+          <ChartPlaceholder
+            type="PLS-DA Score Plot"
+            height="450px"
+            exportId="plot-plsda-main"
+            plsdaScores={scores}
+            plsdaConfig={{ showGroupEllipses }}
+          />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
