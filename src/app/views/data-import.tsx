@@ -32,6 +32,17 @@ import {
 const csvSteps = ["Upload File", "Map Columns", "Validate", "Import"];
 const mzxmlSteps = ["Upload mzXML", "Sample Groups", "Import"];
 
+/** Never surface a raw HTML error page (e.g. a proxy "Service is not reachable" page) in the UI. */
+function cleanErrorMessage(raw: string): string {
+  const text = (raw ?? "").trim();
+  if (!text) return "Upload failed";
+  if (text.includes("<!DOCTYPE") || text.includes("<html") || /Service is not reachable/i.test(text)) {
+    return "Upload service is temporarily unreachable (proxy error). Please wait a moment and try again.";
+  }
+  const stripped = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return stripped.length > 0 && stripped.length < 300 ? stripped : "Upload failed — please try again.";
+}
+
 type ImportFormat = "csv" | "mzxml";
 
 interface MzxmlSampleRow {
@@ -254,7 +265,7 @@ export function DataImportView() {
         toast.success("Spectra verified with Python service");
       }
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Preview failed";
+      const message = cleanErrorMessage(e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Preview failed");
       setMzxmlPreviewWarning(message);
       toast.error(message);
     } finally {
@@ -343,7 +354,7 @@ export function DataImportView() {
           return;
         }
       } catch (e) {
-        const message = e instanceof ApiError ? e.message : "Lost connection while checking import status";
+        const message = cleanErrorMessage(e instanceof ApiError ? e.message : "Lost connection while checking import status");
         toast.error(message);
         return;
       }
@@ -397,7 +408,7 @@ export function DataImportView() {
         await pollImportStatus(id);
       }
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : e instanceof Error && e.message.trim() ? e.message : "Import failed";
+      const message = cleanErrorMessage(e instanceof ApiError ? e.message : e instanceof Error && e.message.trim() ? e.message : "Import failed");
       toast.error(message);
     } finally {
       setImporting(false);

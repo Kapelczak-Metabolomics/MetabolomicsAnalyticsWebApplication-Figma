@@ -262,6 +262,93 @@ router.post(
   }
 );
 
+/**
+ * Chunked upload — the client streams the file in small pieces so EasyPanel's
+ * proxy never times out or hits a body-size limit on one large request.
+ * Each chunk is written at its byte offset, making retries idempotent.
+ */
+router.post(
+  "/import/mzxml/session/:sessionId/chunk",
+  authMiddleware,
+  (req: Request, res: Response) => {
+    const sessionId = String(req.params.sessionId);
+    const session = loadMzxmlSession(sessionId, req.user!.id);
+    if (!session) {
+      res.status(404).json({ error: "Upload session not found or expired — select files again." });
+      return;
+    }
+
+    const rawName = String(req.query.filename ?? "");
+    const index = Number(req.query.index ?? 0);
+    const offset = Number(req.query.offset ?? 0);
+    const isLast = String(req.query.last ?? "") === "true";
+
+    if (!rawName || !Number.isFinite(index) || !Number.isFinite(offset) || offset < 0) {
+      res.status(400).json({ error: "filename, index and offset are required" });
+      return;
+    }
+    if (offset > MAX_MZXML_UPLOAD_BYTES) {
+      res.status(400).json({ error: `File too large — maximum upload size is ${MAX_MZXML_UPLOAD_BYTES / (1024 * 1024)} MB` });
+      return;
+    }
+
+    const safeName = path.basename(rawName).replace(/[^\w.\-()+ ]/g, "_");
+    const dest = path.join(session.dir, safeName);
+
+    try {
+      if (index === 0) {
+        fs.writeFileSync(dest, Buffer.alloc(0));
+      } else if (!fs.existsSync(dest)) {
+        res.status(409).json({ error: "Chunk out of order — restart the upload." });
+        return;
+      }
+    } catch {
+      res.status(500).json({ error: "Failed to initialize upload file" });
+      return;
+    }
+
+    let settled = false;
+    const ws = fs.createWriteStream(dest, { flags: "r+", start: offset });
+    const fail = (status: number, message: string) => {
+      if (settled) return;
+      settled = true;
+      ws.destroy();
+      if (!res.headersSent) res.status(status).json({ error: message });
+    };
+
+    req.on("aborted", () => fail(400, "Upload aborted"));
+    req.on("error", () => fail(400, "Upload stream error"));
+    ws.on("error", () => fail(500, "Failed to write chunk"));
+    ws.on("finish", () => {
+      if (settled) return;
+      settled = true;
+      try {
+        const size = fs.statSync(dest).size;
+        if (size > MAX_MZXML_UPLOAD_BYTES) {
+          fs.rmSync(dest, { force: true });
+          res.status(400).json({ error: `File too large — maximum upload size is ${MAX_MZXML_UPLOAD_BYTES / (1024 * 1024)} MB` });
+          return;
+        }
+        if (isLast) {
+          addFileToMzxmlSession(sessionId, req.user!.id, { path: dest, filename: safeName });
+        }
+        const updated = loadMzxmlSession(sessionId, req.user!.id);
+        res.json({
+          sessionId,
+          filename: safeName,
+          index,
+          completed: isLast,
+          fileCount: updated?.files.length ?? 0,
+        });
+      } catch {
+        if (!res.headersSent) res.status(500).json({ error: "Failed to finalize chunk" });
+      }
+    });
+
+    req.pipe(ws);
+  }
+);
+
 router.post("/import/mzxml/preview-session", authMiddleware, async (req: Request, res: Response) => {
   const sessionId = String(req.body?.sessionId ?? "");
   if (!sessionId) {

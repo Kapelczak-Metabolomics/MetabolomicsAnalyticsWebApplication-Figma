@@ -35,6 +35,62 @@ function httpStatusFallback(status: number): string {
   return "Request failed";
 }
 
+/** Upload mzXML in small pieces so restrictive proxies (EasyPanel/Traefik) don't drop large requests. */
+const MZXML_CHUNK_BYTES = 4 * 1024 * 1024;
+const CHUNK_MAX_ATTEMPTS = 5;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function uploadMzxmlChunk(
+  sessionId: string,
+  filename: string,
+  index: number,
+  offset: number,
+  isLast: boolean,
+  blob: Blob
+): Promise<{ sessionId: string; filename: string; fileCount: number }> {
+  const token = getToken();
+  const q = new URLSearchParams({
+    filename,
+    index: String(index),
+    offset: String(offset),
+    last: String(isLast),
+  });
+  const url = `${API_BASE}/datasets/import/mzxml/session/${sessionId}/chunk?${q}`;
+
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= CHUNK_MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: blob,
+      });
+      if (res.ok) {
+        const text = await res.text();
+        return text ? (JSON.parse(text) as { sessionId: string; filename: string; fileCount: number }) : { sessionId, filename, fileCount: 0 };
+      }
+      const message = await parseErrorResponse(res);
+      // Client errors (except transient proxy pages) should not be retried.
+      const retriable = res.status === 0 || res.status === 408 || res.status === 409 || res.status >= 500;
+      if (!retriable) throw new ApiError(res.status, message);
+      lastError = new ApiError(res.status, message);
+    } catch (err) {
+      if (err instanceof ApiError && err.status && err.status < 500 && err.status !== 408 && err.status !== 409) {
+        throw err;
+      }
+      lastError = err instanceof Error ? err : new Error("Upload failed");
+    }
+    if (attempt < CHUNK_MAX_ATTEMPTS) await sleep(1000 * 2 ** (attempt - 1));
+  }
+  throw lastError ?? new ApiError(0, "Upload failed after retries");
+}
+
 async function parseErrorResponse(res: Response): Promise<string> {
   const text = await res.text().catch(() => "");
   if (text) {
@@ -199,33 +255,27 @@ export const api = {
   createMzxmlSession: () =>
     request<{ sessionId: string }>("/datasets/import/mzxml/session", { method: "POST" }),
 
-  stageMzxmlFile: (sessionId: string, file: File, onProgress?: (pct: number) => void) =>
-    new Promise<{ sessionId: string; filename: string; fileCount: number }>((resolve, reject) => {
-      const form = new FormData();
-      form.append("file", file);
-      const token = getToken();
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", `${API_BASE}/datasets/import/mzxml/session/${sessionId}/file`);
-      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable && onProgress) {
-          onProgress(Math.round((event.loaded / event.total) * 100));
-        }
-      };
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            resolve(JSON.parse(xhr.responseText));
-          } catch {
-            reject(new ApiError(xhr.status, "Invalid upload response"));
-          }
-          return;
-        }
-        reject(new ApiError(xhr.status, xhr.responseText || "Upload failed"));
-      };
-      xhr.onerror = () => reject(new ApiError(0, "Network error during file upload"));
-      xhr.send(form);
-    }),
+  stageMzxmlFile: async (
+    sessionId: string,
+    file: File,
+    onProgress?: (pct: number) => void
+  ): Promise<{ sessionId: string; filename: string; fileCount: number }> => {
+    const total = Math.max(1, Math.ceil(file.size / MZXML_CHUNK_BYTES));
+    let last: { sessionId: string; filename: string; fileCount: number } = {
+      sessionId,
+      filename: file.name,
+      fileCount: 0,
+    };
+    for (let index = 0; index < total; index++) {
+      const start = index * MZXML_CHUNK_BYTES;
+      const end = Math.min(start + MZXML_CHUNK_BYTES, file.size);
+      const blob = file.slice(start, end);
+      const isLast = index === total - 1;
+      last = await uploadMzxmlChunk(sessionId, file.name, index, start, isLast, blob);
+      onProgress?.(Math.round((end / Math.max(file.size, 1)) * 100));
+    }
+    return last;
+  },
 
   stageMzxmlFiles: async (files: File[], onFileProgress?: (fileIndex: number, pct: number) => void) => {
     const { sessionId } = await api.createMzxmlSession();
