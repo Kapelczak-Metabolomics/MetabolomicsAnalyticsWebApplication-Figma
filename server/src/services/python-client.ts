@@ -1,6 +1,10 @@
 const PYTHON_URL = process.env.PYTHON_SERVICE_URL || "http://127.0.0.1:47824";
 const MZXML_TIMEOUT_MS = 10 * 60 * 1000;
-const ANALYSIS_TIMEOUT_MS = 90 * 1000;
+/** Short timeout so unreachable Python falls back to TypeScript quickly. */
+const ANALYSIS_TIMEOUT_MS = 15 * 1000;
+const HEALTH_CACHE_MS = 30_000;
+
+let pythonHealthCache: { ok: boolean; checkedAt: number } | null = null;
 
 type MzxmlFile = { buffer: Buffer; filename: string };
 
@@ -59,6 +63,22 @@ export async function pythonHealth(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Cached health check — avoids a 15s analysis timeout when Python is down. */
+export async function isPythonAnalysisAvailable(): Promise<boolean> {
+  if (!usePythonAnalysis()) return false;
+  const now = Date.now();
+  if (pythonHealthCache && now - pythonHealthCache.checkedAt < HEALTH_CACHE_MS) {
+    return pythonHealthCache.ok;
+  }
+  const ok = await pythonHealth();
+  pythonHealthCache = { ok, checkedAt: now };
+  return ok;
+}
+
+export function invalidatePythonHealthCache(): void {
+  pythonHealthCache = null;
 }
 
 export async function pythonPreviewMzxml(

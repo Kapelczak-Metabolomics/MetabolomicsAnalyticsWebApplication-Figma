@@ -7,6 +7,9 @@ import { computeWithEngine } from "../services/compute-analysis.js";
 
 const router = Router();
 
+/** Datasets at or below this size complete in-process before the HTTP response returns. */
+const SYNC_ANALYSIS_MAX_CELLS = 100_000;
+
 async function executeAnalysis(experimentId: number, type: string, datasetId: number, userId: number, config: Record<string, unknown> = {}) {
   await query(`UPDATE experiments SET status = 'running', started_at = NOW() WHERE id = $1`, [experimentId]);
 
@@ -30,6 +33,33 @@ async function executeAnalysis(experimentId: number, type: string, datasetId: nu
     const exp = await query<{ name: string }>("SELECT name FROM experiments WHERE id = $1", [experimentId]);
     await createNotification(userId, "error", "Analysis Failed", `${exp.rows[0].name} failed. ${message}`, `/experiments/${experimentId}`, "View error log");
   }
+}
+
+function launchAnalysis(
+  experimentId: number,
+  type: string,
+  datasetId: number,
+  userId: number,
+  config: Record<string, unknown>
+) {
+  return executeAnalysis(experimentId, type, datasetId, userId, config).catch(async (err) => {
+    console.error(`Unhandled analysis error for experiment ${experimentId}:`, err);
+    const message = err instanceof Error ? err.message : "Analysis failed";
+    await query(
+      `UPDATE experiments SET status = 'failed', error_message = $1, completed_at = NOW()
+       WHERE id = $2 AND status NOT IN ('completed', 'failed')`,
+      [message, experimentId]
+    ).catch((dbErr) => console.error(`Failed to mark experiment ${experimentId} as failed:`, dbErr));
+  });
+}
+
+async function datasetCellCount(datasetId: number): Promise<number> {
+  const result = await query<{ samples_count: number; features_count: number }>(
+    "SELECT samples_count, features_count FROM datasets WHERE id = $1",
+    [datasetId]
+  );
+  const row = result.rows[0];
+  return (row?.samples_count ?? 0) * (row?.features_count ?? 0);
 }
 
 router.get("/", authMiddleware, async (req: Request, res: Response) => {
@@ -172,7 +202,17 @@ router.post("/:id/run", authMiddleware, async (req: Request, res: Response) => {
   }
 
   const config = (exp.rows[0].config as Record<string, unknown>) ?? {};
-  executeAnalysis(id, exp.rows[0].type, exp.rows[0].dataset_id, exp.rows[0].user_id ?? req.user!.id, config);
+  const userId = exp.rows[0].user_id ?? req.user!.id;
+  await query(`UPDATE experiments SET status = 'running', started_at = NOW() WHERE id = $1`, [id]);
+  const job = launchAnalysis(id, exp.rows[0].type, exp.rows[0].dataset_id, userId, config);
+  const cells = await datasetCellCount(exp.rows[0].dataset_id);
+  if (cells <= SYNC_ANALYSIS_MAX_CELLS) {
+    await job;
+    const final = await query<{ status: string }>("SELECT status FROM experiments WHERE id = $1", [id]);
+    res.json({ status: final.rows[0]?.status ?? "running", id });
+    return;
+  }
+  void job;
   res.json({ status: "running", id });
 });
 
@@ -191,8 +231,19 @@ router.post("/run", authMiddleware, async (req: Request, res: Response) => {
 
   const experimentId = result.rows[0].id;
   await logAudit(req.user, "RUN_ANALYSIS", "analysis", `Experiment: ${name}`, `Started ${type} analysis`, req);
-  executeAnalysis(experimentId, type, datasetId, req.user!.id, (config as Record<string, unknown>) ?? {});
+  await query(`UPDATE experiments SET status = 'running', started_at = NOW() WHERE id = $1`, [experimentId]);
 
+  const job = launchAnalysis(experimentId, type, datasetId, req.user!.id, (config as Record<string, unknown>) ?? {});
+  const cells = await datasetCellCount(datasetId);
+
+  if (cells <= SYNC_ANALYSIS_MAX_CELLS) {
+    await job;
+    const final = await query<{ status: string }>("SELECT status FROM experiments WHERE id = $1", [experimentId]);
+    res.status(201).json({ id: experimentId, status: final.rows[0]?.status ?? "running" });
+    return;
+  }
+
+  void job;
   res.status(201).json({ id: experimentId, status: "running" });
 });
 

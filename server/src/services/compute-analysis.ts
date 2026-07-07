@@ -1,21 +1,36 @@
 import { loadDatasetMatrix, analysisMaxFeatures } from "../utils/dataset.js";
 import { runPCA, runVolcano, runClustering, runPathway, runBiomarker, runPLSDA } from "./analysis.js";
-import { pythonRunAnalysis, usePythonAnalysis } from "./python-client.js";
+import { invalidatePythonHealthCache, isPythonAnalysisAvailable, pythonRunAnalysis, usePythonAnalysis } from "./python-client.js";
 
 type Matrix = Awaited<ReturnType<typeof loadDatasetMatrix>>;
+
+/** Small matrices run faster in-process than over HTTP to Python. */
+const PYTHON_MIN_CELLS = 5000;
+
+export type ComputeOptions = {
+  preferTypeScript?: boolean;
+};
 
 export async function computeWithEngine(
   type: string,
   samples: Matrix["samples"],
   features: Matrix["features"],
-  config: Record<string, unknown> = {}
+  config: Record<string, unknown> = {},
+  options: ComputeOptions = {}
 ) {
   const groups = [...new Set(samples.map((s) => s.groupLabel))];
   const groupA = String(config.groupA ?? groups[0]);
   const groupB = String(config.groupB ?? groups[1] ?? groups[0]);
   const mergedConfig = { ...config, groupA, groupB };
 
-  if (usePythonAnalysis()) {
+  const cellCount = samples.length * features.length;
+  const tryPython =
+    usePythonAnalysis() &&
+    !options.preferTypeScript &&
+    cellCount > PYTHON_MIN_CELLS &&
+    (await isPythonAnalysisAvailable());
+
+  if (tryPython) {
     try {
       const pySamples = samples.map((s) => ({ sampleId: s.sampleId, groupLabel: s.groupLabel, values: s.values }));
       const pyFeatures = features.map((f) => ({
@@ -23,6 +38,7 @@ export async function computeWithEngine(
       }));
       return await pythonRunAnalysis(type, pySamples, pyFeatures, mergedConfig);
     } catch (err) {
+      invalidatePythonHealthCache();
       console.warn(`Python analysis failed for ${type}, falling back to TypeScript:`, err);
     }
   }
