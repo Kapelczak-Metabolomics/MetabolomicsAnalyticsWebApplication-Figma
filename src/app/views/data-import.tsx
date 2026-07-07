@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   Upload,
@@ -12,6 +12,13 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "../../lib/api";
+import {
+  buildMzxmlGroupMappings,
+  buildMzxmlSamplesFromFiles,
+  csvAcceptAttribute,
+  isMzxmlFile,
+  mzxmlAcceptAttribute,
+} from "../../lib/import-files";
 import {
   type ColumnRole,
   type ParsedTable,
@@ -43,6 +50,7 @@ export function DataImportView() {
   const [mzxmlPreviewWarning, setMzxmlPreviewWarning] = useState<string | null>(null);
   const [pythonReady, setPythonReady] = useState<boolean | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [csvReading, setCsvReading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [polling, setPolling] = useState(false);
   const [projects, setProjects] = useState<Array<{ id: number; name: string }>>([]);
@@ -52,6 +60,7 @@ export function DataImportView() {
   const [columnRoles, setColumnRoles] = useState<Record<string, ColumnRole>>({});
   const [sampleGroups, setSampleGroups] = useState<Record<string, string>>({});
   const [customGroups, setCustomGroups] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   const steps = format === "csv" ? csvSteps : mzxmlSteps;
@@ -135,6 +144,8 @@ export function DataImportView() {
     setSampleGroups({});
     setCustomGroups([]);
     setDatasetName("");
+    setCsvReading(false);
+    resetFileInput();
   }
 
   function initColumnMapping(parsed: ParsedTable) {
@@ -149,81 +160,109 @@ export function DataImportView() {
   }
 
   function handleCsvFile(file: File) {
+    const lower = file.name.toLowerCase();
+    if (!lower.endsWith(".csv") && !lower.endsWith(".tsv") && !lower.endsWith(".txt")) {
+      toast.error("Select a CSV, TSV, or TXT file");
+      return;
+    }
+    setCsvReading(true);
+    setFileName(file.name);
+    setDatasetName(file.name.replace(/\.[^.]+$/, ""));
     const reader = new FileReader();
     reader.onload = () => {
       const text = String(reader.result ?? "");
+      if (!text.trim()) {
+        toast.error("File is empty");
+        setCsvReading(false);
+        return;
+      }
       const parsed = parseDelimitedTable(text);
+      if (!parsed.headers.length) {
+        toast.error("Could not parse file — ensure it is a delimited text file (CSV/TSV), not Excel (.xlsx)");
+        setCsvReading(false);
+        return;
+      }
       setCsvContent(text);
-      setFileName(file.name);
-      setDatasetName(file.name.replace(/\.[^.]+$/, ""));
       initColumnMapping(parsed);
       setStep(1);
+      setCsvReading(false);
     };
-    reader.onerror = () => toast.error("Failed to read file");
+    reader.onerror = () => {
+      toast.error("Failed to read file");
+      setCsvReading(false);
+    };
     reader.readAsText(file);
   }
 
+  function applyMzxmlSamples(
+    samples: Array<{ filename: string; sampleId: string }>,
+    warning?: string | null,
+  ) {
+    setMzxmlSamples(samples);
+    setGroupMappings(buildMzxmlGroupMappings(samples, guessGroupFromSampleId));
+    if (warning) setMzxmlPreviewWarning(warning);
+    setStep(1);
+  }
+
   async function loadMzxmlPreview(files: File[]) {
+    const localSamples = buildMzxmlSamplesFromFiles(files);
+    applyMzxmlSamples(localSamples);
     setMzxmlPreviewLoading(true);
     setMzxmlPreviewWarning(null);
+
+    if (pythonReady === false) {
+      setMzxmlPreviewWarning(
+        "Python service is offline — sample names are from filenames. Start the Python service before importing.",
+      );
+      setMzxmlPreviewLoading(false);
+      return;
+    }
+
     try {
       const preview = await api.previewMzxml(files);
-      const samples = preview.samples.length
-        ? preview.samples
-        : files.map((f) => ({
-            filename: f.name,
-            sampleId: f.name.replace(/\.(mzxml|xml|zip)$/i, ""),
-          }));
-
-      const mappings: Record<string, string> = {};
-      samples.forEach((s) => {
-        mappings[s.sampleId] = guessGroupFromSampleId(s.sampleId);
-        mappings[s.filename] = mappings[s.sampleId];
-      });
-
+      const samples = preview.samples.length ? preview.samples : localSamples;
       setMzxmlSamples(samples);
-      setGroupMappings(mappings);
-      setStep(1);
+      setGroupMappings(buildMzxmlGroupMappings(samples, guessGroupFromSampleId));
     } catch (e) {
       const message = e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Failed to read mzXML files";
-      setMzxmlPreviewWarning(message);
+      setMzxmlPreviewWarning(
+        `${message} Sample names were taken from filenames — import may still work if the Python service can parse your files.`,
+      );
       toast.error(message);
-      const fallback = files.map((f) => ({
-        filename: f.name,
-        sampleId: f.name.replace(/\.(mzxml|xml|zip)$/i, ""),
-      }));
-      const mappings: Record<string, string> = {};
-      fallback.forEach((s) => {
-        mappings[s.sampleId] = guessGroupFromSampleId(s.sampleId);
-        mappings[s.filename] = mappings[s.sampleId];
-      });
-      setMzxmlSamples(fallback);
-      setGroupMappings(mappings);
-      setStep(1);
     } finally {
       setMzxmlPreviewLoading(false);
     }
   }
 
   function handleMzxmlFiles(fileList: FileList | File[]) {
-    const files = Array.from(fileList).filter((f) =>
-      f.name.toLowerCase().endsWith(".mzxml") || f.name.toLowerCase().endsWith(".xml") || f.name.toLowerCase().endsWith(".zip")
-    );
+    const files = Array.from(fileList).filter(isMzxmlFile);
     if (!files.length) {
-      toast.error("Select mzXML, XML, or ZIP files");
+      toast.error("Select mzXML, mzML, XML, or ZIP files");
       return;
     }
     setMzxmlFiles(files);
     setFileName(files.length === 1 ? files[0].name : `${files.length} files`);
-    setDatasetName(files[0].name.replace(/\.[^.]+$/, "").replace(/\.mzxml$/i, ""));
+    setDatasetName(files[0].name.replace(/\.[^.]+$/, ""));
     void loadMzxmlPreview(files);
   }
 
-  function handleFileSelect(input?: HTMLInputElement | null) {
-    const file = input?.files?.[0];
-    if (!file) return;
-    if (format === "csv") handleCsvFile(file);
-    else if (input?.files) handleMzxmlFiles(input.files);
+  function resetFileInput() {
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function handleFileSelect(input: HTMLInputElement | null) {
+    if (!input?.files?.length) return;
+    const files = input.files;
+    if (format === "csv") {
+      handleCsvFile(files[0]);
+    } else {
+      handleMzxmlFiles(files);
+    }
+    resetFileInput();
+  }
+
+  function openFilePicker() {
+    fileInputRef.current?.click();
   }
 
   function setColumnRole(header: string, role: ColumnRole) {
@@ -398,16 +437,32 @@ export function DataImportView() {
                   )}
                 </>
               )}
-              <label className="mt-4 inline-flex cursor-pointer rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90">
-                Browse Files
-                <input
-                  type="file"
-                  accept={format === "csv" ? ".csv,.tsv,.txt" : ".mzxml,.xml,.zip"}
-                  multiple={format === "mzxml"}
-                  className="hidden"
-                  onChange={(e) => handleFileSelect(e.target)}
-                />
-              </label>
+              <input
+                key={format}
+                ref={fileInputRef}
+                type="file"
+                accept={format === "csv" ? csvAcceptAttribute() : mzxmlAcceptAttribute()}
+                multiple={format === "mzxml"}
+                className="sr-only"
+                onChange={(e) => handleFileSelect(e.currentTarget)}
+              />
+              <button
+                type="button"
+                onClick={openFilePicker}
+                disabled={csvReading || mzxmlPreviewLoading}
+                className="mt-4 inline-flex cursor-pointer rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {csvReading || mzxmlPreviewLoading ? (
+                  <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Reading files...</>
+                ) : (
+                  "Browse Files"
+                )}
+              </button>
+              {fileName && step === 0 && (
+                <p className="mt-3 text-xs text-emerald-600 dark:text-emerald-400">
+                  Selected: <strong>{fileName}</strong>
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-2">
               {format === "csv" ? (
@@ -425,7 +480,7 @@ export function DataImportView() {
                 <>
                   <div className="rounded-lg border border-border bg-card p-3 flex items-start gap-2">
                     <Dna className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                    <div><p className="text-xs font-medium">mzXML / mzML XML</p><p className="text-xs text-muted-foreground">Raw LC-MS spectra via pymzML</p></div>
+                    <div><p className="text-xs font-medium">mzXML / mzML</p><p className="text-xs text-muted-foreground">Raw LC-MS spectra via pymzML</p></div>
                   </div>
                   <div className="rounded-lg border border-border bg-card p-3 flex items-start gap-2">
                     <Check className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
@@ -617,7 +672,10 @@ export function DataImportView() {
                 Add
               </button>
             </div>
-            <div className="flex justify-end">
+            <div className="flex justify-between">
+              <button onClick={() => { setStep(0); resetFileInput(); }} className="flex items-center gap-1.5 rounded-md border border-border px-4 py-2 text-xs hover:bg-accent">
+                <ArrowLeft className="h-3.5 w-3.5" /> Back
+              </button>
               <button onClick={() => setStep(2)} disabled={mzxmlPreviewLoading || !mzxmlSamples.length} className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
                 Continue <ArrowRight className="h-3.5 w-3.5" />
               </button>
