@@ -1,23 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link } from "react-router";
 import * as Popover from "@radix-ui/react-popover";
 import { Bell, CheckCircle2, AlertCircle, Info, Check, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "../../lib/api";
+import { useNotifications, type NotificationType } from "../../contexts/notifications-context";
 
-type NotifType = "success" | "warning" | "info" | "error";
-
-interface Notification {
-  id: number;
-  type: NotifType;
-  title: string;
-  message: string;
-  time: string;
-  read: boolean;
-  link?: string;
-}
-
-const iconMap: Record<NotifType, { icon: typeof CheckCircle2; color: string; bg: string }> = {
+const iconMap: Record<NotificationType, { icon: typeof CheckCircle2; color: string; bg: string }> = {
   success: { icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-500/10" },
   warning: { icon: AlertCircle, color: "text-amber-500", bg: "bg-amber-500/10" },
   error: { icon: AlertCircle, color: "text-destructive", bg: "bg-destructive/10" },
@@ -25,35 +13,28 @@ const iconMap: Record<NotifType, { icon: typeof CheckCircle2; color: string; bg:
 };
 
 export function NotificationsPopover() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const { notifications, unreadCount, markRead, markAllRead, refresh } = useNotifications();
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    if (open) {
-      api.getNotifications().then(setNotifications).catch(console.error);
-    }
-  }, [open]);
+  async function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (next) await refresh();
+  }
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
-
-  function markAllRead() {
-    api.markAllNotificationsRead()
-      .then(() => {
-        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-        toast.success("All notifications marked as read");
-      })
+  function handleMarkAllRead() {
+    markAllRead()
+      .then(() => toast.success("All notifications marked as read"))
       .catch(() => toast.error("Failed to mark notifications as read"));
   }
 
-  function markRead(id: number) {
-    api.markNotificationRead(id)
-      .then(() => setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n))));
+  function handleMarkRead(id: number) {
+    markRead(id).catch(() => toast.error("Failed to mark notification as read"));
   }
 
   const preview = notifications.slice(0, 4);
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
+    <Popover.Root open={open} onOpenChange={handleOpenChange}>
       <Popover.Trigger asChild>
         <button
           className="relative flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -85,7 +66,7 @@ export function NotificationsPopover() {
               )}
             </div>
             {unreadCount > 0 && (
-              <button onClick={markAllRead} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+              <button onClick={handleMarkAllRead} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                 <Check className="h-3 w-3" />
                 Mark all read
               </button>
@@ -98,7 +79,7 @@ export function NotificationsPopover() {
               const content = (
                 <div
                   className={`flex items-start gap-3 px-4 py-3 transition-colors hover:bg-muted/40 ${!notif.read ? "bg-primary/[0.03]" : ""}`}
-                  onClick={() => markRead(notif.id)}
+                  onClick={() => !notif.read && handleMarkRead(notif.id)}
                 >
                   <div className={`mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg ${bg}`}>
                     <Icon className={`h-3.5 w-3.5 ${color}`} />
@@ -115,7 +96,14 @@ export function NotificationsPopover() {
               );
 
               return notif.link ? (
-                <Link key={notif.id} to={notif.link} onClick={() => setOpen(false)}>
+                <Link
+                  key={notif.id}
+                  to={notif.link}
+                  onClick={() => {
+                    if (!notif.read) handleMarkRead(notif.id);
+                    setOpen(false);
+                  }}
+                >
                   {content}
                 </Link>
               ) : (

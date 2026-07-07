@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { ChevronDown, Moon, Sun, Settings, LogOut, User, Bell, HelpCircle } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Link } from "react-router";
@@ -7,20 +6,16 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { NotificationsPopover } from "./notifications-popover";
 import { useAuth } from "../../contexts/auth-context";
 import { useApp } from "../../contexts/app-context";
-import { api } from "../../lib/api";
+import { useNotifications } from "../../contexts/notifications-context";
 
 export function TopBar() {
   const { theme, setTheme } = useTheme();
   const { user, logout } = useAuth();
+  const { unreadCount } = useNotifications();
   const {
     projects, datasets, selectedProjectId, selectedDatasetId, selectedLens, groupLenses,
     setSelectedProjectId, setSelectedDatasetId, setSelectedLens,
   } = useApp();
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  useEffect(() => {
-    api.getNotifications().then((n) => setUnreadCount(n.filter((x) => !x.read).length)).catch(console.error);
-  }, []);
 
   const initials = (user?.name ?? "U").split(" ").filter(Boolean).map((n) => n[0]).join("").slice(0, 2).toUpperCase();
   const projectDatasets = datasets.filter((d) => d.project_id === selectedProjectId);
