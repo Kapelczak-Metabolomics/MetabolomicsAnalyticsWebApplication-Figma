@@ -9,8 +9,11 @@ import {
   testS3Connection,
   getS3BucketStats,
   sanitizeS3ForResponse,
+  loadS3Config,
   type S3Config,
 } from "../services/s3.js";
+import { loadEmailConfig, sanitizeEmailForResponse, sendUserWelcomeEmail, trySendPasswordReset, verifySmtpConnection, type EmailConfig } from "../services/email.js";
+import { getActiveStorageProvider } from "../services/storage.js";
 
 const router = Router();
 
@@ -94,6 +97,12 @@ router.post("/users", async (req: Request, res: Response) => {
     `INSERT INTO users (name, email, password_hash, role, status) VALUES ($1, $2, $3, $4, 'inactive') RETURNING id`,
     [name, email.toLowerCase(), hash, role ?? "Researcher"]
   );
+  try {
+    const emailCfg = await loadEmailConfig();
+    await sendUserWelcomeEmail(email.toLowerCase(), name, "changeme123", emailCfg);
+  } catch (err) {
+    console.log(`[admin-create-user] Email not sent for ${email}:`, err instanceof Error ? err.message : err);
+  }
   await logAudit(req.user, "CREATE_USER", "admin", `User: ${email}`, `Invited user ${name}`, req);
   res.status(201).json({ id: result.rows[0].id });
 });
@@ -123,9 +132,14 @@ router.post("/users/:id/reset-password", async (req: Request, res: Response) => 
     `INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, NOW() + INTERVAL '1 hour')`,
     [req.params.id, token]
   );
-  console.log(`[admin-reset] token for ${user.rows[0].email}: ${token}`);
+  const emailResult = await trySendPasswordReset(user.rows[0].email, token);
   await logAudit(req.user, "RESET_PASSWORD", "admin", `User #${req.params.id}`, "Password reset initiated", req);
-  res.json({ success: true, message: `Password reset link generated for ${user.rows[0].email}` });
+  res.json({
+    success: true,
+    message: emailResult.sent
+      ? `Password reset email sent to ${user.rows[0].email}`
+      : `Password reset link generated for ${user.rows[0].email} (check server logs — SMTP not configured)`,
+  });
 });
 
 router.get("/runs", async (_req: Request, res: Response) => {
@@ -227,6 +241,11 @@ router.get("/system", async (_req: Request, res: Response) => {
   if (settings.s3 && typeof settings.s3 === "object") {
     settings.s3 = sanitizeS3ForResponse(settings.s3 as S3Config);
   }
+  if (settings.email && typeof settings.email === "object") {
+    settings.email = sanitizeEmailForResponse(settings.email as EmailConfig);
+  }
+  const provider = await getActiveStorageProvider();
+  settings.storage = { ...(settings.storage as object), provider };
   res.json(settings);
 });
 
@@ -235,6 +254,7 @@ router.get("/storage", async (_req: Request, res: Response) => {
   const dbSize = await query<{ bytes: string }>("SELECT pg_database_size(current_database())::text AS bytes");
   const settings = await query<{ value: unknown }>("SELECT value FROM system_settings WHERE key = 's3'");
   const s3Config = settings.rows[0]?.value as S3Config | undefined;
+  const activeProvider = await getActiveStorageProvider();
 
   let s3: Awaited<ReturnType<typeof getS3BucketStats>> | { connected: false; error?: string } = { connected: false };
   if (s3Config?.bucket && s3Config.accessKeyId && s3Config.secretAccessKey) {
@@ -258,7 +278,7 @@ router.get("/storage", async (_req: Request, res: Response) => {
       diskPct: health.disk,
     },
     s3,
-    provider: (s3Config?.provider as string) || "local",
+    provider: activeProvider,
   });
 });
 
@@ -274,6 +294,15 @@ router.patch("/system", async (req: Request, res: Response) => {
         next.secretAccessKey = prev.secretAccessKey;
       }
       incoming.s3 = next;
+    }
+    if (incoming.email && typeof incoming.email === "object") {
+      const existing = await query<{ value: unknown }>("SELECT value FROM system_settings WHERE key = 'email'");
+      const prev = (existing.rows[0]?.value ?? {}) as EmailConfig;
+      const next = incoming.email as EmailConfig;
+      if (!next.password || next.password.includes("••••")) {
+        next.password = prev.password;
+      }
+      incoming.email = next;
     }
     for (const [k, v] of Object.entries(incoming)) {
       await query(
@@ -320,13 +349,23 @@ router.post("/system/test-s3", async (req: Request, res: Response) => {
 });
 
 router.post("/system/test-email", async (req: Request, res: Response) => {
-  const { host, port } = req.body;
-  if (!host) {
+  const body = req.body as EmailConfig & { testRecipient?: string };
+  let config = body;
+  const existing = await query<{ value: unknown }>("SELECT value FROM system_settings WHERE key = 'email'");
+  const prev = (existing.rows[0]?.value ?? {}) as EmailConfig;
+  if (!config.password || config.password.includes("••••")) {
+    config = { ...prev, ...body, password: prev.password };
+  }
+  if (!config.host && !config.smtpHost) {
     res.status(400).json({ error: "SMTP host required" });
     return;
   }
-  console.log(`[smtp-test] Would send test email via ${host}:${port ?? 587}`);
-  res.json({ success: true, message: `SMTP connection to ${host} verified` });
+  try {
+    const result = await verifySmtpConnection(config, body.testRecipient || req.user?.email);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "SMTP connection failed" });
+  }
 });
 
 export default router;

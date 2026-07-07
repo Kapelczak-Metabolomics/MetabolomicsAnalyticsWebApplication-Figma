@@ -241,7 +241,11 @@ export const api = {
       accessKeyId?: string; secretAccessKey?: string;
     }) =>
       request<{ success: boolean; message: string }>("/admin/system/test-s3", { method: "POST", body: JSON.stringify(data) }),
-    testEmail: (data: { host: string; port?: number }) =>
+    testEmail: (data: {
+      host?: string; smtpHost?: string; port?: number; encryption?: string;
+      username?: string; password?: string; fromEmail?: string; fromName?: string; enabled?: boolean;
+      testRecipient?: string;
+    }) =>
       request<{ success: boolean; message: string }>("/admin/system/test-email", { method: "POST", body: JSON.stringify(data) }),
   },
 };

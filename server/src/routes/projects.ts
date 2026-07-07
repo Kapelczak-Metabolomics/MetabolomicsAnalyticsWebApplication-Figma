@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { query } from "../db/index.js";
 import { authMiddleware, logAudit } from "../middleware/auth.js";
 import { formatRelativeTime } from "../utils/dataset.js";
+import { sendProjectInviteEmail, loadEmailConfig } from "../services/email.js";
 
 const router = Router();
 
@@ -187,6 +188,18 @@ router.post("/:id/members", authMiddleware, async (req: Request, res: Response) 
      ON CONFLICT (project_id, email) DO UPDATE SET role = EXCLUDED.role RETURNING id`,
     [id, email.toLowerCase().trim(), name ?? null, role ?? "viewer"]
   );
+  const project = await query<{ name: string }>("SELECT name FROM projects WHERE id = $1", [id]);
+  try {
+    const emailCfg = await loadEmailConfig();
+    await sendProjectInviteEmail(
+      email.toLowerCase().trim(),
+      project.rows[0]?.name ?? `Project #${id}`,
+      req.user?.name ?? "A teammate",
+      emailCfg
+    );
+  } catch (err) {
+    console.log(`[project-invite] Email not sent to ${email}:`, err instanceof Error ? err.message : err);
+  }
   await logAudit(req.user, "INVITE_MEMBER", "data", `Project #${id}`, `Invited ${email}`, req);
   res.status(201).json({ id: result.rows[0].id });
 });

@@ -196,6 +196,14 @@ export function AdminSystem() {
   const [s3AccessKey, setS3AccessKey] = useState("");
   const [s3SecretKey, setS3SecretKey] = useState("");
   const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState(587);
+  const [smtpEncryption, setSmtpEncryption] = useState("TLS");
+  const [smtpUsername, setSmtpUsername] = useState("");
+  const [smtpPassword, setSmtpPassword] = useState("");
+  const [smtpFromEmail, setSmtpFromEmail] = useState("");
+  const [smtpFromName, setSmtpFromName] = useState("MetaboAnalytics");
+  const [smtpEnabled, setSmtpEnabled] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
 
   useEffect(() => {
     api.admin.getHealth().then(setHealth).catch(console.error);
@@ -210,8 +218,20 @@ export function AdminSystem() {
         if (s3.accessKeyId) setS3AccessKey(s3.accessKeyId);
         if (s3.secretAccessKey) setS3SecretKey(s3.secretAccessKey);
       }
-      const email = s.email as { host?: string } | undefined;
-      if (email?.host) setSmtpHost(email.host);
+      const email = s.email as {
+        host?: string; smtpHost?: string; port?: number; encryption?: string;
+        username?: string; password?: string; fromEmail?: string; fromName?: string; enabled?: boolean;
+      } | undefined;
+      if (email) {
+        setSmtpHost(email.host || email.smtpHost || "");
+        if (email.port) setSmtpPort(email.port);
+        if (email.encryption) setSmtpEncryption(email.encryption);
+        if (email.username) setSmtpUsername(email.username);
+        if (email.password) setSmtpPassword(email.password);
+        if (email.fromEmail) setSmtpFromEmail(email.fromEmail);
+        if (email.fromName) setSmtpFromName(email.fromName);
+        setSmtpEnabled(email.enabled !== false);
+      }
     }).catch(console.error);
   }, []);
 
@@ -566,8 +586,17 @@ export function AdminSystem() {
 
         {/* Email Settings */}
         <div className="rounded-xl border border-border bg-card p-6">
-          <h3 className="mb-4 text-base font-medium">Email Configuration</h3>
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-base font-medium">Email Configuration</h3>
+            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${smtpEnabled && smtpHost ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>
+              {smtpEnabled && smtpHost ? "SMTP enabled" : "SMTP disabled"}
+            </span>
+          </div>
           <div className="space-y-4">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={smtpEnabled} onChange={(e) => setSmtpEnabled(e.target.checked)} />
+              Enable outbound email (password reset, invites, new users)
+            </label>
             <div>
               <label className="text-sm font-medium">SMTP Server</label>
               <input
@@ -583,28 +612,98 @@ export function AdminSystem() {
                 <label className="text-sm font-medium">Port</label>
                 <input
                   type="number"
-                  defaultValue={587}
+                  value={smtpPort}
+                  onChange={(e) => setSmtpPort(parseInt(e.target.value, 10) || 587)}
                   className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
                 />
               </div>
               <div>
                 <label className="text-sm font-medium">Encryption</label>
-                <select className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none">
-                  <option>TLS</option>
-                  <option>SSL</option>
-                  <option>None</option>
+                <select value={smtpEncryption} onChange={(e) => setSmtpEncryption(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none">
+                  <option value="TLS">TLS</option>
+                  <option value="SSL">SSL</option>
+                  <option value="None">None</option>
                 </select>
               </div>
             </div>
-            <button
-              onClick={async () => {
-                await api.admin.updateSystemBulk({ email: { host: smtpHost, port: 587, encryption: "TLS" } });
-                toast.success("Email settings saved");
-              }}
-              className="rounded-lg bg-gradient-to-r from-violet-500 to-cyan-500 px-4 py-2 text-sm font-medium text-white hover:shadow-lg"
-            >
-              Save Email Settings
-            </button>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium">Username</label>
+                <input type="text" value={smtpUsername} onChange={(e) => setSmtpUsername(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none" />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Password</label>
+                <input type="password" value={smtpPassword} onChange={(e) => setSmtpPassword(e.target.value)}
+                  placeholder="SMTP password"
+                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium">From email</label>
+                <input type="email" value={smtpFromEmail} onChange={(e) => setSmtpFromEmail(e.target.value)}
+                  placeholder="noreply@yourdomain.com"
+                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none" />
+              </div>
+              <div>
+                <label className="text-sm font-medium">From name</label>
+                <input type="text" value={smtpFromName} onChange={(e) => setSmtpFromName(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none" />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Set <code className="text-[11px]">APP_URL</code> on the API service to your public app URL so reset links are correct.
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  await api.admin.updateSystemBulk({
+                    email: {
+                      host: smtpHost,
+                      port: smtpPort,
+                      encryption: smtpEncryption,
+                      username: smtpUsername,
+                      password: smtpPassword,
+                      fromEmail: smtpFromEmail,
+                      fromName: smtpFromName,
+                      enabled: smtpEnabled,
+                    },
+                  });
+                  toast.success("Email settings saved");
+                }}
+                className="rounded-lg bg-gradient-to-r from-violet-500 to-cyan-500 px-4 py-2 text-sm font-medium text-white hover:shadow-lg"
+              >
+                Save Email Settings
+              </button>
+              <button
+                disabled={testingEmail || !smtpHost}
+                onClick={async () => {
+                  setTestingEmail(true);
+                  try {
+                    const result = await api.admin.testEmail({
+                      host: smtpHost,
+                      port: smtpPort,
+                      encryption: smtpEncryption,
+                      username: smtpUsername,
+                      password: smtpPassword,
+                      fromEmail: smtpFromEmail,
+                      fromName: smtpFromName,
+                      enabled: smtpEnabled,
+                    });
+                    toast.success(result.message);
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "SMTP test failed");
+                  } finally {
+                    setTestingEmail(false);
+                  }
+                }}
+                className="rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+              >
+                {testingEmail ? "Testing..." : "Test SMTP"}
+              </button>
+            </div>
           </div>
         </div>
       </div>

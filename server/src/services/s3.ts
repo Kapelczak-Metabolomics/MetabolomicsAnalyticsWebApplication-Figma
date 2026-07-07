@@ -1,4 +1,5 @@
-import { HeadBucketCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
+import { HeadBucketCommand, ListObjectsV2Command, PutObjectCommand, DeleteObjectsCommand, S3Client } from "@aws-sdk/client-s3";
+import { query } from "../db/index.js";
 
 export interface S3Config {
   provider?: string;
@@ -77,4 +78,38 @@ export function sanitizeS3ForResponse(config: S3Config) {
     secretAccessKey: config.secretAccessKey ? maskSecret(config.secretAccessKey) : "",
     hasCredentials: Boolean(config.accessKeyId && config.secretAccessKey),
   };
+}
+
+export async function loadS3Config(): Promise<S3Config | null> {
+  const result = await query<{ value: unknown }>("SELECT value FROM system_settings WHERE key = 's3'");
+  const value = result.rows[0]?.value as S3Config | undefined;
+  return value ?? null;
+}
+
+export async function uploadS3Object(config: S3Config, key: string, body: Buffer, contentType = "application/octet-stream") {
+  const client = clientFromConfig(config);
+  await client.send(
+    new PutObjectCommand({
+      Bucket: config.bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+      ServerSideEncryption: config.encryption === false ? undefined : "AES256",
+    })
+  );
+}
+
+export async function deleteS3Prefix(config: S3Config, prefix: string) {
+  const client = clientFromConfig(config);
+  let token: string | undefined;
+  do {
+    const page = await client.send(
+      new ListObjectsV2Command({ Bucket: config.bucket, Prefix: prefix, ContinuationToken: token, MaxKeys: 1000 })
+    );
+    const keys = (page.Contents ?? []).map((obj) => ({ Key: obj.Key! })).filter((k) => k.Key);
+    if (keys.length) {
+      await client.send(new DeleteObjectsCommand({ Bucket: config.bucket, Delete: { Objects: keys } }));
+    }
+    token = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (token);
 }

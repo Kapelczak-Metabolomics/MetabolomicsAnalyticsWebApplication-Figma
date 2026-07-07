@@ -29,7 +29,7 @@ export function VolcanoView() {
       ns: features.length - sig.length,
       total: features.length,
     };
-  }, [features]);
+  }, [features, pThreshold, fcThreshold]);
 
   const topFeatures = useMemo(() =>
     [...features].sort((a, b) => a.pValue - b.pValue).slice(0, 15),

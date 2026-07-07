@@ -1,21 +1,18 @@
 import { Router, Request, Response } from "express";
 import multer from "multer";
-import fs from "fs";
-import path from "path";
 import { query } from "../db/index.js";
 import { authMiddleware, logAudit, createNotification } from "../middleware/auth.js";
 import { loadDatasetMatrix } from "../utils/dataset.js";
 import { computeFeatureStats } from "../services/analysis.js";
 import { bulkLoadMatrix } from "../utils/bulk-import.js";
 import { pythonImportMzxml } from "../services/python-client.js";
+import { saveRawDatasetFiles, deleteRawDatasetFiles } from "../services/storage.js";
 
 const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 500 * 1024 * 1024 },
 });
-
-const RAW_DIR = process.env.RAW_DATA_DIR || "/data/raw";
 
 function parseCsv(csv: string) {
   const lines = csv.trim().split(/\r?\n/).filter(Boolean);
@@ -130,18 +127,13 @@ router.post("/import/mzxml", authMiddleware, upload.array("files", 50), async (r
   // Background processing
   (async () => {
     try {
-      fs.mkdirSync(RAW_DIR, { recursive: true });
-      const datasetDir = path.join(RAW_DIR, String(datasetId));
-      fs.mkdirSync(datasetDir, { recursive: true });
-
       const saved: Array<{ buffer: Buffer; filename: string }> = [];
       for (const f of files) {
-        const dest = path.join(datasetDir, f.originalname);
-        fs.writeFileSync(dest, f.buffer);
         saved.push({ buffer: f.buffer, filename: f.originalname });
       }
 
-      await query(`UPDATE datasets SET raw_file_path = $1 WHERE id = $2`, [datasetDir, datasetId]);
+      const storagePath = await saveRawDatasetFiles(datasetId, saved);
+      await query(`UPDATE datasets SET raw_file_path = $1 WHERE id = $2`, [storagePath, datasetId]);
 
       const parsed = await pythonImportMzxml(saved, groups);
       const samples = parsed.samples.map((s) => ({ sampleId: s.sampleId, groupLabel: s.groupLabel }));
@@ -271,7 +263,9 @@ router.get("/:id/groups", authMiddleware, async (req: Request, res: Response) =>
 
 router.delete("/:id", authMiddleware, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
+  const existing = await query<{ raw_file_path: string | null }>("SELECT raw_file_path FROM datasets WHERE id = $1", [id]);
   await query("DELETE FROM datasets WHERE id = $1", [id]);
+  await deleteRawDatasetFiles(existing.rows[0]?.raw_file_path);
   res.json({ success: true });
 });
 
