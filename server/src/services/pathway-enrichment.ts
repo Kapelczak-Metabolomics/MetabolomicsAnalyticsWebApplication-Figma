@@ -1,7 +1,8 @@
 type AnalysisConfig = Record<string, unknown>;
 
 const KEGG_REST = "https://rest.kegg.jp";
-const KEGG_DELAY_MS = 340;
+const KEGG_DELAY_MS = 200;
+const KEGG_CONCURRENCY = 4;
 
 type VolcanoFeature = {
   name: string;
@@ -38,7 +39,7 @@ async function cached<T>(key: string, loader: () => Promise<T>): Promise<T> {
 }
 
 async function keggGet(path: string): Promise<string> {
-  const res = await fetch(`${KEGG_REST}${path}`, { signal: AbortSignal.timeout(20_000) });
+  const res = await fetch(`${KEGG_REST}${path}`, { signal: AbortSignal.timeout(30_000) });
   if (!res.ok) throw new Error(`KEGG request failed (${res.status})`);
   return res.text();
 }
@@ -92,11 +93,30 @@ async function keggFindCompound(name: string): Promise<string | null> {
   });
 }
 
+async function mapCompoundsParallel(names: string[]): Promise<Map<string, string | null>> {
+  const unique = [...new Set(names.filter(Boolean))];
+  const result = new Map<string, string | null>();
+  let index = 0;
+
+  async function worker() {
+    while (index < unique.length) {
+      const i = index++;
+      const name = unique[i];
+      result.set(name, await keggFindCompound(name));
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(KEGG_CONCURRENCY, unique.length) }, () => worker())
+  );
+  return result;
+}
+
 async function keggPathwaysForCompounds(compoundIds: string[]): Promise<Map<string, Set<string>>> {
   const result = new Map<string, Set<string>>();
   const unique = [...new Set(compoundIds.filter(Boolean))];
-  for (let i = 0; i < unique.length; i += 8) {
-    const batch = unique.slice(i, i + 8);
+  for (let i = 0; i < unique.length; i += 10) {
+    const batch = unique.slice(i, i + 10);
     const key = `link:${batch.join("+")}`;
     const batchMap = await cached(key, async () => {
       await sleep(KEGG_DELAY_MS);
@@ -121,17 +141,41 @@ async function keggPathwaysForCompounds(compoundIds: string[]): Promise<Map<stri
   return result;
 }
 
-async function keggPathwayTitle(pathwayId: string): Promise<string> {
-  return cached(`title:${pathwayId}`, async () => {
-    await sleep(KEGG_DELAY_MS);
-    const text = await keggGet(`/get/${pathwayId}`);
-    for (const line of text.split("\n")) {
-      if (line.startsWith("NAME")) {
-        return line.replace("NAME", "").trim().split(" - ")[0]?.trim() || pathwayId;
-      }
-    }
-    return pathwayId.replace("path:", "");
-  });
+function parseKeggBatchTitles(text: string): Map<string, string> {
+  const titles = new Map<string, string>();
+  const blocks = text.split(/\n\/\/\/\n/);
+  for (const block of blocks) {
+    const entry = block.match(/^ENTRY\s+(\S+)/m);
+    const pathwayId = entry?.[1];
+    if (!pathwayId) continue;
+    const nameLine = block.split("\n").find((line) => line.startsWith("NAME"));
+    const title = nameLine
+      ? nameLine.replace("NAME", "").trim().split(" - ")[0]?.trim() || pathwayId
+      : pathwayId.replace("path:", "");
+    titles.set(pathwayId, title);
+  }
+  return titles;
+}
+
+async function keggPathwayTitles(pathwayIds: string[]): Promise<Map<string, string>> {
+  const titles = new Map<string, string>();
+  const unique = [...new Set(pathwayIds)];
+  for (let i = 0; i < unique.length; i += 10) {
+    const batch = unique.slice(i, i + 10);
+    const key = `titles:${batch.join("+")}`;
+    const batchTitles = await cached(key, async () => {
+      await sleep(KEGG_DELAY_MS);
+      const joined = batch.map((id) => (id.startsWith("path:") ? id : `path:${id}`)).join("+");
+      const text = await keggGet(`/get/${joined}`);
+      return parseKeggBatchTitles(text);
+    });
+    for (const [id, title] of batchTitles) titles.set(id, title);
+  }
+  return titles;
+}
+
+function formatPathwayId(pathwayId: string) {
+  return pathwayId.startsWith("path:") ? pathwayId : `path:${pathwayId}`;
 }
 
 export async function runLivePathwayEnrichment(
@@ -150,22 +194,14 @@ export async function runLivePathwayEnrichment(
   const bgNames = features.map((f) => f.name || f.featureId).filter(Boolean);
 
   if (database.toLowerCase().startsWith("reactome")) {
-    return {
-      pathways: [],
-      significantFeatures: sigNames.length,
-      categories: [],
-      database: "Reactome",
-      warning: "Reactome live enrichment requires the Python service. Ensure PYTHON_SERVICE_URL is set and python is healthy.",
-      engine: "typescript-fallback",
-    };
+    const { enrichReactome } = await import("./pathway-reactome.js");
+    return enrichReactome(sigNames, config);
   }
 
-  const bgMap = new Map<string, string | null>();
-  for (const name of bgNames) bgMap.set(name, await keggFindCompound(name));
-  const sigMap = new Map<string, string | null>();
-  for (const name of sigNames) sigMap.set(name, bgMap.get(name) ?? (await keggFindCompound(name)));
+  const compoundMap = await mapCompoundsParallel(bgNames);
+  const sigMap = new Map(sigNames.map((name) => [name, compoundMap.get(name) ?? null]));
 
-  const bgIds = [...bgMap.values()].filter((v): v is string => Boolean(v));
+  const bgIds = [...compoundMap.values()].filter((v): v is string => Boolean(v));
   const sigIds = [...sigMap.values()].filter((v): v is string => Boolean(v));
   if (!sigIds.length) {
     return {
@@ -178,55 +214,71 @@ export async function runLivePathwayEnrichment(
     };
   }
 
-  const bgPathways = await keggPathwaysForCompounds(bgIds);
-  const sigPathways = await keggPathwaysForCompounds(sigIds);
+  const compoundPathways = await keggPathwaysForCompounds(bgIds);
 
   const membersBg = new Map<string, Set<string>>();
   const membersSig = new Map<string, Set<string>>();
 
-  for (const [name, cpd] of bgMap) {
+  for (const [name, cpd] of compoundMap) {
     if (!cpd) continue;
-    for (const pathway of bgPathways.get(cpd) ?? []) {
+    for (const pathway of compoundPathways.get(cpd) ?? []) {
       if (!membersBg.has(pathway)) membersBg.set(pathway, new Set());
       membersBg.get(pathway)!.add(name);
     }
   }
   for (const [name, cpd] of sigMap) {
     if (!cpd) continue;
-    for (const pathway of sigPathways.get(cpd) ?? []) {
+    for (const pathway of compoundPathways.get(cpd) ?? []) {
       if (!membersSig.has(pathway)) membersSig.set(pathway, new Set());
       membersSig.get(pathway)!.add(name);
     }
   }
 
-  const mappedBg = [...bgMap.values()].filter(Boolean).length;
-  const mappedSig = [...sigMap.values()].filter(Boolean).length;
+  const mappedBg = bgIds.length;
+  const mappedSig = sigIds.length;
   const totalBg = Math.max(mappedBg, 1);
   const totalSig = Math.max(mappedSig, 1);
 
-  const raw: PathwayRow[] = [];
+  const raw: Array<PathwayRow & { pathwayId: string }> = [];
   for (const [pathwayId, bgMembers] of membersBg) {
     const size = bgMembers.size;
     if (size < minSize || size > maxSize) continue;
     const hits = membersSig.get(pathwayId)?.size ?? 0;
     if (!hits) continue;
     const pValue = hypergeomP(hits, size, totalSig, totalBg);
-    const title = await keggPathwayTitle(pathwayId);
+    const normalizedId = formatPathwayId(pathwayId);
     raw.push({
-      name: title,
+      pathwayId: normalizedId,
+      name: normalizedId.replace("path:", "KEGG "),
       genes: hits,
       total: size,
       pValue,
       negLogP: Number((-Math.log10(Math.max(pValue, 1e-16))).toFixed(2)),
       database: "KEGG",
-      url: `https://www.genome.jp/kegg-bin/show_pathway?${pathwayId.replace("path:", "")}`,
-      category: title.split(" ")[0] || pathwayId,
+      url: `https://www.genome.jp/kegg-bin/show_pathway?${normalizedId.replace("path:", "")}`,
+      category: pathwayId.replace("path:", "").slice(0, 8),
     });
   }
 
   raw.sort((a, b) => a.pValue - b.pValue);
   const fdr = applyFdr(raw.map((p) => p.pValue), fdrMethod);
-  const pathways = raw.map((p, i) => ({ ...p, fdr: fdr[i] })).slice(0, 20);
+  const top = raw.slice(0, 20).map((p, i) => ({ ...p, fdr: fdr[i] }));
+
+  const titleMap = await keggPathwayTitles(top.map((p) => p.pathwayId));
+  const pathways = top.map((p) => {
+    const title = titleMap.get(p.pathwayId) ?? p.name;
+    return {
+      name: title,
+      genes: p.genes,
+      total: p.total,
+      pValue: p.pValue,
+      negLogP: p.negLogP,
+      database: p.database,
+      url: p.url,
+      category: title.split(" ")[0] || p.category,
+      fdr: p.fdr,
+    };
+  });
 
   const categories = [...pathways.reduce((m, p) => {
     m.set(p.category, (m.get(p.category) ?? 0) + 1);

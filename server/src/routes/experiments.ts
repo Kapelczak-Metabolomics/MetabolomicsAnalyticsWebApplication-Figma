@@ -53,6 +53,9 @@ function launchAnalysis(
   });
 }
 
+/** Pathway enrichment queries KEGG live — always run in background. */
+const ASYNC_ANALYSIS_TYPES = new Set(["Pathway"]);
+
 async function datasetCellCount(datasetId: number): Promise<number> {
   const result = await query<{ samples_count: number; features_count: number }>(
     "SELECT samples_count, features_count FROM datasets WHERE id = $1",
@@ -301,7 +304,7 @@ router.post("/:id/run", authMiddleware, async (req: Request, res: Response) => {
   await query(`UPDATE experiments SET status = 'running', started_at = NOW() WHERE id = $1`, [id]);
   const job = launchAnalysis(id, exp.rows[0].type, exp.rows[0].dataset_id, userId, config);
   const cells = await datasetCellCount(exp.rows[0].dataset_id);
-  if (cells <= SYNC_ANALYSIS_MAX_CELLS) {
+  if (cells <= SYNC_ANALYSIS_MAX_CELLS && !ASYNC_ANALYSIS_TYPES.has(exp.rows[0].type)) {
     await job;
     const final = await query<{ status: string }>("SELECT status FROM experiments WHERE id = $1", [id]);
     res.json({ status: final.rows[0]?.status ?? "running", id });
@@ -339,7 +342,7 @@ router.post("/run", authMiddleware, async (req: Request, res: Response) => {
   const job = launchAnalysis(experimentId, type, datasetId, req.user!.id, (config as Record<string, unknown>) ?? {});
   const cells = await datasetCellCount(datasetId);
 
-  if (cells <= SYNC_ANALYSIS_MAX_CELLS) {
+  if (cells <= SYNC_ANALYSIS_MAX_CELLS && !ASYNC_ANALYSIS_TYPES.has(type)) {
     await job;
     const final = await query<{ status: string }>("SELECT status FROM experiments WHERE id = $1", [experimentId]);
     res.status(201).json({ id: experimentId, status: final.rows[0]?.status ?? "running" });

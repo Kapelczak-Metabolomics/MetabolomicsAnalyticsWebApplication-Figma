@@ -24,11 +24,11 @@ export async function computeWithEngine(
   const mergedConfig = { ...config, groupA, groupB };
 
   const cellCount = samples.length * features.length;
-  const liveApiAnalysis = type === "Pathway";
   const tryPython =
+    type !== "Pathway" &&
     usePythonAnalysis() &&
     !options.preferTypeScript &&
-    (liveApiAnalysis || cellCount > PYTHON_MIN_CELLS) &&
+    cellCount > PYTHON_MIN_CELLS &&
     (await isPythonAnalysisAvailable());
 
   if (tryPython) {

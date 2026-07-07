@@ -17,8 +17,9 @@ interface RunAnalysisDialogProps {
   onComplete?: () => void;
 }
 
-/** Max polls while waiting for background analysis (500ms interval ≈ 5 min). */
+/** Max polls while waiting for background analysis (500ms interval). */
 const ANALYSIS_POLL_MAX = 600;
+const PATHWAY_POLL_MAX = 3600; // 30 min — live KEGG/Reactome queries can be slow
 const ANALYSIS_POLL_MS = 500;
 
 const defaultStages = [
@@ -93,11 +94,13 @@ export function RunAnalysisDialog({
         }
 
         if (!succeeded && !failedRun) {
-          for (let poll = 0; poll < ANALYSIS_POLL_MAX && !cancelled; poll++) {
+          const pollMax = analysisType === "Pathway" ? PATHWAY_POLL_MAX : ANALYSIS_POLL_MAX;
+          for (let poll = 0; poll < pollMax && !cancelled; poll++) {
             try {
               const exp = await api.getExperiment(experimentIdRef.current!);
               if (exp.status === "running" || exp.status === "pending") {
-                setCurrentStage(Math.min(stages.length - 2, 1 + Math.floor(poll / 20)));
+                const stageInterval = analysisType === "Pathway" ? 40 : 20;
+                setCurrentStage(Math.min(stages.length - 2, 1 + Math.floor(poll / stageInterval)));
               }
               if (exp.status === "completed") {
                 setCurrentStage(stages.length - 1);
@@ -120,7 +123,11 @@ export function RunAnalysisDialog({
 
         if (!cancelled && !failedRun && !succeeded) {
           setFailed(true);
-          toast.error("Analysis timed out after 5 minutes — check Experiments for status");
+          toast.error(
+            analysisType === "Pathway"
+              ? "Pathway enrichment timed out after 30 minutes — check Experiments for status"
+              : "Analysis timed out after 5 minutes — check Experiments for status"
+          );
           return;
         }
       } else {
