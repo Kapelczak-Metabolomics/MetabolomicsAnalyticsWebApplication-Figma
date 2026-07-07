@@ -7,45 +7,85 @@ interface PathwayPlotProps {
   pathways?: Array<{ name: string; genes: number; negLogP?: number; pValue?: number }>;
 }
 
+const MAX_PATHWAYS = 25;
+const LABEL_MAX = 52;
+
+function truncateLabel(name: string, max = LABEL_MAX): string {
+  return name.length > max ? `${name.slice(0, max - 1)}…` : name;
+}
+
 export function PathwayPlot({ pathways = [] }: PathwayPlotProps) {
   const plot = useMemo(() => {
     if (!pathways.length) return null;
 
-    const points = pathways.map((p) => ({
-      name: p.name,
-      x: p.genes,
-      y: p.negLogP ?? -Math.log10(p.pValue ?? 1),
-    }));
-    const maxY = Math.max(...points.map((p) => p.y), 0.01);
-    const sizes = points.map((p) => 12 + (p.y / maxY) * 28);
+    const ranked = [...pathways]
+      .map((p) => ({
+        name: p.name,
+        genes: p.genes,
+        negLogP: p.negLogP ?? -Math.log10(p.pValue ?? 1),
+      }))
+      .sort((a, b) => a.negLogP - b.negLogP)
+      .slice(-MAX_PATHWAYS);
+
+    const labels = ranked.map((p) => truncateLabel(p.name));
+    const maxNegLogP = Math.max(...ranked.map((p) => p.negLogP), 0.01);
 
     const traces: Data[] = [
       {
         type: "scatter",
-        mode: "markers+text",
-        x: points.map((p) => p.x),
-        y: points.map((p) => p.y),
-        text: points.map((p) => p.name),
-        textposition: "middle right",
-        textfont: { size: 9 },
+        mode: "markers",
+        x: ranked.map((p) => p.genes),
+        y: labels,
+        customdata: ranked.map((p) => [p.name, p.negLogP]),
+        hovertemplate: "<b>%{customdata[0]}</b><br>Hits: %{x}<br>−log₁₀ p: %{customdata[1]:.3f}<extra></extra>",
         marker: {
-          color: "#7c3aed",
-          size: sizes,
-          opacity: 0.75,
+          size: ranked.map((p) => 11 + (p.negLogP / maxNegLogP) * 16),
+          color: ranked.map((p) => p.negLogP),
+          colorscale: [
+            [0, "#ddd6fe"],
+            [0.45, "#a78bfa"],
+            [1, "#6d28d9"],
+          ],
+          cmin: 0,
+          cmax: maxNegLogP,
           line: { color: "#fff", width: 1 },
+          colorbar: {
+            title: { text: "−log₁₀ p", side: "right" },
+            thickness: 12,
+            len: 0.7,
+          },
         },
-        hovertemplate: "%{text}<br>Hits: %{x}<br>−log₁₀ p: %{y:.3f}<extra></extra>",
         showlegend: false,
       },
     ];
 
     const layout: Partial<Layout> = {
       title: { text: "Pathway enrichment", font: { size: 14 } },
-      xaxis: { title: { text: "Feature count in pathway" }, rangemode: "tozero" },
-      yaxis: { title: { text: "−log₁₀ p-value" }, rangemode: "tozero" },
-      annotations: [
-        { x: 0.02, y: 0.98, xref: "paper", yref: "paper", text: "Bubble size reflects significance", showarrow: false, font: { size: 10, color: "#64748b" }, xanchor: "left", yanchor: "top" },
-      ],
+      xaxis: {
+        title: { text: "Feature count in pathway" },
+        rangemode: "tozero",
+        gridcolor: "#e2e8f040",
+      },
+      yaxis: {
+        automargin: true,
+        tickfont: { size: 11 },
+        gridcolor: "#e2e8f040",
+      },
+      margin: { l: 12, r: 72, t: 48, b: 56 },
+      height: Math.max(320, ranked.length * 30 + 120),
+      annotations: ranked.length >= MAX_PATHWAYS
+        ? [{
+            x: 0.98,
+            y: 0.02,
+            xref: "paper",
+            yref: "paper",
+            text: `Top ${MAX_PATHWAYS} pathways by significance`,
+            showarrow: false,
+            font: { size: 10, color: "#64748b" },
+            xanchor: "right",
+            yanchor: "bottom",
+          }]
+        : [],
     };
 
     return { traces, layout };
