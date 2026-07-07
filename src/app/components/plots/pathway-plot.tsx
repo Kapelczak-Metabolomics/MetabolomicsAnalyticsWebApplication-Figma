@@ -8,7 +8,7 @@ interface PathwayPlotProps {
 }
 
 const MAX_PATHWAYS = 25;
-const LABEL_MAX = 52;
+const LABEL_MAX = 72;
 
 function truncateLabel(name: string, max = LABEL_MAX): string {
   return name.length > max ? `${name.slice(0, max - 1)}…` : name;
@@ -22,25 +22,29 @@ export function PathwayPlot({ pathways = [] }: PathwayPlotProps) {
       .map((p) => ({
         name: p.name,
         genes: p.genes,
-        negLogP: p.negLogP ?? -Math.log10(p.pValue ?? 1),
+        negLogP: p.negLogP ?? -Math.log10(Math.max(p.pValue ?? 1, 1e-16)),
+        pValue: p.pValue ?? 1,
       }))
-      .sort((a, b) => a.negLogP - b.negLogP)
-      .slice(-MAX_PATHWAYS);
+      .sort((a, b) => b.negLogP - a.negLogP || b.genes - a.genes)
+      .slice(0, MAX_PATHWAYS);
 
-    const labels = ranked.map((p) => truncateLabel(p.name));
-    const maxNegLogP = Math.max(...ranked.map((p) => p.negLogP), 0.01);
+    // Plotly puts the first y category at the bottom — reverse so top hits appear at the top.
+    const display = [...ranked].reverse();
+
+    const labels = display.map((p) => truncateLabel(p.name));
+    const maxNegLogP = Math.max(...display.map((p) => p.negLogP), 0.01);
 
     const traces: Data[] = [
       {
         type: "scatter",
         mode: "markers",
-        x: ranked.map((p) => p.genes),
+        x: display.map((p) => p.genes),
         y: labels,
-        customdata: ranked.map((p) => [p.name, p.negLogP]),
-        hovertemplate: "<b>%{customdata[0]}</b><br>Hits: %{x}<br>−log₁₀ p: %{customdata[1]:.3f}<extra></extra>",
+        customdata: display.map((p) => [p.name, p.negLogP, p.pValue]),
+        hovertemplate: "<b>%{customdata[0]}</b><br>Hits: %{x}<br>−log₁₀ p: %{customdata[1]:.3f}<br>p: %{customdata[2]:.2e}<extra></extra>",
         marker: {
-          size: ranked.map((p) => 11 + (p.negLogP / maxNegLogP) * 16),
-          color: ranked.map((p) => p.negLogP),
+          size: display.map((p) => 11 + (p.negLogP / maxNegLogP) * 16),
+          color: display.map((p) => p.negLogP),
           colorscale: [
             [0, "#ddd6fe"],
             [0.45, "#a78bfa"],
@@ -72,7 +76,7 @@ export function PathwayPlot({ pathways = [] }: PathwayPlotProps) {
         gridcolor: "#e2e8f040",
       },
       margin: { l: 12, r: 72, t: 48, b: 56 },
-      height: Math.max(320, ranked.length * 30 + 120),
+      height: Math.max(320, display.length * 30 + 120),
       annotations: ranked.length >= MAX_PATHWAYS
         ? [{
             x: 0.98,

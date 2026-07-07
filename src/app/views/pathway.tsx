@@ -33,6 +33,10 @@ export function PathwayView() {
   const sigPathways = pathways.filter((p) => p.pValue < 0.05).length;
   const dataSource = String(results?.engine ?? "");
   const pathwayWarning = typeof results?.warning === "string" ? results.warning : null;
+  const elapsedMs = typeof results?.elapsedMs === "number" ? results.elapsedMs : null;
+  const mappedFeatures = typeof results?.mappedFeatures === "number" ? results.mappedFeatures : null;
+  const staleNames = pathways.some((p) => /^KEGG map\d{5}$/i.test(p.name) || /^map\d{5}$/.test(p.name));
+  const noSignificant = pathways.length > 0 && sigPathways === 0;
 
   async function switchDatabase(db: string) {
     const next = { ...config, database: db };
@@ -76,6 +80,16 @@ export function PathwayView() {
             </p>
             {error && <p className="text-xs text-destructive mt-1">{error}</p>}
             {pathwayWarning && <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">{pathwayWarning}</p>}
+            {staleNames && (
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                Pathway names look outdated — click <strong>Run Analysis</strong> to refresh with live KEGG names.
+              </p>
+            )}
+            {noSignificant && (
+              <p className="text-xs text-muted-foreground mt-1">
+                No pathways pass p &lt; 0.05. Results may reflect weak enrichment or features that do not map well to {database} (e.g. raw m/z bins).
+              </p>
+            )}
             {dataSource && (
               <p className="text-[11px] text-muted-foreground mt-1">
                 Data source: {dataSource.includes("kegg")
@@ -85,6 +99,8 @@ export function PathwayView() {
                     : dataSource.includes("gprofiler")
                       ? "g:Profiler API (live)"
                       : dataSource}
+                {elapsedMs != null ? ` · ${(elapsedMs / 1000).toFixed(1)}s` : ""}
+                {mappedFeatures != null ? ` · ${mappedFeatures} features mapped` : ""}
               </p>
             )}
           </div>

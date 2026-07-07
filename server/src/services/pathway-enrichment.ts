@@ -145,10 +145,8 @@ function parseKeggBatchTitles(text: string): Map<string, string> {
   const titles = new Map<string, string>();
   const blocks = text.split(/\n\/\/\/\n/);
   for (const block of blocks) {
-    // KEGG pathway entries look like: ENTRY       PATHWAY       map00020
-    const entryMatch =
-      block.match(/^ENTRY\s+PATHWAY\s+(\S+)/m) ?? block.match(/^ENTRY\s+\S+\s+(\S+)/m);
-    const mapId = entryMatch?.[1] ?? block.match(/\b(map\d{5})\b/)?.[1];
+    // KEGG format: ENTRY       map00020                    Pathway
+    const mapId = block.match(/^ENTRY\s+(map\d{5})\b/m)?.[1] ?? block.match(/\b(map\d{5})\b/)?.[1];
     if (!mapId) continue;
 
     const nameLine = block.split("\n").find((line) => /^\s*NAME\b/.test(line));
@@ -156,11 +154,45 @@ function parseKeggBatchTitles(text: string): Map<string, string> {
       ? nameLine.replace(/^\s*NAME\s+/, "").trim().split(" - ")[0]?.trim() || mapId
       : mapId;
 
-    const withPrefix = mapId.startsWith("path:") ? mapId : `path:${mapId}`;
+    const withPrefix = `path:${mapId}`;
     titles.set(withPrefix, title);
     titles.set(mapId, title);
   }
   return titles;
+}
+
+async function keggPathwayNameMap(): Promise<Map<string, string>> {
+  return cached("pathway:list:map", async () => {
+    await sleep(KEGG_DELAY_MS);
+    const text = await keggGet("/list/pathway/map");
+    const names = new Map<string, string>();
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      const tab = line.indexOf("\t");
+      if (tab < 0) continue;
+      const id = line.slice(0, tab).trim();
+      const title = line.slice(tab + 1).trim();
+      if (!id.startsWith("map") || !title) continue;
+      names.set(id, title);
+      names.set(`path:${id}`, title);
+    }
+    return names;
+  });
+}
+
+function resolveKeggPathwayTitle(
+  pathwayId: string,
+  listMap: Map<string, string>,
+  batchMap: Map<string, string>
+): string {
+  const bareId = pathwayId.replace(/^path:/, "");
+  return (
+    listMap.get(bareId) ??
+    listMap.get(pathwayId) ??
+    batchMap.get(pathwayId) ??
+    batchMap.get(bareId) ??
+    bareId
+  );
 }
 
 async function keggPathwayTitles(pathwayIds: string[]): Promise<Map<string, string>> {
@@ -188,6 +220,7 @@ export async function runLivePathwayEnrichment(
   volcano: { features: VolcanoFeature[] },
   config: AnalysisConfig = {}
 ) {
+  const startedAt = Date.now();
   const pThresh = Number(config.pThreshold ?? 0.05);
   const database = String(config.database ?? "KEGG");
   const fdrMethod = String(config.fdrMethod ?? "BH");
@@ -281,9 +314,9 @@ export async function runLivePathwayEnrichment(
   const top = raw.slice(0, 20).map((p, i) => ({ ...p, fdr: fdr[i] }));
 
   const titleMap = await keggPathwayTitles(top.map((p) => p.pathwayId));
+  const listMap = await keggPathwayNameMap();
   const pathways = top.map((p) => {
-    const bareId = p.pathwayId.replace(/^path:/, "");
-    const title = titleMap.get(p.pathwayId) ?? titleMap.get(bareId) ?? p.name;
+    const title = resolveKeggPathwayTitle(p.pathwayId, listMap, titleMap);
     return {
       name: title,
       genes: p.genes,
@@ -292,10 +325,16 @@ export async function runLivePathwayEnrichment(
       negLogP: p.negLogP,
       database: p.database,
       url: p.url,
-      category: title.split(" ")[0] || p.category,
+      category: title.split(/[;,]/)[0]?.trim().split(" ")[0] || p.category,
       fdr: p.fdr,
     };
   });
+
+  const namedCount = pathways.filter((p) => !/^map\d{5}$/.test(p.name) && !p.name.startsWith("KEGG map")).length;
+  const enrichmentWarning =
+    namedCount < pathways.length
+      ? "Some pathway names could not be resolved from KEGG — re-run after redeploying the API service."
+      : undefined;
 
   const categories = [...pathways.reduce((m, p) => {
     m.set(p.category, (m.get(p.category) ?? 0) + 1);
@@ -310,5 +349,7 @@ export async function runLivePathwayEnrichment(
     database: "KEGG",
     organism: config.organism ?? "Homo sapiens",
     engine: "typescript-kegg",
+    warning: enrichmentWarning,
+    elapsedMs: Date.now() - startedAt,
   };
 }
