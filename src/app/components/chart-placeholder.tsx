@@ -17,7 +17,8 @@ interface ChartPlaceholderProps {
   pcaScores?: PCAScore[];
   explainedVariance?: number[];
   volcanoFeatures?: VolcanoPoint[];
-  volcanoConfig?: { pThreshold?: number; fcThreshold?: number };
+  volcanoConfig?: { pThreshold?: number; fcThreshold?: number; showLabels?: boolean; labelTopN?: number };
+  pcaConfig?: { showGroupEllipses?: boolean };
   plsdaScores?: Array<{ comp1: number; comp2: number; group: string; sampleId?: string }>;
   pathways?: Array<{ name: string; genes: number; negLogP?: number; pValue?: number }>;
   heatmap?: { matrix: (number | null)[][]; sampleLabels: string[]; featureLabels: string[] };
@@ -39,6 +40,7 @@ export function ChartPlaceholder({
   explainedVariance,
   volcanoFeatures,
   volcanoConfig,
+  pcaConfig,
   plsdaScores,
   pathways,
   heatmap,
@@ -85,12 +87,20 @@ export function ChartPlaceholder({
         features={volcanoFeatures}
         pThreshold={volcanoConfig?.pThreshold}
         fcThreshold={volcanoConfig?.fcThreshold}
+        showLabels={volcanoConfig?.showLabels}
+        labelTopN={volcanoConfig?.labelTopN}
       />
     );
   }
 
   if (lower.includes("pca")) {
-    return wrap(<PCAPlot scores={pcaScores} explainedVariance={explainedVariance} />);
+    return wrap(
+      <PCAPlot
+        scores={pcaScores}
+        explainedVariance={explainedVariance}
+        showGroupEllipses={pcaConfig?.showGroupEllipses ?? true}
+      />
+    );
   }
 
   if (lower.includes("pls-da") || lower.includes("plsda")) {

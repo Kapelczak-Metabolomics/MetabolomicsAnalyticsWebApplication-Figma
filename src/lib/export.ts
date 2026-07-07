@@ -65,13 +65,39 @@ export async function downloadPngFromSvg(filename: string, svgEl: SVGSVGElement 
   URL.revokeObjectURL(url);
 }
 
+function findPlotlyElement(containerId?: string): HTMLElement | null {
+  const root = containerId ? document.getElementById(containerId) : null;
+  if (root) return root.querySelector(".js-plotly-plot") as HTMLElement | null;
+  return document.querySelector("[data-plot-export] .js-plotly-plot") as HTMLElement | null;
+}
+
 export function findPlotSvg(containerId?: string): SVGSVGElement | null {
   const root = containerId ? document.getElementById(containerId) : null;
   if (root) return root.querySelector("svg");
   return document.querySelector("[data-plot-export] svg");
 }
 
+async function exportPlotly(containerId: string | undefined, filename: string, format: "SVG" | "PNG") {
+  const plotEl = findPlotlyElement(containerId);
+  if (!plotEl) throw new Error("Plot not found — run analysis first");
+
+  const Plotly = (await import("plotly.js-dist-min")).default;
+  const ext = format.toLowerCase() as "png" | "svg";
+  const dataUrl = await Plotly.toImage(plotEl, { format: ext, width: 1200, height: 900, scale: 2 });
+
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = `${filename}.${ext}`;
+  a.click();
+}
+
 export async function exportPlot(containerId: string | undefined, filename: string, format: "SVG" | "PNG") {
+  const plotlyEl = findPlotlyElement(containerId);
+  if (plotlyEl) {
+    await exportPlotly(containerId, filename, format);
+    return;
+  }
+
   const svg = findPlotSvg(containerId);
   if (!svg) throw new Error("Plot not found — run analysis first");
   if (format === "SVG") {
