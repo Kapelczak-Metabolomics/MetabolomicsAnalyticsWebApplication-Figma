@@ -31,6 +31,8 @@ export function PathwayView() {
   const categories = (results?.categories as Array<{ name: string; count: number }>) ?? [];
   const sigFeatures = (results?.significantFeatures as number) ?? 0;
   const sigPathways = pathways.filter((p) => p.pValue < 0.05).length;
+  const dataSource = String(results?.engine ?? "");
+  const pathwayWarning = typeof results?.warning === "string" ? results.warning : null;
 
   async function switchDatabase(db: string) {
     const next = { ...config, database: db };
@@ -73,6 +75,12 @@ export function PathwayView() {
               {dataset ? `${dataset.project_name} · ${dataset.name}` : "No dataset"}
             </p>
             {error && <p className="text-xs text-destructive mt-1">{error}</p>}
+            {pathwayWarning && <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">{pathwayWarning}</p>}
+            {dataSource && (
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Data source: {dataSource.includes("kegg") ? "KEGG REST API (live)" : dataSource.includes("reactome") ? "Reactome Analysis API (live)" : dataSource}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setConfigOpen(true)} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent">

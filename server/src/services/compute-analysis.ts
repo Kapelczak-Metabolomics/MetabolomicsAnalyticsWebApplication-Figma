@@ -1,5 +1,5 @@
 import { loadDatasetMatrix, analysisMaxFeatures } from "../utils/dataset.js";
-import { runPCA, runVolcano, runClustering, runPathway, runBiomarker, runPLSDA } from "./analysis.js";
+import { runPCA, runVolcano, runClustering, runBiomarker, runPLSDA } from "./analysis.js";
 import { invalidatePythonHealthCache, isPythonAnalysisAvailable, pythonRunAnalysis, usePythonAnalysis } from "./python-client.js";
 
 type Matrix = Awaited<ReturnType<typeof loadDatasetMatrix>>;
@@ -24,10 +24,11 @@ export async function computeWithEngine(
   const mergedConfig = { ...config, groupA, groupB };
 
   const cellCount = samples.length * features.length;
+  const liveApiAnalysis = type === "Pathway";
   const tryPython =
     usePythonAnalysis() &&
     !options.preferTypeScript &&
-    cellCount > PYTHON_MIN_CELLS &&
+    (liveApiAnalysis || cellCount > PYTHON_MIN_CELLS) &&
     (await isPythonAnalysisAvailable());
 
   if (tryPython) {
@@ -54,7 +55,8 @@ export async function computeWithEngine(
       return runPLSDA(samples, features, groupA, groupB, config);
     case "Pathway": {
       const volcano = runVolcano(samples, features, groupA, groupB, config);
-      return runPathway(volcano, config);
+      const { runLivePathwayEnrichment } = await import("./pathway-enrichment.js");
+      return runLivePathwayEnrichment(volcano, config);
     }
     case "Biomarker": {
       const volcano = runVolcano(samples, features, groupA, groupB, config);

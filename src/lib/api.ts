@@ -28,7 +28,7 @@ function httpStatusFallback(status: number): string {
   if (status === 413) return "File too large — maximum upload size is 500 MB";
   if (status === 401) return "Not signed in — please log in and try again";
   if (status === 502) {
-    return "API unreachable — ensure your EasyPanel domain points to the web service (port 80) and all compose services (web, api, python) are running.";
+    return "Upload failed (502). Redeploy web + api + python, then open /api/health — python must be true. Set PYTHON_SERVICE_URL=http://python:47824 on the api service in EasyPanel.";
   }
   if (status === 503) return "Python analysis service unavailable — check the python container is healthy";
   if (status === 504) return "Upload timed out — try fewer or smaller files";

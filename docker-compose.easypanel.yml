@@ -8,6 +8,16 @@
 #   5. Deploy, then open the "web" service → Domains → add your domain
 #      Proxy port: 80 (container internal port — NOT a host port)
 #
+# ── WHERE TO SET PYTHON_SERVICE_URL ─────────────────────────────────────────
+# EasyPanel → your project → Services → click **api** (not web) → Environment
+# Add or verify this variable exactly:
+#   PYTHON_SERVICE_URL=http://python:47824
+# The hostname **python** is the compose service name below — do not use localhost
+# or your public domain. Redeploy **api** and **python** after changing it.
+#
+# Quick check after deploy: https://YOUR-DOMAIN/api/health
+#   → must show: "python": true, "pythonUrl": "http://python:47824"
+#
 # IMPORTANT — do NOT use host "ports" mappings in this file.
 # EasyPanel injects docker-compose.override.yml and merges port lists;
 # binding 80 or 47821 on the host conflicts with Traefik (port already allocated).
@@ -64,6 +74,7 @@ services:
       JWT_SECRET: CHANGE_ME_JWT_SECRET
       PORT: "47822"
       NODE_ENV: production
+      # REQUIRED for mzXML import + live pathway enrichment (internal Docker DNS name):
       PYTHON_SERVICE_URL: http://python:47824
       USE_PYTHON_ANALYSIS: "true"
       RAW_DATA_DIR: /data/raw

@@ -1,11 +1,13 @@
+import http from "http";
+import https from "https";
 import { createReadStream } from "fs";
 import FormData from "form-data";
-import { Readable } from "stream";
 
 const PYTHON_URL = process.env.PYTHON_SERVICE_URL || "http://127.0.0.1:47824";
 const MZXML_TIMEOUT_MS = 10 * 60 * 1000;
-/** Short timeout so unreachable Python falls back to TypeScript quickly. */
+/** Pathway enrichment calls live KEGG/Reactome APIs and needs longer than PCA/volcano. */
 const ANALYSIS_TIMEOUT_MS = 15 * 1000;
+const PATHWAY_TIMEOUT_MS = 120 * 1000;
 const HEALTH_CACHE_MS = 30_000;
 
 let pythonHealthCache: { ok: boolean; checkedAt: number } | null = null;
@@ -46,7 +48,6 @@ function buildMultipartForm(files: MzxmlFile[], groups?: Record<string, string>)
     form.append("files", createReadStream(f.path), {
       filename: f.filename,
       contentType: "application/octet-stream",
-      knownLength: undefined,
     });
   }
   if (groups) {
@@ -55,17 +56,32 @@ function buildMultipartForm(files: MzxmlFile[], groups?: Record<string, string>)
   return form;
 }
 
-async function postMzxmlForm(path: string, files: MzxmlFile[], groups?: Record<string, string>): Promise<Response> {
-  const form = buildMultipartForm(files, groups);
-  const headers = form.getHeaders();
+function postMzxmlForm(path: string, files: MzxmlFile[], groups?: Record<string, string>): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const form = buildMultipartForm(files, groups);
+    const url = new URL(`${PYTHON_URL}${path}`);
+    const transport = url.protocol === "https:" ? https : http;
 
-  return fetch(`${PYTHON_URL}${path}`, {
-    method: "POST",
-    headers,
-    body: Readable.toWeb(form) as BodyInit,
-    signal: AbortSignal.timeout(MZXML_TIMEOUT_MS),
-    // @ts-expect-error duplex required for streaming request bodies in Node fetch
-    duplex: "half",
+    const req = transport.request(
+      {
+        hostname: url.hostname,
+        port: url.port || (url.protocol === "https:" ? 443 : 80),
+        path: `${url.pathname}${url.search}`,
+        method: "POST",
+        headers: form.getHeaders(),
+        timeout: MZXML_TIMEOUT_MS,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk) => chunks.push(chunk as Buffer));
+        res.on("end", () => resolve({ status: res.statusCode ?? 500, body: Buffer.concat(chunks).toString("utf8") }));
+      }
+    );
+
+    req.on("error", reject);
+    req.on("timeout", () => req.destroy(new Error("Python mzXML request timed out")));
+    form.on("error", reject);
+    form.pipe(req);
   });
 }
 
@@ -101,33 +117,39 @@ export function invalidatePythonHealthCache(): void {
 export async function pythonPreviewMzxml(
   files: MzxmlFile[]
 ): Promise<{ samples: Array<{ filename: string; sampleId: string }> }> {
-  let res: Response;
+  let res: { status: number; body: string };
   try {
     res = await postMzxmlForm("/import/mzxml/preview", files);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(`Python service unreachable at ${PYTHON_URL}: ${msg}`);
   }
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(formatServiceError(body, `mzXML preview failed (${res.status})`));
+  if (res.status < 200 || res.status >= 300) {
+    let parsed: unknown = {};
+    try {
+      parsed = JSON.parse(res.body || "{}");
+    } catch {
+      /* ignore */
+    }
+    throw new Error(formatServiceError(parsed, `mzXML preview failed (${res.status})`));
   }
-  return res.json();
+  return JSON.parse(res.body) as { samples: Array<{ filename: string; sampleId: string }> };
 }
 
 export async function pythonImportMzxml(files: MzxmlFile[], groups?: Record<string, string>): Promise<MzxmlImportResult> {
-  let res: Response;
+  let res: { status: number; body: string };
   try {
     res = await postMzxmlForm("/import/mzxml", files, groups);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(`Python service unreachable at ${PYTHON_URL}: ${msg}`);
   }
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(formatServiceError(body, `mzXML import failed (${res.status})`));
+  if (res.status < 200 || res.status >= 300) {
+    let parsed: unknown = {};
+    try { parsed = JSON.parse(res.body || "{}"); } catch { /* ignore */ }
+    throw new Error(formatServiceError(parsed, `mzXML import failed (${res.status})`));
   }
-  return res.json();
+  return JSON.parse(res.body) as MzxmlImportResult;
 }
 
 export async function pythonRunAnalysis(
@@ -136,11 +158,12 @@ export async function pythonRunAnalysis(
   features: unknown[],
   config: Record<string, unknown> = {}
 ): Promise<Record<string, unknown>> {
+  const timeout = type === "Pathway" ? PATHWAY_TIMEOUT_MS : ANALYSIS_TIMEOUT_MS;
   const res = await fetch(`${PYTHON_URL}/analysis/${encodeURIComponent(type)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ samples, features, config }),
-    signal: AbortSignal.timeout(ANALYSIS_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeout),
   });
 
   if (!res.ok) {

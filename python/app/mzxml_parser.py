@@ -218,6 +218,26 @@ def parse_mzxml_files(
     }
 
 
+def resolve_upload_paths(work_dir: str, paths: list[str]) -> list[str]:
+    """Expand ZIP archives and return mzXML/mzML file paths."""
+    resolved: list[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        if not os.path.isfile(path):
+            continue
+        if path.lower().endswith(".zip"):
+            for extracted in extract_zip_mzxml(path, work_dir):
+                if extracted not in seen:
+                    seen.add(extracted)
+                    resolved.append(extracted)
+            continue
+        if extracted_path := path:
+            if extracted_path not in seen:
+                seen.add(extracted_path)
+                resolved.append(extracted_path)
+    return resolved
+
+
 def materialize_uploads(uploads: list[tuple[str, bytes]], work_dir: str | None = None) -> tuple[str, list[str]]:
     """
     Write uploaded file bytes to a working directory, expanding ZIP archives.

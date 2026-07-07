@@ -330,42 +330,9 @@ def run_plsda(samples: list[dict], features: list[dict], config: dict | None = N
 
 
 def run_pathway(volcano: dict, config: dict | None = None) -> dict[str, Any]:
-    config = config or {}
-    p_thresh = float(config.get("pThreshold", 0.05))
-    features = volcano.get("features", [])
-    sig = [f for f in features if f["pValue"] < p_thresh and f.get("pathway")]
-    database = str(config.get("database", "KEGG"))
-    pathway_map: dict[str, list] = defaultdict(list)
-    for f in features:
-        if f.get("pathway"):
-            pathway_map[f["pathway"]].append(f)
-    raw = []
-    for name, all_feats in pathway_map.items():
-        hits = sum(1 for f in sig if f.get("pathway") == name)
-        if hits == 0:
-            continue
-        p = stats.hypergeom.sf(hits - 1, len(features), len(all_feats), len(sig))
-        raw.append({
-            "name": name,
-            "genes": hits,
-            "total": len(all_feats),
-            "pValue": float(p),
-            "negLogP": round(-np.log10(max(p, 1e-16)), 2),
-            "database": database,
-            "category": name.split(" ")[0],
-        })
-    raw.sort(key=lambda x: x["pValue"])
-    if raw:
-        adj = _apply_fdr([p["pValue"] for p in raw], str(config.get("fdrMethod", "BH")))
-        for p, a in zip(raw, adj, strict=True):
-            p["fdr"] = a
-    return {
-        "pathways": raw[:12],
-        "significantFeatures": len(sig),
-        "categories": [],
-        "database": database,
-        "engine": "python",
-    }
+    from app.pathway_enrichment import run_live_pathway_enrichment
+
+    return run_live_pathway_enrichment(volcano, config)
 
 
 def run_biomarker(volcano: dict, config: dict | None = None) -> dict[str, Any]:

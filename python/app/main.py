@@ -12,8 +12,8 @@ from app.analysis_engine import run_analysis
 from app.mzxml_parser import (
     cleanup_work_dir,
     list_mzxml_samples,
-    materialize_uploads,
     parse_mzxml_files,
+    resolve_upload_paths,
 )
 
 app = FastAPI(title="MetaboAnalytics Python Service", version="1.0.0")
@@ -26,14 +26,23 @@ app.add_middleware(
 )
 
 
-async def _read_uploads(files: list[UploadFile]) -> list[tuple[str, bytes]]:
-    uploads: list[tuple[str, bytes]] = []
-    for upload in files:
-        content = await upload.read()
-        if content:
-            uploads.append((upload.filename or "upload.mzxml", content))
-    return uploads
+async def _save_uploads(files: list[UploadFile], work_dir: str) -> list[tuple[str, str]]:
+    """Stream uploads to disk — avoids loading large mzXML files into RAM."""
+    import os
 
+    saved: list[tuple[str, str]] = []
+    for upload in files:
+        filename = upload.filename or "upload.mzxml"
+        safe = os.path.basename(filename).replace("..", "_")
+        dest = os.path.join(work_dir, safe)
+        with open(dest, "wb") as out:
+            while True:
+                chunk = await upload.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+        saved.append((filename, dest))
+    return saved
 
 def _parse_groups(groups: str | None) -> dict[str, str]:
     if not groups:
@@ -57,9 +66,13 @@ async def preview_mzxml(files: list[UploadFile] = File(...)) -> dict[str, Any]:
     if not files:
         raise HTTPException(status_code=400, detail="At least one file is required")
 
-    uploads = await _read_uploads(files)
-    work_dir, paths = materialize_uploads(uploads)
+    import os
+    import tempfile
+
+    work_dir = tempfile.mkdtemp(prefix="metabo-preview-")
     try:
+        saved = await _save_uploads(files, work_dir)
+        paths = resolve_upload_paths(work_dir, [path for _, path in saved])
         if not paths:
             raise HTTPException(status_code=400, detail="No mzXML/mzML files found in upload")
         return {"samples": list_mzxml_samples(paths)}
@@ -78,11 +91,14 @@ async def import_mzxml(
     if not files:
         raise HTTPException(status_code=400, detail="At least one file is required")
 
+    import tempfile
+
     group_map = _parse_groups(groups)
-    uploads = await _read_uploads(files)
-    work_dir, paths = materialize_uploads(uploads)
+    work_dir = tempfile.mkdtemp(prefix="metabo-import-")
 
     try:
+        saved = await _save_uploads(files, work_dir)
+        paths = resolve_upload_paths(work_dir, [path for _, path in saved])
         if not paths:
             raise HTTPException(status_code=400, detail="No mzXML/mzML files found in upload")
         return parse_mzxml_files(paths, group_map)
