@@ -59,20 +59,21 @@ export function ChartPlaceholder({
 }: ChartPlaceholderProps) {
   const lower = type.toLowerCase();
   const isHeatmap = lower.includes("heatmap");
-  const isScrollable = isHeatmap || lower.includes("vip") || lower.includes("importance");
+  const isPathway = lower.includes("dot plot") || lower.includes("enrichment") || lower.includes("pathway");
+  const isScrollable = isHeatmap || isPathway || lower.includes("vip") || lower.includes("importance");
 
   const wrap = (children: ReactNode) => (
     <div
       id={exportId}
       data-plot-export={exportId ?? type}
-      className="w-full overflow-visible rounded-xl border border-border bg-gradient-to-br from-card via-card to-muted/30 p-3 shadow-sm"
+      className={`w-full rounded-xl border border-border bg-gradient-to-br from-card via-card to-muted/30 p-3 shadow-sm ${isScrollable ? "overflow-hidden" : "overflow-visible"}`}
       style={{ minHeight: height }}
     >
       <div
         className={`w-full ${isScrollable ? "min-h-[280px] overflow-auto" : ""}`}
         style={
           isScrollable
-            ? { minHeight: height }
+            ? { minHeight: height, maxHeight: "min(640px, 78vh)" }
             : { aspectRatio: PLOT_ASPECT, minHeight: "320px", maxHeight: "min(600px, 78vh)", width: "100%" }
         }
       >

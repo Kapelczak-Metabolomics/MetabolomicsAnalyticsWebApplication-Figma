@@ -76,7 +76,7 @@ export function PathwayPlot({ pathways = [] }: PathwayPlotProps) {
         gridcolor: "#e2e8f040",
       },
       margin: { l: 12, r: 72, t: 48, b: 56 },
-      height: Math.max(320, display.length * 30 + 120),
+      height: Math.max(320, display.length * 26 + 110),
       annotations: ranked.length >= MAX_PATHWAYS
         ? [{
             x: 0.98,
