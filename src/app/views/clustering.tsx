@@ -35,6 +35,19 @@ export function ClusteringView() {
 
   useEffect(() => {
     if (!dataset) return;
+    const matrix = results?.heatmapMatrix as (number | null)[][] | undefined;
+    const sampleOrder = results?.sampleOrder as string[] | undefined;
+    const featureLabels = results?.featureLabels as string[] | undefined;
+    if (matrix?.length) {
+      setHeatmap({
+        matrix,
+        sampleLabels: sampleOrder ?? [],
+        featureLabels: featureLabels ?? [],
+        dendrogram: results?.dendrogram as unknown[],
+        silhouette: results?.silhouette as number | undefined,
+      });
+      return;
+    }
     api.getDatasetMatrix(dataset.id, true)
       .then(setHeatmap)
       .catch(() => setHeatmap(null));

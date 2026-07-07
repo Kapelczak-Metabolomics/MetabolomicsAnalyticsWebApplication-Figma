@@ -1,5 +1,6 @@
 const PYTHON_URL = process.env.PYTHON_SERVICE_URL || "http://127.0.0.1:47824";
 const MZXML_TIMEOUT_MS = 10 * 60 * 1000;
+const ANALYSIS_TIMEOUT_MS = 90 * 1000;
 
 type MzxmlFile = { buffer: Buffer; filename: string };
 
@@ -102,6 +103,7 @@ export async function pythonRunAnalysis(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ samples, features, config }),
+    signal: AbortSignal.timeout(ANALYSIS_TIMEOUT_MS),
   });
 
   if (!res.ok) {

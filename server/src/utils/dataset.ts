@@ -1,31 +1,60 @@
 import { query } from "../db/index.js";
 import type { FeatureRow, SampleRow } from "../services/analysis.js";
 
-export async function loadDatasetMatrix(datasetId: number) {
+const DEFAULT_MAX_FEATURES = 2500;
+
+export async function loadDatasetMatrix(datasetId: number, options?: { maxFeatures?: number }) {
+  const maxFeatures = options?.maxFeatures ?? 0;
+
   const samplesResult = await query<{ id: number; sample_id: string; group_label: string }>(
     `SELECT id, sample_id, group_label FROM samples WHERE dataset_id = $1 ORDER BY sample_id`,
     [datasetId]
   );
 
-  const featuresResult = await query<{ id: number; feature_id: string; name: string; feature_class: string | null; pathway: string | null }>(
+  let featuresResult = await query<{ id: number; feature_id: string; name: string; feature_class: string | null; pathway: string | null }>(
     `SELECT id, feature_id, name, feature_class, pathway FROM features WHERE dataset_id = $1 ORDER BY feature_id`,
     [datasetId]
   );
 
-  const valuesResult = await query<{ sample_id: number; feature_id: number; value: string | null }>(
-    `SELECT fv.sample_id, fv.feature_id, fv.value
-     FROM feature_values fv
-     JOIN samples s ON s.id = fv.sample_id
-     WHERE s.dataset_id = $1`,
-    [datasetId]
-  );
+  let featureRows = featuresResult.rows;
+
+  if (maxFeatures > 0 && featureRows.length > maxFeatures) {
+    const top = await query<{ id: number }>(
+      `SELECT f.id
+       FROM features f
+       JOIN (
+         SELECT fv.feature_id, VAR_POP(fv.value::double precision) AS v
+         FROM feature_values fv
+         JOIN samples s ON s.id = fv.sample_id
+         WHERE s.dataset_id = $1 AND fv.value IS NOT NULL
+         GROUP BY fv.feature_id
+         ORDER BY v DESC NULLS LAST
+         LIMIT $2
+       ) ranked ON ranked.feature_id = f.id
+       WHERE f.dataset_id = $1`,
+      [datasetId, maxFeatures]
+    );
+    const keep = new Set(top.rows.map((r) => r.id));
+    featureRows = featureRows.filter((f) => keep.has(f.id));
+  }
+
+  const featureIds = featureRows.map((f) => f.id);
+  const valuesResult = featureIds.length
+    ? await query<{ sample_id: number; feature_id: number; value: string | null }>(
+        `SELECT fv.sample_id, fv.feature_id, fv.value
+         FROM feature_values fv
+         JOIN samples s ON s.id = fv.sample_id
+         WHERE s.dataset_id = $1 AND fv.feature_id = ANY($2::int[])`,
+        [datasetId, featureIds]
+      )
+    : { rows: [] as Array<{ sample_id: number; feature_id: number; value: string | null }> };
 
   const valueMap = new Map<string, number | null>();
   for (const v of valuesResult.rows) {
     valueMap.set(`${v.sample_id}:${v.feature_id}`, v.value != null ? parseFloat(v.value) : null);
   }
 
-  const featureMedians = featuresResult.rows.map((f) => {
+  const featureMedians = featureRows.map((f) => {
     const vals = samplesResult.rows
       .map((s) => valueMap.get(`${s.id}:${f.id}`))
       .filter((v): v is number => v != null);
@@ -36,13 +65,13 @@ export async function loadDatasetMatrix(datasetId: number) {
   const samples: SampleRow[] = samplesResult.rows.map((s) => ({
     sampleId: s.sample_id,
     groupLabel: s.group_label,
-    values: featuresResult.rows.map((f, fi) => {
+    values: featureRows.map((f, fi) => {
       const v = valueMap.get(`${s.id}:${f.id}`);
       return v ?? featureMedians[fi];
     }),
   }));
 
-  const features: FeatureRow[] = featuresResult.rows.map((f) => ({
+  const features: FeatureRow[] = featureRows.map((f) => ({
     featureId: f.feature_id,
     name: f.name,
     featureClass: f.feature_class,
@@ -54,6 +83,12 @@ export async function loadDatasetMatrix(datasetId: number) {
   }));
 
   return { samples, features };
+}
+
+export function analysisMaxFeatures(): number {
+  const raw = process.env.ANALYSIS_MAX_FEATURES;
+  const n = raw ? parseInt(raw, 10) : DEFAULT_MAX_FEATURES;
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_FEATURES;
 }
 
 export function formatRelativeTime(date: Date | string) {

@@ -1,4 +1,4 @@
-import { loadDatasetMatrix } from "../utils/dataset.js";
+import { loadDatasetMatrix, analysisMaxFeatures } from "../utils/dataset.js";
 import { runPCA, runVolcano, runClustering, runPathway, runBiomarker, runPLSDA } from "./analysis.js";
 import { pythonRunAnalysis, usePythonAnalysis } from "./python-client.js";
 
@@ -50,6 +50,6 @@ export async function computeWithEngine(
 }
 
 export async function computeResults(type: string, datasetId: number, config: Record<string, unknown> = {}) {
-  const { samples, features } = await loadDatasetMatrix(datasetId);
+  const { samples, features } = await loadDatasetMatrix(datasetId, { maxFeatures: analysisMaxFeatures() });
   return computeWithEngine(type, samples, features, config);
 }

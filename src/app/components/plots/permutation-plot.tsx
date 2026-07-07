@@ -28,7 +28,7 @@ export function PermutationPlot({ scores = [], observedR2, observedQ2 }: Permuta
   const yTicks = niceTicks(0, maxVal, 5);
 
   return (
-    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Permutation validation plot">
+    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Permutation validation plot">
       <rect x={0} y={0} width={width} height={height} className="fill-card" />
       <g transform={`translate(${pad.l}, ${pad.t})`}>
         {yTicks.map((t) => (

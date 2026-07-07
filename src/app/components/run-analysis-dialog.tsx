@@ -17,6 +17,10 @@ interface RunAnalysisDialogProps {
   onComplete?: () => void;
 }
 
+/** Max polls while waiting for background analysis (500ms interval ≈ 5 min). */
+const ANALYSIS_POLL_MAX = 600;
+const ANALYSIS_POLL_MS = 500;
+
 const defaultStages = [
   "Submitting analysis job",
   "Loading dataset from database",
@@ -66,10 +70,10 @@ export function RunAnalysisDialog({
           return;
         }
 
-        for (let poll = 0; poll < 120 && !cancelled; poll++) {
+        for (let poll = 0; poll < ANALYSIS_POLL_MAX && !cancelled; poll++) {
           const exp = await api.getExperiment(experimentIdRef.current!);
           if (exp.status === "running") {
-            setCurrentStage(Math.min(stages.length - 2, 1 + Math.floor(poll / 8)));
+            setCurrentStage(Math.min(stages.length - 2, 1 + Math.floor(poll / 20)));
           }
           if (exp.status === "completed") {
             setCurrentStage(stages.length - 1);
@@ -81,12 +85,12 @@ export function RunAnalysisDialog({
             toast.error(String(exp.errorMessage ?? "Analysis failed"));
             return;
           }
-          await new Promise((r) => setTimeout(r, 500));
+          await new Promise((r) => setTimeout(r, ANALYSIS_POLL_MS));
         }
 
         if (!cancelled && !failed && !completed) {
           setFailed(true);
-          toast.error("Analysis timed out");
+          toast.error("Analysis timed out after 5 minutes — check Experiments for status");
           return;
         }
       } else {

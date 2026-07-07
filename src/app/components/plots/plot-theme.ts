@@ -1,8 +1,8 @@
-export const GROUP_COLORS = ["#7c3aed", "#0891b2", "#059669", "#d97706", "#dc2626", "#db2777"];
+export const GROUP_COLORS = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#8b5cf6"];
 
-export const PLOT_SIZE = { width: 640, height: 480 };
+export const PLOT_SIZE = { width: 720, height: 520 };
 
-export const PLOT_PAD = { left: 72, right: 140, top: 28, bottom: 64 };
+export const PLOT_PAD = { left: 84, right: 148, top: 40, bottom: 76 };
 
 export function linearScale(domain: [number, number], range: [number, number]) {
   const [d0, d1] = domain;
@@ -10,7 +10,7 @@ export function linearScale(domain: [number, number], range: [number, number]) {
   return (v: number) => r0 + ((v - d0) / (d1 - d0 || 1)) * (r1 - r0);
 }
 
-export function paddedDomain(values: number[], padRatio = 0.1): [number, number] {
+export function paddedDomain(values: number[], padRatio = 0.12): [number, number] {
   if (!values.length) return [0, 1];
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -19,7 +19,7 @@ export function paddedDomain(values: number[], padRatio = 0.1): [number, number]
   return [min - pad, max + pad];
 }
 
-export function symmetricDomain(values: number[], padRatio = 0.1): [number, number] {
+export function symmetricDomain(values: number[], padRatio = 0.12): [number, number] {
   const maxAbs = Math.max(...values.map(Math.abs), 0.01);
   const pad = maxAbs * padRatio;
   return [-maxAbs - pad, maxAbs + pad];
@@ -51,9 +51,9 @@ export function groupColor(index: number) {
 
 export function heatColor(value: number, min: number, max: number) {
   const t = max === min ? 0.5 : (value - min) / (max - min);
-  const low = { r: 59, g: 130, b: 246 };
-  const mid = { r: 248, g: 250, b: 252 };
-  const high = { r: 239, g: 68, b: 68 };
+  const low = { r: 30, g: 64, b: 175 };
+  const mid = { r: 241, g: 245, b: 249 };
+  const high = { r: 220, g: 38, b: 38 };
   const c = t < 0.5
     ? { r: low.r + (mid.r - low.r) * (t * 2), g: low.g + (mid.g - low.g) * (t * 2), b: low.b + (mid.b - low.b) * (t * 2) }
     : { r: mid.r + (high.r - mid.r) * ((t - 0.5) * 2), g: mid.g + (high.g - mid.g) * ((t - 0.5) * 2), b: mid.b + (high.b - mid.b) * ((t - 0.5) * 2) };
