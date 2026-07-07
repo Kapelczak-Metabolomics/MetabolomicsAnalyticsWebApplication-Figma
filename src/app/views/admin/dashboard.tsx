@@ -35,19 +35,21 @@ const recentActivity: Array<{ user: string; action: string; time: string }> = []
 export function AdminDashboard() {
   const [statData, setStatData] = useState<Record<string, string | number>>({});
   const [activity, setActivity] = useState(recentActivity);
-  const [health, setHealth] = useState({ cpu: 0, memory: 0, disk: 0, network: 0 });
+  const [health, setHealth] = useState({ cpu: 0, memory: 0, disk: 0, loadAvg: [0, 0, 0] as number[] });
 
   useEffect(() => {
     api.admin.getStats().then((s) => {
       setStatData(s as unknown as Record<string, string | number>);
       if (s.health && typeof s.health === "object") {
-        const h = s.health as { cpu: number; memory: number; disk: number; network: number };
-        setHealth(h);
+        const h = s.health as { cpu: number; memory: number; disk: number; loadAvg?: number[] };
+        setHealth({ cpu: h.cpu, memory: h.memory, disk: h.disk, loadAvg: h.loadAvg ?? [0, 0, 0] });
       }
     }).catch(console.error);
-    api.admin.getHealth().then(setHealth).catch(console.error);
+    api.admin.getHealth().then((h) => setHealth({ cpu: h.cpu, memory: h.memory, disk: h.disk, loadAvg: h.loadAvg })).catch(console.error);
     api.admin.getActivity().then(setActivity).catch(console.error);
   }, []);
+
+  const resourcesOk = health.cpu < 90 && health.memory < 90 && health.disk < 95;
 
   return (
     <div className="h-full overflow-auto bg-gradient-to-br from-background via-background to-muted/20 p-6">
@@ -59,9 +61,13 @@ export function AdminDashboard() {
             <h2 className="text-lg font-semibold">Admin Dashboard</h2>
             <p className="text-sm text-muted-foreground">System overview and management</p>
           </div>
-          <div className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1.5">
-            <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">All Systems Operational</span>
+          <div className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 ${
+            resourcesOk ? "bg-emerald-500/10" : "bg-amber-500/10"
+          }`}>
+            <div className={`h-2 w-2 rounded-full animate-pulse ${resourcesOk ? "bg-emerald-500" : "bg-amber-500"}`} />
+            <span className={`text-xs font-medium ${resourcesOk ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"}`}>
+              {resourcesOk ? "Resources within normal range" : "Elevated resource usage"}
+            </span>
           </div>
         </div>
 
@@ -134,19 +140,19 @@ export function AdminDashboard() {
               </h3>
               <div className="space-y-3">
                 {[
-                  { label: "CPU", value: health.cpu, color: "bg-violet-500" },
-                  { label: "Memory", value: health.memory, color: "bg-cyan-500" },
-                  { label: "Disk", value: health.disk, color: "bg-emerald-500" },
-                  { label: "Network", value: health.network, color: "bg-amber-500" },
-                ].map(({ label, value, color }) => (
+                  { label: "CPU load", value: health.cpu, color: "bg-violet-500", sub: `1m avg ${health.loadAvg[0]?.toFixed(2) ?? "—"}` },
+                  { label: "Memory", value: health.memory, color: "bg-cyan-500", sub: null },
+                  { label: "Disk", value: health.disk, color: "bg-emerald-500", sub: null },
+                ].map(({ label, value, color, sub }) => (
                   <div key={label}>
                     <div className="flex justify-between text-xs mb-1">
                       <span className="text-muted-foreground">{label}</span>
                       <span className="tabular-nums font-medium">{value}%</span>
                     </div>
                     <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                      <div className={`h-full rounded-full ${color}`} style={{ width: `${value}%` }} />
+                      <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(value, 100)}%` }} />
                     </div>
+                    {sub && <p className="mt-0.5 text-[10px] text-muted-foreground">{sub}</p>}
                   </div>
                 ))}
               </div>

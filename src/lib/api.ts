@@ -207,7 +207,11 @@ export const api = {
 
   admin: {
     getStats: () => request<Record<string, unknown>>("/admin/stats"),
-    getHealth: () => request<{ cpu: number; memory: number; disk: number; network: number }>("/admin/health"),
+    getHealth: () => request<{
+      cpu: number; memory: number; disk: number;
+      diskFreeGb: number; diskTotalGb: number; diskUsedGb: number;
+      loadAvg: number[]; uptimeSeconds: number; rawDataBytes: number;
+    }>("/admin/health"),
     getActivity: () => request<Array<{ user: string; action: string; time: string }>>("/admin/activity"),
     getUsers: () => request<Array<{ id: number; name: string; email: string; role: string; status: string; lastActive: string; projects: number }>>("/admin/users"),
     createUser: (data: { name: string; email: string; role: string }) =>
@@ -220,11 +224,22 @@ export const api = {
     getLogs: (since?: string) => request<{ counts: Record<string, number>; logs: Array<Record<string, unknown>> }>(`/admin/logs${since ? `?since=${since}` : ""}`),
     getAudit: () => request<Array<Record<string, unknown>>>("/admin/audit"),
     getSystem: () => request<Record<string, unknown>>("/admin/system"),
+    getStorage: () => request<{
+      local: {
+        rawDataBytes: number; rawDataGb: number; databaseBytes: number; databaseGb: number;
+        diskUsedGb: number; diskTotalGb: number; diskFreeGb: number; diskPct: number;
+      };
+      s3: { connected: boolean; bucket?: string; totalGb?: number; objectCount?: number; partial?: boolean; error?: string };
+      provider: string;
+    }>("/admin/storage"),
     updateSystem: (key: string, value: unknown) =>
       request<{ success: boolean }>("/admin/system", { method: "PATCH", body: JSON.stringify({ key, value }) }),
     updateSystemBulk: (settings: Record<string, unknown>) =>
       request<{ success: boolean }>("/admin/system", { method: "PATCH", body: JSON.stringify({ settings }) }),
-    testS3: (data: { bucket: string; region?: string }) =>
+    testS3: (data: {
+      provider?: string; region?: string; bucket: string; endpoint?: string;
+      accessKeyId?: string; secretAccessKey?: string;
+    }) =>
       request<{ success: boolean; message: string }>("/admin/system/test-s3", { method: "POST", body: JSON.stringify(data) }),
     testEmail: (data: { host: string; port?: number }) =>
       request<{ success: boolean; message: string }>("/admin/system/test-email", { method: "POST", body: JSON.stringify(data) }),

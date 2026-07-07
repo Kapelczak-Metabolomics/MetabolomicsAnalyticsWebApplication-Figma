@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Server, Database, HardDrive, Cpu, Wifi, Cloud, Key, Eye, EyeOff, Check, RefreshCw, Upload, Palette, ImageIcon } from "lucide-react";
+import { Server, Database, HardDrive, Cpu, Cloud, Key, Check, RefreshCw, Upload, Palette, ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../../lib/api";
 
@@ -20,27 +20,6 @@ function Toggle({ defaultChecked = false }: { defaultChecked?: boolean }) {
         }`}
       />
     </button>
-  );
-}
-
-function SecretInput({ placeholder, defaultValue }: { placeholder: string; defaultValue?: string }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="relative">
-      <input
-        type={show ? "text" : "password"}
-        placeholder={placeholder}
-        defaultValue={defaultValue}
-        className="w-full rounded-lg border border-border bg-background px-3 py-2 pr-9 text-sm outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
-      />
-      <button
-        type="button"
-        onClick={() => setShow(!show)}
-        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-      >
-        {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-      </button>
-    </div>
   );
 }
 
@@ -201,15 +180,38 @@ function BrandingSection() {
 export function AdminSystem() {
   const [testingS3, setTestingS3] = useState(false);
   const [s3Status, setS3Status] = useState<"idle" | "ok" | "fail">("idle");
-  const [health, setHealth] = useState({ cpu: 0, memory: 0, disk: 0, network: 0 });
-  const [s3Bucket, setS3Bucket] = useState("metaboanalytics-data");
-  const [smtpHost, setSmtpHost] = useState("smtp.example.com");
+  const [health, setHealth] = useState({
+    cpu: 0, memory: 0, disk: 0, diskFreeGb: 0, diskTotalGb: 0, diskUsedGb: 0, loadAvg: [0, 0, 0] as number[],
+  });
+  const [storage, setStorage] = useState<{
+    local: { rawDataGb: number; databaseGb: number; diskUsedGb: number; diskTotalGb: number; diskPct: number };
+    s3: { connected: boolean; totalGb?: number; objectCount?: number; error?: string };
+    provider: string;
+  } | null>(null);
+
+  const [s3Provider, setS3Provider] = useState("local");
+  const [s3Region, setS3Region] = useState("us-east-1");
+  const [s3Bucket, setS3Bucket] = useState("");
+  const [s3Endpoint, setS3Endpoint] = useState("");
+  const [s3AccessKey, setS3AccessKey] = useState("");
+  const [s3SecretKey, setS3SecretKey] = useState("");
+  const [smtpHost, setSmtpHost] = useState("");
 
   useEffect(() => {
     api.admin.getHealth().then(setHealth).catch(console.error);
+    api.admin.getStorage().then(setStorage).catch(console.error);
     api.admin.getSystem().then((s) => {
-      if (s.s3 && typeof s.s3 === "object" && "bucket" in (s.s3 as object)) setS3Bucket(String((s.s3 as { bucket: string }).bucket));
-      if (s.email && typeof s.email === "object" && "host" in (s.email as object)) setSmtpHost(String((s.email as { host: string }).host));
+      const s3 = s.s3 as Record<string, string> | undefined;
+      if (s3) {
+        if (s3.provider) setS3Provider(s3.provider);
+        if (s3.region) setS3Region(s3.region);
+        if (s3.bucket) setS3Bucket(s3.bucket);
+        if (s3.endpoint) setS3Endpoint(s3.endpoint);
+        if (s3.accessKeyId) setS3AccessKey(s3.accessKeyId);
+        if (s3.secretAccessKey) setS3SecretKey(s3.secretAccessKey);
+      }
+      const email = s.email as { host?: string } | undefined;
+      if (email?.host) setSmtpHost(email.host);
     }).catch(console.error);
   }, []);
 
@@ -217,16 +219,30 @@ export function AdminSystem() {
     setTestingS3(true);
     setS3Status("idle");
     try {
-      await api.admin.testS3({ bucket: s3Bucket });
+      await api.admin.testS3({
+        provider: s3Provider,
+        region: s3Region,
+        bucket: s3Bucket,
+        endpoint: s3Endpoint || undefined,
+        accessKeyId: s3AccessKey || undefined,
+        secretAccessKey: s3SecretKey || undefined,
+      });
       setS3Status("ok");
       toast.success("S3 connection successful");
-    } catch {
+      api.admin.getStorage().then(setStorage).catch(console.error);
+    } catch (err) {
       setS3Status("fail");
-      toast.error("S3 connection failed");
+      toast.error(err instanceof Error ? err.message : "S3 connection failed");
     } finally {
       setTestingS3(false);
     }
   }
+
+  const localGb = storage?.local.rawDataGb ?? 0;
+  const dbGb = storage?.local.databaseGb ?? 0;
+  const exportsGb = 0;
+  const totalUsedGb = localGb + dbGb + exportsGb + (storage?.s3.connected ? (storage.s3.totalGb ?? 0) : 0);
+  const diskPct = storage?.local.diskPct ?? health.disk;
 
   return (
     <div className="h-full overflow-auto bg-gradient-to-br from-background via-background to-muted/20 p-6">
@@ -246,11 +262,11 @@ export function AdminSystem() {
           <h3 className="mb-4 text-base font-medium">System Health</h3>
           <div className="grid grid-cols-2 gap-4">
             {[
-              { icon: Cpu, label: "CPU Usage", value: health.cpu, color: "from-violet-500 to-violet-600" },
-              { icon: Server, label: "Memory Usage", value: health.memory, color: "from-cyan-500 to-cyan-600" },
-              { icon: HardDrive, label: "Disk Usage", value: health.disk, color: "from-emerald-500 to-emerald-600" },
-              { icon: Wifi, label: "Network I/O", value: health.network, color: "from-amber-500 to-amber-600" },
-            ].map(({ icon: Icon, label, value, color }) => (
+              { icon: Cpu, label: "CPU Usage", value: health.cpu, color: "from-violet-500 to-violet-600", sub: `load ${health.loadAvg[0]?.toFixed(2) ?? "—"}` },
+              { icon: Server, label: "Memory Usage", value: health.memory, color: "from-cyan-500 to-cyan-600", sub: null },
+              { icon: HardDrive, label: "Disk Usage", value: diskPct, color: "from-emerald-500 to-emerald-600", sub: `${health.diskFreeGb} GB free` },
+              { icon: Database, label: "Data on Disk", value: Math.min(100, Math.round((localGb / Math.max(health.diskTotalGb, 0.01)) * 100)), color: "from-amber-500 to-amber-600", sub: `${localGb.toFixed(2)} GB raw` },
+            ].map(({ icon: Icon, label, value, color, sub }) => (
               <div key={label} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -262,6 +278,7 @@ export function AdminSystem() {
                 <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                   <div className={`h-full bg-gradient-to-r ${color}`} style={{ width: `${value}%` }} />
                 </div>
+                {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
               </div>
             ))}
           </div>
@@ -274,47 +291,60 @@ export function AdminSystem() {
               <Cloud className="h-5 w-5 text-cyan-500" />
               <h3 className="text-base font-medium">S3 Storage</h3>
             </div>
-            <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-              Connected
+            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+              storage?.s3.connected
+                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                : s3Provider === "local"
+                  ? "bg-muted text-muted-foreground"
+                  : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+            }`}>
+              {storage?.s3.connected ? "Connected" : s3Provider === "local" ? "Local storage" : "Not connected"}
             </span>
           </div>
 
           {/* Usage bar */}
           <div className="mb-5 rounded-lg border border-border bg-muted/30 p-4">
             <div className="flex items-center justify-between text-sm mb-2">
-              <span className="text-muted-foreground">Storage used</span>
-              <span className="font-semibold">342 GB <span className="font-normal text-muted-foreground">of 2 TB</span></span>
+              <span className="text-muted-foreground">Storage used (measured)</span>
+              <span className="font-semibold">
+                {totalUsedGb.toFixed(2)} GB
+                <span className="font-normal text-muted-foreground"> on {health.diskTotalGb} GB volume</span>
+              </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-muted">
-              <div className="h-full w-[17%] bg-gradient-to-r from-cyan-500 to-violet-500" />
+              <div className="h-full bg-gradient-to-r from-cyan-500 to-violet-500" style={{ width: `${Math.min(100, diskPct)}%` }} />
             </div>
             <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-muted-foreground">
-              <span>Datasets: 198 GB</span>
-              <span>Results: 112 GB</span>
-              <span>Exports: 32 GB</span>
+              <span>Raw mzXML: {localGb.toFixed(2)} GB</span>
+              <span>Database: {dbGb.toFixed(2)} GB</span>
+              <span>S3 objects: {storage?.s3.connected ? `${storage.s3.totalGb?.toFixed(2) ?? 0} GB` : "—"}</span>
             </div>
+            {storage?.s3.error && (
+              <p className="mt-2 text-xs text-destructive">S3: {storage.s3.error}</p>
+            )}
           </div>
 
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium">Provider</label>
-                <select className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20">
-                  <option>Amazon S3</option>
-                  <option>Google Cloud Storage</option>
-                  <option>Azure Blob Storage</option>
-                  <option>MinIO (self-hosted)</option>
-                  <option>Cloudflare R2</option>
+                <select value={s3Provider} onChange={(e) => setS3Provider(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20">
+                  <option value="local">Local filesystem (default)</option>
+                  <option value="aws">Amazon S3</option>
+                  <option value="minio">MinIO (self-hosted)</option>
+                  <option value="r2">Cloudflare R2</option>
                 </select>
               </div>
               <div>
                 <label className="text-sm font-medium">Region</label>
-                <select className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20">
-                  <option>us-east-1 (N. Virginia)</option>
-                  <option>us-west-2 (Oregon)</option>
-                  <option>eu-west-1 (Ireland)</option>
-                  <option>eu-central-1 (Frankfurt)</option>
-                  <option>ap-southeast-1 (Singapore)</option>
+                <select value={s3Region} onChange={(e) => setS3Region(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20">
+                  <option value="us-east-1">us-east-1 (N. Virginia)</option>
+                  <option value="us-west-2">us-west-2 (Oregon)</option>
+                  <option value="eu-west-1">eu-west-1 (Ireland)</option>
+                  <option value="eu-central-1">eu-central-1 (Frankfurt)</option>
+                  <option value="ap-southeast-1">ap-southeast-1 (Singapore)</option>
                 </select>
               </div>
             </div>
@@ -323,7 +353,9 @@ export function AdminSystem() {
               <label className="text-sm font-medium">Bucket Name</label>
               <input
                 type="text"
-                defaultValue="metaboanalytics-data-prod"
+                value={s3Bucket}
+                onChange={(e) => setS3Bucket(e.target.value)}
+                placeholder="my-metaboanalytics-bucket"
                 className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
               />
             </div>
@@ -332,7 +364,9 @@ export function AdminSystem() {
               <label className="text-sm font-medium">Custom Endpoint URL</label>
               <input
                 type="text"
-                placeholder="https://s3.amazonaws.com (leave blank for default)"
+                value={s3Endpoint}
+                onChange={(e) => setS3Endpoint(e.target.value)}
+                placeholder="https://s3.amazonaws.com (leave blank for AWS default)"
                 className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-muted-foreground outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
               />
             </div>
@@ -345,11 +379,15 @@ export function AdminSystem() {
               <div className="space-y-3">
                 <div>
                   <label className="text-sm font-medium">Access Key ID</label>
-                  <SecretInput placeholder="AKIAIOSFODNN7EXAMPLE" defaultValue="AKIA••••••••••••7ABC" />
+                  <input type="text" value={s3AccessKey} onChange={(e) => setS3AccessKey(e.target.value)}
+                    placeholder="AKIA..."
+                    className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20" />
                 </div>
                 <div>
                   <label className="text-sm font-medium">Secret Access Key</label>
-                  <SecretInput placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" />
+                  <input type="password" value={s3SecretKey} onChange={(e) => setS3SecretKey(e.target.value)}
+                    placeholder="Enter secret key"
+                    className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20" />
                 </div>
               </div>
             </div>
@@ -414,7 +452,17 @@ export function AdminSystem() {
               )}
               <button
                 onClick={async () => {
-                  await api.admin.updateSystemBulk({ s3: { bucket: s3Bucket, region: "us-east-1" } });
+                  await api.admin.updateSystemBulk({
+                    s3: {
+                      provider: s3Provider,
+                      region: s3Region,
+                      bucket: s3Bucket,
+                      endpoint: s3Endpoint,
+                      accessKeyId: s3AccessKey,
+                      secretAccessKey: s3SecretKey,
+                    },
+                    storage: { provider: s3Provider === "local" ? "local" : "s3" },
+                  });
                   toast.success("S3 configuration saved");
                 }}
                 className="ml-auto rounded-lg bg-gradient-to-r from-violet-500 to-cyan-500 px-4 py-2 text-sm font-medium text-white shadow-md hover:shadow-lg"
@@ -491,7 +539,7 @@ export function AdminSystem() {
                   <p className="text-sm font-medium">Database Size</p>
                   <p className="text-xs text-muted-foreground">Total storage used by the database</p>
                 </div>
-                <span className="text-sm font-semibold">42.8 GB</span>
+                <span className="text-sm font-semibold">{dbGb.toFixed(2)} GB</span>
               </div>
             </div>
             <div className="flex items-center justify-between">
@@ -499,7 +547,7 @@ export function AdminSystem() {
                 <p className="text-sm font-medium">Last Backup</p>
                 <p className="text-xs text-muted-foreground">Most recent successful backup</p>
               </div>
-              <span className="text-sm text-emerald-600 dark:text-emerald-400">2 hours ago</span>
+              <span className="text-sm text-muted-foreground">From PostgreSQL pg_database_size()</span>
             </div>
             <div className="flex gap-2">
               {["Backup Now", "Restore", "Optimize"].map((action) => (
@@ -523,6 +571,8 @@ export function AdminSystem() {
               <label className="text-sm font-medium">SMTP Server</label>
               <input
                 type="text"
+                value={smtpHost}
+                onChange={(e) => setSmtpHost(e.target.value)}
                 placeholder="smtp.example.com"
                 className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
               />

@@ -95,8 +95,8 @@ services:
       args:
         METABO_API_PORT: "47822"
     restart: unless-stopped
-    ports:
-      - "47821:80"
+    expose:
+      - "80"
     depends_on:
       api:
         condition: service_healthy
