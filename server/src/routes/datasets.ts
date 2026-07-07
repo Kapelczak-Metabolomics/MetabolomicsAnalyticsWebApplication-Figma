@@ -30,6 +30,7 @@ import {
   autoSampleGroups,
   guessColumnRoles,
 } from "../utils/csv-parse.js";
+import { canAccessDataset, canAccessProject, projectVisibilitySql } from "../utils/access.js";
 
 const router = Router();
 
@@ -115,6 +116,10 @@ router.post("/import", authMiddleware, async (req: Request, res: Response) => {
   const { projectId, name, type, csv } = body;
   if (!projectId || !name?.trim() || !csv?.trim()) {
     res.status(400).json({ error: "projectId, name, and csv are required" });
+    return;
+  }
+  if (!(await canAccessProject(req.user!, projectId))) {
+    res.status(403).json({ error: "You do not have access to this project" });
     return;
   }
 
@@ -394,6 +399,10 @@ async function processMzxmlImport(req: Request, res: Response) {
     res.status(400).json({ error: "projectId and name are required" });
     return;
   }
+  if (!(await canAccessProject(req.user!, projectId))) {
+    res.status(403).json({ error: "You do not have access to this project" });
+    return;
+  }
 
   let uploads: MzxmlUploadFile[];
   if (sessionId) {
@@ -511,6 +520,10 @@ async function launchMzxmlImport(opts: {
 
 router.get("/:id/import-status", authMiddleware, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
+  if (!(await canAccessDataset(req.user!, id))) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
   const result = await query<{
     id: number; status: string; import_status: string; import_error: string | null;
     samples_count: number; features_count: number; missing_pct: number; source_format: string;
@@ -535,7 +548,8 @@ router.get("/:id/import-status", authMiddleware, async (req: Request, res: Respo
   });
 });
 
-router.get("/", authMiddleware, async (_req: Request, res: Response) => {
+router.get("/", authMiddleware, async (req: Request, res: Response) => {
+  const visibility = projectVisibilitySql(req.user!, "p", 1);
   const result = await query<{
     id: number; name: string; type: string; samples_count: number; features_count: number; status: string; project_id: number; project_name: string;
     import_status: string; source_format: string;
@@ -543,13 +557,18 @@ router.get("/", authMiddleware, async (_req: Request, res: Response) => {
     `SELECT d.id, d.name, d.type, d.samples_count, d.features_count, d.status, d.project_id, p.name AS project_name,
             d.import_status, d.source_format
      FROM datasets d JOIN projects p ON p.id = d.project_id
-     WHERE d.status IN ('ready', 'processing') ORDER BY d.created_at DESC`
+     WHERE d.status IN ('ready', 'processing') AND ${visibility.clause} ORDER BY d.created_at DESC`,
+    visibility.params
   );
   res.json(result.rows);
 });
 
 router.get("/:id/features", authMiddleware, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
+  if (!(await canAccessDataset(req.user!, id))) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
   const page = parseInt(req.query.page as string) || 1;
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
   const offset = (page - 1) * limit;
@@ -592,6 +611,10 @@ router.get("/:id/download", authMiddleware, async (req: Request, res: Response) 
 
 router.get("/:id/groups", authMiddleware, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
+  if (!(await canAccessDataset(req.user!, id))) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
   const result = await query<{ group_label: string; count: string }>(
     `SELECT group_label, COUNT(*)::text AS count FROM samples WHERE dataset_id = $1 GROUP BY group_label`,
     [id]
@@ -601,6 +624,10 @@ router.get("/:id/groups", authMiddleware, async (req: Request, res: Response) =>
 
 router.delete("/:id", authMiddleware, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
+  if (!(await canAccessDataset(req.user!, id))) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
   const existing = await query<{ raw_file_path: string | null }>("SELECT raw_file_path FROM datasets WHERE id = $1", [id]);
   await query("DELETE FROM datasets WHERE id = $1", [id]);
   await deleteRawDatasetFiles(existing.rows[0]?.raw_file_path);
@@ -609,6 +636,10 @@ router.delete("/:id", authMiddleware, async (req: Request, res: Response) => {
 
 router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
+  if (!(await canAccessDataset(req.user!, id))) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
   const result = await query(
     `SELECT d.*, p.name AS project_name FROM datasets d JOIN projects p ON p.id = d.project_id WHERE d.id = $1`,
     [id]

@@ -3,6 +3,7 @@ import { query } from "../db/index.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { loadDatasetMatrix, formatRelativeTime } from "../utils/dataset.js";
 import { computeResults } from "../services/compute-analysis.js";
+import { canAccessDataset, experimentVisibilitySql, projectVisibilitySql } from "../utils/access.js";
 
 const router = Router();
 
@@ -10,8 +11,9 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
   const projectId = req.query.projectId ? parseInt(req.query.projectId as string, 10) : null;
   const datasetIdParam = req.query.datasetId ? parseInt(req.query.datasetId as string, 10) : null;
 
+  const vis = projectVisibilitySql(req.user!, "p", 1);
   let datasetQuery;
-  if (datasetIdParam) {
+  if (datasetIdParam && (await canAccessDataset(req.user!, datasetIdParam))) {
     datasetQuery = await query<{ id: number; name: string; samples_count: number; features_count: number; project_name: string }>(
       `SELECT d.id, d.name, d.samples_count, d.features_count, p.name AS project_name
        FROM datasets d JOIN projects p ON p.id = d.project_id WHERE d.id = $1`,
@@ -21,21 +23,27 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
     datasetQuery = await query<{ id: number; name: string; samples_count: number; features_count: number; project_name: string }>(
       `SELECT d.id, d.name, d.samples_count, d.features_count, p.name AS project_name
        FROM datasets d JOIN projects p ON p.id = d.project_id
-       WHERE d.project_id = $1 AND d.status = 'ready' ORDER BY d.created_at DESC LIMIT 1`,
-      [projectId]
+       WHERE d.project_id = $1 AND d.status = 'ready' AND ${projectVisibilitySql(req.user!, "p", 2).clause}
+       ORDER BY d.created_at DESC LIMIT 1`,
+      [projectId, ...projectVisibilitySql(req.user!, "p", 2).params]
     );
   } else {
     datasetQuery = await query<{ id: number; name: string; samples_count: number; features_count: number; project_name: string }>(
       `SELECT d.id, d.name, d.samples_count, d.features_count, p.name AS project_name
        FROM datasets d JOIN projects p ON p.id = d.project_id
-       WHERE d.status = 'ready' ORDER BY d.created_at DESC LIMIT 1`
+       WHERE d.status = 'ready' AND ${vis.clause} ORDER BY d.created_at DESC LIMIT 1`,
+      vis.params
     );
   }
 
   const dataset = datasetQuery.rows[0];
 
+  const expVis = experimentVisibilitySql(req.user!, "e", 1);
+  const expWhere = expVis.clause === "TRUE" ? "" : ` AND ${expVis.clause}`;
   const experiments = await query<{ type: string; completed_at: Date | null; created_at: Date; results: unknown }>(
-    `SELECT type, completed_at, created_at, results FROM experiments WHERE status = 'completed' ORDER BY completed_at DESC NULLS LAST LIMIT 20`
+    `SELECT type, completed_at, created_at, results FROM experiments e
+     WHERE status = 'completed'${expWhere} ORDER BY completed_at DESC NULLS LAST LIMIT 20`,
+    expVis.params
   );
 
   let significantFeatures = 0;

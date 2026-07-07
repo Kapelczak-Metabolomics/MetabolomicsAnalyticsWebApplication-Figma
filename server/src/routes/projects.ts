@@ -3,10 +3,12 @@ import { query } from "../db/index.js";
 import { authMiddleware, logAudit } from "../middleware/auth.js";
 import { formatRelativeTime } from "../utils/dataset.js";
 import { sendProjectInviteEmail, loadEmailConfig } from "../services/email.js";
+import { canAccessProject, projectVisibilitySql, experimentVisibilitySql } from "../utils/access.js";
 
 const router = Router();
 
 router.get("/", authMiddleware, async (req: Request, res: Response) => {
+  const visibility = projectVisibilitySql(req.user!, "p", 1);
   const result = await query<{
     id: number;
     name: string;
@@ -22,8 +24,10 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
             COALESCE(SUM(d.samples_count), 0)::text AS samples
      FROM projects p
      LEFT JOIN datasets d ON d.project_id = p.id
+     WHERE ${visibility.clause}
      GROUP BY p.id
-     ORDER BY p.updated_at DESC`
+     ORDER BY p.updated_at DESC`,
+    visibility.params
   );
 
   res.json(
@@ -42,6 +46,10 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
 
 router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
+  if (!(await canAccessProject(req.user!, id))) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
   const project = await query<{ id: number; name: string; description: string; status: string; color: string; updated_at: Date; study_type: string; visibility: string }>(
     "SELECT id, name, description, status, color, updated_at, study_type, visibility FROM projects WHERE id = $1",
     [id]
@@ -59,11 +67,13 @@ router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
     [id]
   );
 
+  const expVisibility = experimentVisibilitySql(req.user!, "e", 2);
   const experiments = await query<{
     id: number; name: string; type: string; status: string; created_at: Date; user_id: number | null;
   }>(
-    `SELECT id, name, type, status, created_at, user_id FROM experiments WHERE project_id = $1 ORDER BY created_at DESC LIMIT 50`,
-    [id]
+    `SELECT id, name, type, status, created_at, user_id FROM experiments e
+     WHERE project_id = $1 AND ${expVisibility.clause} ORDER BY created_at DESC LIMIT 50`,
+    [id, ...expVisibility.params]
   );
 
   const p = project.rows[0];
@@ -152,6 +162,10 @@ router.post("/", authMiddleware, async (req: Request, res: Response) => {
 
 router.patch("/:id", authMiddleware, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
+  if (!(await canAccessProject(req.user!, id))) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
   const { name, description, status, studyType, visibility } = req.body;
   await query(
     `UPDATE projects SET name = COALESCE($1, name), description = COALESCE($2, description), status = COALESCE($3, status),
@@ -163,6 +177,10 @@ router.patch("/:id", authMiddleware, async (req: Request, res: Response) => {
 
 router.delete("/:id", authMiddleware, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
+  if (!(await canAccessProject(req.user!, id))) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
   await query("DELETE FROM projects WHERE id = $1", [id]);
   await logAudit(req.user, "DELETE_PROJECT", "data", `Project #${id}`, "Project deleted", req);
   res.json({ success: true });

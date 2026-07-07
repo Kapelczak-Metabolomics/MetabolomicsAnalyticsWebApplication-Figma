@@ -68,7 +68,11 @@ export function TopBar() {
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
             <button className="ml-1 flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1 hover:bg-accent">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 text-xs font-semibold text-white">{initials}</div>
+              {user?.avatarUrl ? (
+                <img src={user.avatarUrl} alt="" className="h-6 w-6 rounded-full object-cover" />
+              ) : (
+                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 text-xs font-semibold text-white">{initials}</div>
+              )}
               <ChevronDown className="h-3 w-3 text-muted-foreground" />
             </button>
           </DropdownMenu.Trigger>

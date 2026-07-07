@@ -4,6 +4,7 @@ import { authMiddleware, logAudit, createNotification, type AuthUser } from "../
 import { loadDatasetMatrix, formatRelativeTime, formatDuration, analysisMaxFeatures } from "../utils/dataset.js";
 import { getProcessUsage } from "../utils/metrics.js";
 import { computeWithEngine } from "../services/compute-analysis.js";
+import { canAccessDataset, canAccessExperiment, canAccessProject, experimentVisibilitySql } from "../utils/access.js";
 
 const router = Router();
 
@@ -99,14 +100,20 @@ function isInProgress(status: string): boolean {
 
 router.get("/", authMiddleware, async (req: Request, res: Response) => {
   const projectId = req.query.projectId;
-  let sql = `SELECT e.id, e.name, e.type, e.status, e.created_at, e.user_id, p.name AS project, p.owner_id
-             FROM experiments e JOIN projects p ON p.id = e.project_id`;
+  const conditions: string[] = [];
   const params: unknown[] = [];
   if (projectId) {
-    sql += " WHERE e.project_id = $1";
     params.push(projectId);
+    conditions.push(`e.project_id = $${params.length}`);
   }
-  sql += " ORDER BY e.created_at DESC LIMIT 50";
+  const visibility = experimentVisibilitySql(req.user!, "e", params.length + 1);
+  if (visibility.clause !== "TRUE") {
+    conditions.push(visibility.clause);
+    params.push(...visibility.params);
+  }
+  const where = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
+  const sql = `SELECT e.id, e.name, e.type, e.status, e.created_at, e.user_id, p.name AS project, p.owner_id
+             FROM experiments e JOIN projects p ON p.id = e.project_id${where} ORDER BY e.created_at DESC LIMIT 50`;
 
   const result = await query<{
     id: number; name: string; type: string; status: string; created_at: Date;
@@ -138,6 +145,10 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
 
 router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
+  if (!(await canAccessExperiment(req.user!, id))) {
+    res.status(404).json({ error: "Experiment not found" });
+    return;
+  }
   const result = await query<{
     id: number; name: string; type: string; status: string; config: unknown; results: unknown;
     error_message: string | null; samples_count: number; features_count: number;
@@ -198,6 +209,10 @@ router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
 
 router.get("/:id/export", authMiddleware, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
+  if (!(await canAccessExperiment(req.user!, id))) {
+    res.status(404).json({ error: "Experiment not found" });
+    return;
+  }
   const format = String(req.query.format ?? "json");
   const result = await query<{ name: string; type: string; results: unknown }>(
     `SELECT name, type, results FROM experiments WHERE id = $1`,
@@ -276,6 +291,14 @@ router.post("/", authMiddleware, async (req: Request, res: Response) => {
     res.status(400).json({ error: "projectId, name, and type are required" });
     return;
   }
+  if (!(await canAccessProject(req.user!, projectId))) {
+    res.status(403).json({ error: "You do not have access to this project" });
+    return;
+  }
+  if (datasetId && !(await canAccessDataset(req.user!, datasetId))) {
+    res.status(403).json({ error: "You do not have access to this dataset" });
+    return;
+  }
 
   const result = await query<{ id: number }>(
     `INSERT INTO experiments (project_id, dataset_id, user_id, name, type, config, status)
@@ -289,6 +312,10 @@ router.post("/", authMiddleware, async (req: Request, res: Response) => {
 
 router.post("/:id/run", authMiddleware, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
+  if (!(await canAccessExperiment(req.user!, id))) {
+    res.status(404).json({ error: "Experiment not found" });
+    return;
+  }
   const exp = await query<{ dataset_id: number; type: string; user_id: number; config: unknown }>(
     "SELECT dataset_id, type, user_id, config FROM experiments WHERE id = $1",
     [id]
@@ -320,6 +347,14 @@ router.post("/run", authMiddleware, async (req: Request, res: Response) => {
     res.status(400).json({ error: "projectId, datasetId, name, and type are required" });
     return;
   }
+  if (!(await canAccessProject(req.user!, projectId))) {
+    res.status(403).json({ error: "You do not have access to this project" });
+    return;
+  }
+  if (!(await canAccessDataset(req.user!, datasetId))) {
+    res.status(403).json({ error: "You do not have access to this dataset" });
+    return;
+  }
 
   const result = await query<{ id: number }>(
     `INSERT INTO experiments (project_id, dataset_id, user_id, name, type, config, status)
@@ -330,11 +365,11 @@ router.post("/run", authMiddleware, async (req: Request, res: Response) => {
   const experimentId = result.rows[0].id;
   await logAudit(req.user, "RUN_ANALYSIS", "analysis", `Experiment: ${name}`, `Started ${type} analysis`, req);
 
-  // Fail any stuck prior runs for this dataset + analysis type so reruns start clean.
+  // Fail this user's own stuck prior runs for this dataset + type so reruns start clean.
   await query(
     `UPDATE experiments SET status = 'failed', error_message = 'Superseded by new run', completed_at = NOW()
-     WHERE dataset_id = $1 AND type = $2 AND status IN ('pending', 'running') AND id <> $3`,
-    [datasetId, type, experimentId]
+     WHERE dataset_id = $1 AND type = $2 AND user_id = $3 AND status IN ('pending', 'running') AND id <> $4`,
+    [datasetId, type, req.user!.id, experimentId]
   );
 
   await query(`UPDATE experiments SET status = 'running', started_at = NOW() WHERE id = $1`, [experimentId]);

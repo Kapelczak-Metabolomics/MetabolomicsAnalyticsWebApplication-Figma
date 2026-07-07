@@ -5,7 +5,7 @@ import { api } from "../../lib/api";
 import { useAuth } from "../../contexts/auth-context";
 
 export function ProfileView() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -26,6 +26,7 @@ export function ProfileView() {
     e.preventDefault();
     try {
       await api.updateProfile({ name, email });
+      updateUser({ name, email });
       setSaved(true);
       toast.success("Profile updated");
       setTimeout(() => setSaved(false), 3000);
@@ -47,6 +48,7 @@ export function ProfileView() {
       setAvatarUrl(dataUrl);
       try {
         await api.updatePreferences({ avatarUrl: dataUrl });
+        updateUser({ avatarUrl: dataUrl });
         toast.success("Profile photo updated");
       } catch {
         toast.error("Failed to save photo");

@@ -7,6 +7,7 @@ interface User {
   name: string;
   email: string;
   role: string;
+  avatarUrl?: string | null;
 }
 
 interface AuthContextValue {
@@ -14,7 +15,17 @@ interface AuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  updateUser: (patch: Partial<User>) => void;
   isAdmin: boolean;
+}
+
+async function loadAvatarUrl(): Promise<string | null> {
+  try {
+    const prefs = await api.getPreferences();
+    return typeof prefs.avatarUrl === "string" ? prefs.avatarUrl : null;
+  } catch {
+    return null;
+  }
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -31,7 +42,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     api.me()
-      .then(({ user }) => setUser(user))
+      .then(async ({ user }) => {
+        const avatarUrl = await loadAvatarUrl();
+        setUser({ ...user, avatarUrl });
+      })
       .catch(() => setToken(null))
       .finally(() => setLoading(false));
   }, []);
@@ -41,6 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(token);
     setUser(user);
     navigate("/");
+    const avatarUrl = await loadAvatarUrl();
+    setUser((prev) => (prev ? { ...prev, avatarUrl } : { ...user, avatarUrl }));
   }, [navigate]);
 
   const logout = useCallback(() => {
@@ -49,8 +65,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     navigate("/login");
   }, [navigate]);
 
+  const updateUser = useCallback((patch: Partial<User>) => {
+    setUser((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, isAdmin: user?.role === "Administrator" }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, updateUser, isAdmin: user?.role === "Administrator" }}>
       {children}
     </AuthContext.Provider>
   );
