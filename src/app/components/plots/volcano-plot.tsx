@@ -51,6 +51,7 @@ export function VolcanoPlot({ features = [], pThreshold = 0.05, fcThreshold = 0.
     <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Volcano plot">
       <rect x={0} y={0} width={width} height={height} className="fill-card" />
       <g transform={`translate(${pad.left}, ${pad.top})`}>
+        <rect x={0} y={0} width={plotW} height={plotH} rx={6} className="fill-muted/15 stroke-border/50" strokeWidth={1} />
         {yTicks.map((t) => (
           <line key={`gy-${t}`} x1={0} y1={yScale(t)} x2={plotW} y2={yScale(t)} className="stroke-border/60" strokeWidth={1} />
         ))}
@@ -60,12 +61,12 @@ export function VolcanoPlot({ features = [], pThreshold = 0.05, fcThreshold = 0.
         <line x1={0} y1={yScale(pLine)} x2={plotW} y2={yScale(pLine)} className="stroke-muted-foreground/50" strokeDasharray="5 4" strokeWidth={1.5} />
 
         {points.filter((p) => !p.significant).map((d, i) => (
-          <circle key={`ns-${i}`} cx={xScale(d.x)} cy={yScale(d.y)} r={2.5} className="fill-muted-foreground" opacity={0.35}>
+          <circle key={`ns-${i}`} cx={xScale(d.x)} cy={yScale(d.y)} r={3} className="fill-muted-foreground" opacity={0.35}>
             {d.name && <title>{`${d.name}\nlog2FC: ${d.x}\n-log10 p: ${d.y}`}</title>}
           </circle>
         ))}
         {points.filter((p) => p.significant).map((d, i) => (
-          <circle key={`sig-${i}`} cx={xScale(d.x)} cy={yScale(d.y)} r={4} fill={d.direction === "up" ? "#dc2626" : "#0891b2"} stroke="white" strokeWidth={1} opacity={0.85}>
+          <circle key={`sig-${i}`} cx={xScale(d.x)} cy={yScale(d.y)} r={5} fill={d.direction === "up" ? "#ef4444" : "#0ea5e9"} stroke="white" strokeWidth={1.25} opacity={0.9}>
             {d.name && <title>{`${d.name}\nlog2FC: ${d.x}\n-log10 p: ${d.y}`}</title>}
           </circle>
         ))}

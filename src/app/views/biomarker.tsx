@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Play, Settings2, Filter, Plus, Trash2, X } from "lucide-react";
 import { ConfigureDialog } from "../components/configure-dialog";
+import { ChartPlaceholder } from "../components/chart-placeholder";
 import { RunAnalysisDialog } from "../components/run-analysis-dialog";
 import { AnalysisExportMenu } from "../components/analysis-export-menu";
 import * as Dialog from "@radix-ui/react-dialog";

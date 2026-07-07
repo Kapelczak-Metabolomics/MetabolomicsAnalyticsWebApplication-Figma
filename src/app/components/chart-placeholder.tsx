@@ -54,10 +54,10 @@ export function ChartPlaceholder({
     <div
       id={exportId}
       data-plot-export={exportId ?? type}
-      className="flex w-full items-center justify-center overflow-auto rounded-lg border border-border bg-card p-3"
+      className="flex w-full items-center justify-center overflow-auto rounded-xl border border-border bg-gradient-to-br from-card via-card to-muted/30 p-4 shadow-sm"
       style={{ height, minHeight: height }}
     >
-      <div className="h-full w-full min-h-[240px]">{children}</div>
+      <div className="h-full w-full min-h-[280px]">{children}</div>
     </div>
   );
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChartPlaceholder } from "../components/chart-placeholder";
+import type { PCAScore } from "../components/plots/pca-plot";
 import { Play, Settings2 } from "lucide-react";
 import { RunAnalysisDialog } from "../components/run-analysis-dialog";
 import { ConfigureDialog } from "../components/configure-dialog";
@@ -21,7 +22,7 @@ export function PCAView() {
   const [runOpen, setRunOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const { saveAnalysisConfig, getAnalysisConfig } = useApp();
-  const { dataset, results, loading, error, refresh, experimentId } = useAnalysisPage("PCA");
+  const { dataset, results, loading, error, pendingAnalysis, refresh, experimentId } = useAnalysisPage("PCA");
 
   const scores = (results?.scores as PCAScore[]) ?? [];
   const explainedVariance = (results?.explainedVariance as number[]) ?? [];
@@ -63,6 +64,9 @@ export function PCAView() {
               {dataset ? `${dataset.project_name} · ${dataset.name}` : "No dataset"}
             </p>
             {error && <p className="text-xs text-destructive mt-1">{error}</p>}
+            {pendingAnalysis && !scores.length && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">No completed analysis yet — run analysis to generate plots.</p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setConfigOpen(true)} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent">

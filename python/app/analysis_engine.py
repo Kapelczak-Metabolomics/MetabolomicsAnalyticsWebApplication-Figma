@@ -243,7 +243,7 @@ def run_plsda(samples: list[dict], features: list[dict], config: dict | None = N
     y = np.array([1 if g == g_a else 0 for g in groups])
     n_comp = int(config.get("components", 2))
     folds = int(config.get("cvFolds", 7))
-    permutations = int(config.get("permutations", 100))
+    permutations = int(config.get("permutations", 50))
     vip_threshold = float(config.get("vipThreshold", 1.0))
     rng = np.random.default_rng(42)
 

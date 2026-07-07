@@ -35,6 +35,7 @@ export function PLSDAPlot({ scores = [], explainedVariance = [] }: PLSDAPlotProp
     <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="PLS-DA score plot">
       <rect x={0} y={0} width={width} height={height} className="fill-card" />
       <g transform={`translate(${pad.left}, ${pad.top})`}>
+        <rect x={0} y={0} width={plotW} height={plotH} rx={6} className="fill-muted/20 stroke-border/50" strokeWidth={1} />
         {yTicks.map((t) => (
           <line key={`gy-${t}`} x1={0} y1={yScale(t)} x2={plotW} y2={yScale(t)} className="stroke-border/60" strokeWidth={1} />
         ))}
@@ -45,10 +46,12 @@ export function PLSDAPlot({ scores = [], explainedVariance = [] }: PLSDAPlotProp
         {scores.map((d, i) => {
           const gi = groups.indexOf(d.group);
           const color = groupColor(gi);
+          const cx = xScale(d.comp1);
+          const cy = yScale(d.comp2);
           return (
             <g key={i}>
-              <circle cx={xScale(d.comp1)} cy={yScale(d.comp2)} r={7} fill={color} opacity={0.15} />
-              <circle cx={xScale(d.comp1)} cy={yScale(d.comp2)} r={4.5} fill={color} stroke="white" strokeWidth={1.25} opacity={0.9}>
+              <circle cx={cx} cy={cy} r={10} fill={color} opacity={0.12} />
+              <circle cx={cx} cy={cy} r={5.5} fill={color} stroke="white" strokeWidth={1.5} opacity={0.95}>
                 <title>{`${d.sampleId ?? `Sample ${i + 1}`} (${d.group})`}</title>
               </circle>
             </g>

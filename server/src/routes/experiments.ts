@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { query } from "../db/index.js";
 import { authMiddleware, logAudit, createNotification } from "../middleware/auth.js";
-import { loadDatasetMatrix, formatRelativeTime, formatDuration } from "../utils/dataset.js";
+import { loadDatasetMatrix, formatRelativeTime, formatDuration, analysisMaxFeatures } from "../utils/dataset.js";
 import { getProcessUsage } from "../utils/metrics.js";
 import { computeWithEngine } from "../services/compute-analysis.js";
 
@@ -11,7 +11,7 @@ async function executeAnalysis(experimentId: number, type: string, datasetId: nu
   await query(`UPDATE experiments SET status = 'running', started_at = NOW() WHERE id = $1`, [experimentId]);
 
   try {
-    const { samples, features } = await loadDatasetMatrix(datasetId);
+    const { samples, features } = await loadDatasetMatrix(datasetId, { maxFeatures: analysisMaxFeatures() });
     const results = await computeWithEngine(type, samples, features, config);
 
     const usage = getProcessUsage();

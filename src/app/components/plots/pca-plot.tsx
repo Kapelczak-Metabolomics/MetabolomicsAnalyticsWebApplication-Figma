@@ -49,6 +49,7 @@ export function PCAPlot({ scores = [], explainedVariance = [] }: PCAPlotProps) {
     <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="PCA score plot">
       <rect x={0} y={0} width={width} height={height} className="fill-card" />
       <g transform={`translate(${pad.left}, ${pad.top})`}>
+        <rect x={0} y={0} width={plotW} height={plotH} rx={6} className="fill-muted/20 stroke-border/50" strokeWidth={1} />
         {yTicks.map((t) => (
           <line key={`gy-${t}`} x1={0} y1={yScale(t)} x2={plotW} y2={yScale(t)} className="stroke-border/60" strokeWidth={1} />
         ))}
@@ -61,10 +62,12 @@ export function PCAPlot({ scores = [], explainedVariance = [] }: PCAPlotProps) {
         {scores.map((d, i) => {
           const gi = groups.indexOf(d.group);
           const color = groupColor(gi);
+          const cx = xScale(d.PC1);
+          const cy = yScale(d.PC2);
           return (
             <g key={`${d.sampleId}-${i}`}>
-              <circle cx={xScale(d.PC1)} cy={yScale(d.PC2)} r={7} fill={color} opacity={0.15} />
-              <circle cx={xScale(d.PC1)} cy={yScale(d.PC2)} r={4.5} fill={color} stroke="white" strokeWidth={1.25} opacity={0.9}>
+              <circle cx={cx} cy={cy} r={10} fill={color} opacity={0.12} />
+              <circle cx={cx} cy={cy} r={5.5} fill={color} stroke="white" strokeWidth={1.5} opacity={0.95}>
                 <title>{`${d.sampleId} (${d.group})\nPC1: ${d.PC1}\nPC2: ${d.PC2}`}</title>
               </circle>
             </g>
@@ -88,7 +91,7 @@ export function PCAPlot({ scores = [], explainedVariance = [] }: PCAPlotProps) {
       </g>
 
       <g transform={`translate(${width - pad.right + 8}, ${pad.top})`}>
-        <rect x={0} y={0} width={120} height={24 + groups.length * 22} className="fill-card stroke-border" strokeWidth={1} rx={6} />
+        <rect x={0} y={0} width={128} height={28 + groups.length * 24} className="fill-card/95 stroke-border" strokeWidth={1} rx={8} />
         <text x={10} y={16} fontSize={10} fontWeight={600} className="fill-muted-foreground">Groups</text>
         {groups.map((g, i) => (
           <g key={g} transform={`translate(10, ${20 + i * 22})`}>
