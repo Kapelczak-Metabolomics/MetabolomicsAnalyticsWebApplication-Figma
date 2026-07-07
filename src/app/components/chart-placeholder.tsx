@@ -8,6 +8,7 @@ import { DendrogramPlot, type DendrogramMerge } from "./plots/dendrogram-plot";
 import { VIPPlot } from "./plots/vip-plot";
 import { PermutationPlot } from "./plots/permutation-plot";
 import { BiomarkerPlot } from "./plots/biomarker-plot";
+import { PLOT_ASPECT } from "./plots/plot-theme";
 
 interface ChartPlaceholderProps {
   type: string;
@@ -50,18 +51,29 @@ export function ChartPlaceholder({
   biomarkerCandidates,
   silhouette,
 }: ChartPlaceholderProps) {
+  const lower = type.toLowerCase();
+  const isHeatmap = lower.includes("heatmap");
+  const isScrollable = isHeatmap || lower.includes("vip") || lower.includes("importance");
+
   const wrap = (children: ReactNode) => (
     <div
       id={exportId}
       data-plot-export={exportId ?? type}
-      className="flex w-full items-center justify-center overflow-auto rounded-xl border border-border bg-gradient-to-br from-card via-card to-muted/30 p-4 shadow-sm"
-      style={{ height, minHeight: height }}
+      className="w-full overflow-visible rounded-xl border border-border bg-gradient-to-br from-card via-card to-muted/30 p-3 shadow-sm"
+      style={{ minHeight: height }}
     >
-      <div className="h-full w-full min-h-[280px]">{children}</div>
+      <div
+        className={`w-full ${isScrollable ? "min-h-[280px] overflow-auto" : ""}`}
+        style={
+          isScrollable
+            ? { minHeight: height }
+            : { aspectRatio: PLOT_ASPECT, minHeight: "320px", maxHeight: "min(600px, 78vh)", width: "100%" }
+        }
+      >
+        {children}
+      </div>
     </div>
   );
-
-  const lower = type.toLowerCase();
 
   if (lower.includes("heatmap") && heatmap) {
     return wrap(<HeatmapPlot {...heatmap} />);

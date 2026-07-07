@@ -1,4 +1,4 @@
-import { GROUP_COLORS, PLOT_PAD, PLOT_SIZE, formatTick, groupColor, linearScale, niceTicks, paddedDomain } from "./plot-theme";
+import { GROUP_COLORS, PLOT_PAD, PLOT_SIZE, Y_AXIS_LABEL_X, formatTick, groupColor, linearScale, niceTicks, paddedDomain } from "./plot-theme";
 
 export interface PCAScore {
   sampleId: string;
@@ -46,7 +46,7 @@ export function PCAPlot({ scores = [], explainedVariance = [] }: PCAPlotProps) {
   const showZeroY = zeroY >= 0 && zeroY <= plotH;
 
   return (
-    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="PCA score plot">
+    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="PCA score plot">
       <rect x={0} y={0} width={width} height={height} className="fill-card" />
       <g transform={`translate(${pad.left}, ${pad.top})`}>
         <rect x={0} y={0} width={plotW} height={plotH} rx={6} className="fill-muted/20 stroke-border/50" strokeWidth={1} />
@@ -82,16 +82,24 @@ export function PCAPlot({ scores = [], explainedVariance = [] }: PCAPlotProps) {
         {yTicks.map((t) => (
           <text key={`ty-${t}`} x={-10} y={yScale(t) + 4} fontSize={11} textAnchor="end" className="fill-muted-foreground">{formatTick(t)}</text>
         ))}
-        <text x={plotW / 2} y={plotH + 48} fontSize={13} fontWeight={500} textAnchor="middle" className="fill-foreground">
+        <text x={plotW / 2} y={plotH + 40} fontSize={13} fontWeight={500} textAnchor="middle" className="fill-foreground">
           PC1 ({pc1Var}% variance)
         </text>
-        <text x={-plotH / 2} y={-48} fontSize={13} fontWeight={500} textAnchor="middle" transform={`rotate(-90, ${-plotH / 2}, -48)`} className="fill-foreground">
+        <text
+          x={Y_AXIS_LABEL_X}
+          y={plotH / 2}
+          fontSize={13}
+          fontWeight={500}
+          textAnchor="middle"
+          transform={`rotate(-90, ${Y_AXIS_LABEL_X}, ${plotH / 2})`}
+          className="fill-foreground"
+        >
           PC2 ({pc2Var}% variance)
         </text>
       </g>
 
-      <g transform={`translate(${width - pad.right + 8}, ${pad.top})`}>
-        <rect x={0} y={0} width={128} height={28 + groups.length * 24} className="fill-card/95 stroke-border" strokeWidth={1} rx={8} />
+      <g transform={`translate(${width - pad.right + 12}, ${pad.top})`}>
+        <rect x={0} y={0} width={136} height={28 + groups.length * 24} className="fill-card/95 stroke-border" strokeWidth={1} rx={8} />
         <text x={10} y={16} fontSize={10} fontWeight={600} className="fill-muted-foreground">Groups</text>
         {groups.map((g, i) => (
           <g key={g} transform={`translate(10, ${20 + i * 22})`}>

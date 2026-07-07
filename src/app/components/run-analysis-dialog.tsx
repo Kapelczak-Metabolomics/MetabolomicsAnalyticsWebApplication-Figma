@@ -58,19 +58,31 @@ export function RunAnalysisDialog({
     let cancelled = false;
 
     (async () => {
+      let succeeded = false;
+      let failedRun = false;
+
       if (projectId && datasetId) {
         setCurrentStage(0);
+
         try {
           const mergedConfig = { ...(app?.getAnalysisConfig(analysisType) ?? {}), ...(configProp ?? {}) };
-          const { id, status: initialStatus } = await api.runAnalysis({ projectId, datasetId, name: analysisName, type: analysisType, config: mergedConfig });
+          const { id, status: initialStatus } = await api.runAnalysis({
+            projectId,
+            datasetId,
+            name: analysisName,
+            type: analysisType,
+            config: mergedConfig,
+          });
           experimentIdRef.current = id;
 
           if (initialStatus === "completed") {
             setCurrentStage(stages.length - 1);
             setCompleted(true);
+            succeeded = true;
           } else if (initialStatus === "failed") {
             const exp = await api.getExperiment(id);
             setFailed(true);
+            failedRun = true;
             toast.error(String(exp.errorMessage ?? "Analysis failed"));
             return;
           }
@@ -80,38 +92,43 @@ export function RunAnalysisDialog({
           return;
         }
 
-        for (let poll = 0; poll < ANALYSIS_POLL_MAX && !cancelled && !completed && !failed; poll++) {
-          try {
-            const exp = await api.getExperiment(experimentIdRef.current!);
-            if (exp.status === "running" || exp.status === "pending") {
-              setCurrentStage(Math.min(stages.length - 2, 1 + Math.floor(poll / 20)));
+        if (!succeeded && !failedRun) {
+          for (let poll = 0; poll < ANALYSIS_POLL_MAX && !cancelled; poll++) {
+            try {
+              const exp = await api.getExperiment(experimentIdRef.current!);
+              if (exp.status === "running" || exp.status === "pending") {
+                setCurrentStage(Math.min(stages.length - 2, 1 + Math.floor(poll / 20)));
+              }
+              if (exp.status === "completed") {
+                setCurrentStage(stages.length - 1);
+                setCompleted(true);
+                succeeded = true;
+                break;
+              }
+              if (exp.status === "failed") {
+                setFailed(true);
+                failedRun = true;
+                toast.error(String(exp.errorMessage ?? "Analysis failed"));
+                return;
+              }
+            } catch {
+              // Transient network error — keep polling
             }
-            if (exp.status === "completed") {
-              setCurrentStage(stages.length - 1);
-              setCompleted(true);
-              break;
-            }
-            if (exp.status === "failed") {
-              setFailed(true);
-              toast.error(String(exp.errorMessage ?? "Analysis failed"));
-              return;
-            }
-          } catch {
-            // Transient network error — keep polling
+            await new Promise((r) => setTimeout(r, ANALYSIS_POLL_MS));
           }
-          await new Promise((r) => setTimeout(r, ANALYSIS_POLL_MS));
         }
 
-        if (!cancelled && !failed && !completed) {
+        if (!cancelled && !failedRun && !succeeded) {
           setFailed(true);
           toast.error("Analysis timed out after 5 minutes — check Experiments for status");
           return;
         }
       } else {
         setCompleted(true);
+        succeeded = true;
       }
 
-      if (!cancelled && !failed) {
+      if (!cancelled && !failedRun) {
         setTimeout(() => {
           onClose();
           onComplete?.();

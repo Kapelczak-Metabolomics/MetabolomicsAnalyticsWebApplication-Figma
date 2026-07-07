@@ -231,6 +231,14 @@ router.post("/run", authMiddleware, async (req: Request, res: Response) => {
 
   const experimentId = result.rows[0].id;
   await logAudit(req.user, "RUN_ANALYSIS", "analysis", `Experiment: ${name}`, `Started ${type} analysis`, req);
+
+  // Fail any stuck prior runs for this dataset + analysis type so reruns start clean.
+  await query(
+    `UPDATE experiments SET status = 'failed', error_message = 'Superseded by new run', completed_at = NOW()
+     WHERE dataset_id = $1 AND type = $2 AND status IN ('pending', 'running') AND id <> $3`,
+    [datasetId, type, experimentId]
+  );
+
   await query(`UPDATE experiments SET status = 'running', started_at = NOW() WHERE id = $1`, [experimentId]);
 
   const job = launchAnalysis(experimentId, type, datasetId, req.user!.id, (config as Record<string, unknown>) ?? {});
