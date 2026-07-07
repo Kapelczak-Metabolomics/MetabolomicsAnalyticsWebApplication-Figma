@@ -7,7 +7,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
-import { api } from "../../../lib/api";
+import { api, ApiError } from "../../../lib/api";
 
 type Role = "Administrator" | "Researcher" | "Analyst" | "Viewer";
 type Status = "active" | "inactive";
@@ -52,25 +52,28 @@ function AddUserDialog({ open, onClose, onAdd }: { open: boolean; onClose: () =>
     }
     setSending(true);
     api.admin.createUser({ name: name.trim(), email: email.trim(), role })
-      .then(() => {
+      .then((created) => {
         onAdd({
-          id: Date.now(),
-          name: name.trim(),
-          email: email.trim(),
-          role,
-          status: "inactive",
+          id: created.id,
+          name: created.name ?? name.trim(),
+          email: created.email ?? email.trim(),
+          role: (created.role as Role) ?? role,
+          status: (created.status as Status) ?? "active",
           lastActive: "Never",
           projects: 0,
         });
         toast.success("User created", {
-          description: `${email} can log in with the temporary password set by the administrator`,
+          description:
+            created.emailSent === false
+              ? `Email not sent — share this temporary password: ${created.tempPassword ?? "(use Reset password)"}`
+              : `Welcome email sent to ${created.email ?? email.trim()} with a temporary password`,
         });
         setName("");
         setEmail("");
         setRole("Researcher");
         onClose();
       })
-      .catch(() => toast.error("Failed to create user"))
+      .catch((e) => toast.error(e instanceof ApiError ? e.message : "Failed to create user"))
       .finally(() => setSending(false));
   }
 
@@ -339,9 +342,8 @@ export function AdminUsers() {
   });
 
   function handleAdd(newUser: User) {
-    api.admin.createUser({ name: newUser.name, email: newUser.email, role: newUser.role })
-      .then(() => setUsers((prev) => [newUser, ...prev]))
-      .catch(() => toast.error("Failed to create user"));
+    // The user is already created by AddUserDialog — just reflect it in the list.
+    setUsers((prev) => (prev.some((u) => u.id === newUser.id) ? prev : [newUser, ...prev]));
   }
 
   function handleRoleChange(id: number, role: Role) {

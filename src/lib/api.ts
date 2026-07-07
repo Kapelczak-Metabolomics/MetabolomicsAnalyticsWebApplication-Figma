@@ -386,7 +386,10 @@ export const api = {
     getActivity: () => request<Array<{ user: string; action: string; time: string }>>("/admin/activity"),
     getUsers: () => request<Array<{ id: number; name: string; email: string; role: string; status: string; lastActive: string; projects: number }>>("/admin/users"),
     createUser: (data: { name: string; email: string; role: string }) =>
-      request<{ id: number }>("/admin/users", { method: "POST", body: JSON.stringify(data) }),
+      request<{ id: number; name: string; email: string; role: string; status: string; emailSent?: boolean; tempPassword?: string }>(
+        "/admin/users",
+        { method: "POST", body: JSON.stringify(data) }
+      ),
     updateUser: (id: number, data: { role?: string; status?: string }) =>
       request<{ success: boolean }>(`/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     deleteUser: (id: number) => request<{ success: boolean }>(`/admin/users/${id}`, { method: "DELETE" }),

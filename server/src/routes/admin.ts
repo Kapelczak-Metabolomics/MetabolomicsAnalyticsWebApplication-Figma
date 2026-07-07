@@ -86,25 +86,66 @@ router.get("/users", async (_req: Request, res: Response) => {
   );
 });
 
+function generateTempPassword(): string {
+  // URL-safe random password (~16 chars) — unique per user, never a shared default.
+  return crypto.randomBytes(12).toString("base64url").slice(0, 16);
+}
+
 router.post("/users", async (req: Request, res: Response) => {
   const { name, email, role } = req.body;
   if (!name || !email) {
     res.status(400).json({ error: "Name and email required" });
     return;
   }
-  const hash = await bcrypt.hash("changeme123", 10);
-  const result = await query<{ id: number }>(
-    `INSERT INTO users (name, email, password_hash, role, status) VALUES ($1, $2, $3, $4, 'inactive') RETURNING id`,
-    [name, email.toLowerCase(), hash, role ?? "Researcher"]
-  );
+  const normalizedEmail = String(email).toLowerCase().trim();
+
+  const existing = await query<{ id: number }>("SELECT id FROM users WHERE email = $1", [normalizedEmail]);
+  if (existing.rows[0]) {
+    res.status(409).json({ error: "A user with this email already exists" });
+    return;
+  }
+
+  const tempPassword = generateTempPassword();
+  const hash = await bcrypt.hash(tempPassword, 10);
+
+  let result;
+  try {
+    // Created active so the user can sign in immediately with the emailed password.
+    result = await query<{ id: number; name: string; email: string; role: string; status: string }>(
+      `INSERT INTO users (name, email, password_hash, role, status) VALUES ($1, $2, $3, $4, 'active')
+       RETURNING id, name, email, role, status`,
+      [name, normalizedEmail, hash, role ?? "Researcher"]
+    );
+  } catch (err) {
+    if (err && typeof err === "object" && "code" in err && String((err as { code: string }).code) === "23505") {
+      res.status(409).json({ error: "A user with this email already exists" });
+      return;
+    }
+    throw err;
+  }
+
+  let emailSent = false;
   try {
     const emailCfg = await loadEmailConfig();
-    await sendUserWelcomeEmail(email.toLowerCase(), name, "changeme123", emailCfg);
+    await sendUserWelcomeEmail(normalizedEmail, name, tempPassword, emailCfg);
+    emailSent = true;
   } catch (err) {
-    console.log(`[admin-create-user] Email not sent for ${email}:`, err instanceof Error ? err.message : err);
+    console.log(`[admin-create-user] Email not sent for ${normalizedEmail}:`, err instanceof Error ? err.message : err);
   }
-  await logAudit(req.user, "CREATE_USER", "admin", `User: ${email}`, `Invited user ${name}`, req);
-  res.status(201).json({ id: result.rows[0].id });
+
+  await logAudit(req.user, "CREATE_USER", "admin", `User: ${normalizedEmail}`, `Invited user ${name}`, req);
+
+  const created = result.rows[0];
+  res.status(201).json({
+    id: created.id,
+    name: created.name,
+    email: created.email,
+    role: created.role,
+    status: created.status,
+    emailSent,
+    // Only returned when the email could not be delivered, so the admin can share it manually.
+    tempPassword: emailSent ? undefined : tempPassword,
+  });
 });
 
 router.patch("/users/:id", async (req: Request, res: Response) => {
