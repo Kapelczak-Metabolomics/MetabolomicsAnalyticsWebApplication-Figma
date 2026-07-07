@@ -13,6 +13,7 @@ import { BiomarkerView } from "./views/biomarker";
 import { DataTableView } from "./views/data-table";
 import { LoginView } from "./views/login";
 import { ForgotPasswordView } from "./views/forgot-password";
+import { ResetPasswordView } from "./views/reset-password";
 import { ProfileView } from "./views/profile";
 import { SettingsView } from "./views/settings";
 import { ProjectsView } from "./views/projects";
@@ -69,6 +70,7 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginView />} />
             <Route path="/forgot-password" element={<ForgotPasswordView />} />
+            <Route path="/reset-password" element={<ResetPasswordView />} />
             <Route path="/" element={<ProtectedLayout><Dashboard /></ProtectedLayout>} />
             <Route path="/pca" element={<ProtectedLayout><PCAView /></ProtectedLayout>} />
             <Route path="/plsda" element={<ProtectedLayout><PLSDAView /></ProtectedLayout>} />

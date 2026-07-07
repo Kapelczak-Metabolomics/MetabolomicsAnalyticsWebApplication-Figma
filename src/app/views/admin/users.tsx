@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { api } from "../../../lib/api";
 
@@ -50,25 +51,27 @@ function AddUserDialog({ open, onClose, onAdd }: { open: boolean; onClose: () =>
       return;
     }
     setSending(true);
-    setTimeout(() => {
-      setSending(false);
-      onAdd({
-        id: Date.now(),
-        name: name.trim(),
-        email: email.trim(),
-        role,
-        status: "inactive",
-        lastActive: "Never",
-        projects: 0,
-      });
-      toast.success("Invitation sent", {
-        description: `${email} will receive an activation email`,
-      });
-      setName("");
-      setEmail("");
-      setRole("Researcher");
-      onClose();
-    }, 1000);
+    api.admin.createUser({ name: name.trim(), email: email.trim(), role })
+      .then(() => {
+        onAdd({
+          id: Date.now(),
+          name: name.trim(),
+          email: email.trim(),
+          role,
+          status: "inactive",
+          lastActive: "Never",
+          projects: 0,
+        });
+        toast.success("User created", {
+          description: `${email} can log in with the temporary password set by the administrator`,
+        });
+        setName("");
+        setEmail("");
+        setRole("Researcher");
+        onClose();
+      })
+      .catch(() => toast.error("Failed to create user"))
+      .finally(() => setSending(false));
   }
 
   return (
@@ -231,12 +234,14 @@ function EditRoleDialog({ user, open, onClose, onSave }: { user: User | null; op
   );
 }
 
-function UserActions({ user, onRoleChange, onStatusToggle, onDelete }: {
+function UserActions({ user, onRoleChange, onStatusToggle, onDelete, onResetPassword }: {
   user: User;
   onRoleChange: (user: User) => void;
   onStatusToggle: (id: number) => void;
   onDelete: (id: number, name: string) => void;
+  onResetPassword: (user: User) => void;
 }) {
+  const navigate = useNavigate();
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -252,7 +257,7 @@ function UserActions({ user, onRoleChange, onStatusToggle, onDelete }: {
         >
           <DropdownMenu.Item
             className="flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-            onSelect={() => toast.info(`Viewing profile: ${user.name}`)}
+            onSelect={() => navigate("/admin/users")}
           >
             <Shield className="h-3.5 w-3.5" />
             View Profile
@@ -266,9 +271,7 @@ function UserActions({ user, onRoleChange, onStatusToggle, onDelete }: {
           </DropdownMenu.Item>
           <DropdownMenu.Item
             className="flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-            onSelect={() => {
-              toast.success(`Password reset email sent to ${user.email}`);
-            }}
+            onSelect={() => onResetPassword(user)}
           >
             <KeyRound className="h-3.5 w-3.5" />
             Reset Password
@@ -302,19 +305,23 @@ export function AdminUsers() {
   const [addOpen, setAddOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [newUsersThisMonth, setNewUsersThisMonth] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.admin.getUsers()
-      .then((data) => setUsers(data.map((u) => ({
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        role: u.role as Role,
-        status: u.status as Status,
-        lastActive: u.lastActive,
-        projects: u.projects,
-      }))))
+    Promise.all([api.admin.getUsers(), api.admin.getStats()])
+      .then(([data, stats]) => {
+        setUsers(data.map((u) => ({
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          role: u.role as Role,
+          status: u.status as Status,
+          lastActive: u.lastActive,
+          projects: u.projects,
+        })));
+        setNewUsersThisMonth(Number(stats.newUsersThisMonth ?? 0));
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
@@ -367,6 +374,17 @@ export function AdminUsers() {
       .catch(() => toast.error("Failed to delete user"));
   }
 
+  async function handleResetPassword(user: User) {
+    try {
+      await api.admin.resetUserPassword(user.id);
+      toast.success("Password reset initiated", {
+        description: `A reset link was generated for ${user.email}. Check server logs if SMTP is not configured.`,
+      });
+    } catch {
+      toast.error("Failed to reset password");
+    }
+  }
+
   const activeCount = users.filter((u) => u.status === "active").length;
   const adminCount = users.filter((u) => u.role === "Administrator").length;
 
@@ -401,8 +419,8 @@ export function AdminUsers() {
         <div className="grid grid-cols-4 gap-4">
           {[
             { label: "Total Users", value: users.length.toLocaleString() },
-            { label: "Active Today", value: activeCount.toString() },
-            { label: "New This Month", value: "47" },
+            { label: "Active Accounts", value: activeCount.toString() },
+            { label: "New This Month", value: newUsersThisMonth.toString() },
             { label: "Admins", value: adminCount.toString() },
           ].map((stat) => (
             <div key={stat.label} className="rounded-lg border border-border bg-card p-4">
@@ -517,6 +535,7 @@ export function AdminUsers() {
                           onRoleChange={(u) => { setEditUser(u); setEditOpen(true); }}
                           onStatusToggle={handleStatusToggle}
                           onDelete={handleDelete}
+                          onResetPassword={handleResetPassword}
                         />
                       </td>
                     </tr>

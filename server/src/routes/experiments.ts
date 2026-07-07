@@ -62,7 +62,7 @@ router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
     id: number; name: string; type: string; status: string; config: unknown; results: unknown;
     error_message: string | null; samples_count: number; features_count: number;
     created_at: Date; started_at: Date | null; completed_at: Date | null;
-    project_name: string; dataset_name: string | null; user_name: string | null;
+    project_name: string; dataset_name: string | null; dataset_id: number | null; user_name: string | null;
   }>(
     `SELECT e.*, p.name AS project_name, d.name AS dataset_name, u.name AS user_name
      FROM experiments e
@@ -91,6 +91,7 @@ router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
     featuresCount: e.features_count,
     projectName: e.project_name,
     datasetName: e.dataset_name,
+    datasetId: e.dataset_id,
     userName: e.user_name,
     createdAt: e.created_at,
     startedAt: e.started_at,

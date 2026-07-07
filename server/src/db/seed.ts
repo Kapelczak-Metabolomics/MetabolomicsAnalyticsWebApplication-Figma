@@ -119,7 +119,7 @@ async function seedMinimal() {
     `INSERT INTO system_settings (key, value) VALUES
      ('general', '{"appName":"MetaboAnalytics","supportEmail":"support@metaboanalytics.io","maintenanceMode":false}'),
      ('storage', '{"provider":"local","maxUploadMb":500}'),
-     ('email', '{"smtpHost":"","enabled":false}')`
+     ('email', '{"host":"","port":587,"encryption":"TLS","username":"","password":"","fromEmail":"","fromName":"MetaboAnalytics","enabled":false}')`
   );
 
   console.log("Minimal seed complete.");

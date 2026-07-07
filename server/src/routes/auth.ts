@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { query } from "../db/index.js";
 import { signToken, authMiddleware, updateLastActive, logAudit } from "../middleware/auth.js";
+import { trySendPasswordReset } from "../services/email.js";
 
 const router = Router();
 
@@ -19,7 +20,7 @@ router.post("/forgot-password", async (req: Request, res: Response) => {
       `INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, NOW() + INTERVAL '1 hour')`,
       [user.rows[0].id, token]
     );
-    console.log(`[password-reset] token for ${email}: ${token}`);
+    await trySendPasswordReset(email.toLowerCase().trim(), token);
   }
   res.json({ success: true, message: "If the email exists, a reset link has been sent." });
 });

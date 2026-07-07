@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { ChartPlaceholder } from "../components/chart-placeholder";
 import { Play, Settings2 } from "lucide-react";
-import { toast } from "sonner";
 import { RunAnalysisDialog } from "../components/run-analysis-dialog";
 import { ConfigureDialog } from "../components/configure-dialog";
 import { AnalysisExportMenu } from "../components/analysis-export-menu";
 import { useAnalysisPage } from "../../hooks/use-analysis-page";
 import { api } from "../../lib/api";
 import { useApp } from "../../contexts/app-context";
+import type { DendrogramMerge } from "../components/plots/dendrogram-plot";
 import { clusteringConfig } from "../../lib/analysis-config";
 
 const clusteringStages = [
@@ -26,7 +26,8 @@ export function ClusteringView() {
   const [heatmap, setHeatmap] = useState<{ matrix: (number | null)[][]; sampleLabels: string[]; featureLabels: string[]; dendrogram?: unknown[]; silhouette?: number } | null>(null);
 
   const clusters = (results?.clusters as Array<{ name: string; count: number; color: string }>) ?? [];
-  const dendrogram = (results?.dendrogram as Array<{ left: string; right: string; height: number }>) ?? heatmap?.dendrogram as Array<{ left: string; right: string; height: number }> ?? [];
+  const dendrogram = (results?.dendrogram as DendrogramMerge[]) ?? heatmap?.dendrogram as DendrogramMerge[] ?? [];
+  const sampleOrder = (results?.sampleOrder as string[]) ?? heatmap?.sampleLabels ?? [];
   const silhouette = (results?.silhouette as number) ?? heatmap?.silhouette;
   const linkage = (results?.linkage as string) ?? String(getAnalysisConfig("Clustering").linkageMethod ?? "Average");
   const distanceMetric = (results?.distanceMetric as string) ?? String(getAnalysisConfig("Clustering").distanceMetric ?? "Euclidean");
@@ -125,7 +126,7 @@ export function ClusteringView() {
               <h3 className="text-sm">Sample Dendrogram</h3>
               <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Clustering" filename="clustering-dendrogram" plotContainerId="plot-clustering-dendrogram" />
             </div>
-            <ChartPlaceholder type="Hierarchical Tree" height="250px" exportId="plot-clustering-dendrogram" dendrogram={dendrogram} />
+            <ChartPlaceholder type="Hierarchical Tree" height="280px" exportId="plot-clustering-dendrogram" dendrogram={dendrogram} dendrogramLabels={sampleOrder} />
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -168,8 +169,7 @@ export function ClusteringView() {
             ) : clusters.map((cluster, i) => (
               <div
                 key={cluster.name}
-                className="rounded-md bg-card p-2 text-xs hover:bg-accent cursor-pointer"
-                onClick={() => toast.info(`${cluster.name} · n=${cluster.count} samples`)}
+                className="rounded-md bg-card p-2 text-xs"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">

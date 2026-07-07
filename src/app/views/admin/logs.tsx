@@ -100,21 +100,21 @@ export function AdminLogs() {
               <Info className="h-4 w-4 text-cyan-500" />
               <p className="text-xs text-muted-foreground">Info</p>
             </div>
-            <p className="text-2xl font-semibold tabular-nums text-cyan-600 dark:text-cyan-400">11,234</p>
+            <p className="text-2xl font-semibold tabular-nums text-cyan-600 dark:text-cyan-400">{infoCount.toLocaleString()}</p>
           </div>
           <div className="rounded-lg border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-amber-600/10 p-4">
             <div className="flex items-center gap-2 mb-1">
               <AlertTriangle className="h-4 w-4 text-amber-500" />
               <p className="text-xs text-muted-foreground">Warnings</p>
             </div>
-            <p className="text-2xl font-semibold tabular-nums text-amber-600 dark:text-amber-400">1,456</p>
+            <p className="text-2xl font-semibold tabular-nums text-amber-600 dark:text-amber-400">{warnCount.toLocaleString()}</p>
           </div>
           <div className="rounded-lg border border-rose-500/20 bg-gradient-to-br from-rose-500/5 to-rose-600/10 p-4">
             <div className="flex items-center gap-2 mb-1">
               <XCircle className="h-4 w-4 text-rose-500" />
               <p className="text-xs text-muted-foreground">Errors</p>
             </div>
-            <p className="text-2xl font-semibold tabular-nums text-rose-600 dark:text-rose-400">157</p>
+            <p className="text-2xl font-semibold tabular-nums text-rose-600 dark:text-rose-400">{errorCount.toLocaleString()}</p>
           </div>
         </div>
 

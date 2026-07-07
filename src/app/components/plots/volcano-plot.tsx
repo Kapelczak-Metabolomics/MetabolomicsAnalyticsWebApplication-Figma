@@ -1,3 +1,5 @@
+import { PLOT_PAD, PLOT_SIZE, formatTick, linearScale, niceTicks, symmetricDomain } from "./plot-theme";
+
 export interface VolcanoPoint {
   log2fc: number;
   negLogP: number;
@@ -7,67 +9,88 @@ export interface VolcanoPoint {
 
 interface VolcanoPlotProps {
   features?: VolcanoPoint[];
+  pThreshold?: number;
+  fcThreshold?: number;
 }
 
-export function VolcanoPlot({ features = [] }: VolcanoPlotProps) {
-  const width = 600;
-  const height = 450;
-  const padding = { left: 60, right: 40, top: 40, bottom: 60 };
-  const plotWidth = width - padding.left - padding.right;
-  const plotHeight = height - padding.top - padding.bottom;
+function PlotEmpty({ message }: { message: string }) {
+  return (
+    <div className="flex h-full min-h-[280px] items-center justify-center text-sm text-muted-foreground">
+      {message}
+    </div>
+  );
+}
 
-  if (!features.length) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Run analysis to generate volcano plot from your dataset
-      </div>
-    );
-  }
+export function VolcanoPlot({ features = [], pThreshold = 0.05, fcThreshold = 0.5 }: VolcanoPlotProps) {
+  if (!features.length) return <PlotEmpty message="Run analysis to generate volcano plot from your dataset" />;
+
+  const { width, height } = PLOT_SIZE;
+  const pad = { ...PLOT_PAD, right: 40 };
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
 
   const points = features.map((f) => ({
     x: f.log2fc,
     y: f.negLogP,
-    significant: f.pValue < 0.05 && Math.abs(f.log2fc) > 0.5,
-    direction: f.pValue < 0.05 ? (f.log2fc > 0 ? "up" as const : "down" as const) : "none" as const,
+    name: f.name,
+    significant: f.pValue < pThreshold && Math.abs(f.log2fc) > fcThreshold,
+    direction: f.pValue < pThreshold ? (f.log2fc > 0 ? "up" as const : "down" as const) : "none" as const,
   }));
 
   const up = points.filter((p) => p.significant && p.direction === "up").length;
   const down = points.filter((p) => p.significant && p.direction === "down").length;
-
-  const xs = points.map((p) => p.x);
-  const xPad = Math.max(0.5, (Math.max(...xs.map(Math.abs)) || 1) * 0.1);
-  const xMin = Math.min(...xs, -xPad) - xPad;
-  const xMax = Math.max(...xs, xPad) + xPad;
-  const yMax = Math.max(...points.map((p) => p.y), 1) * 1.1;
-
-  const xScale = (v: number) => ((v - xMin) / (xMax - xMin || 1)) * plotWidth;
-  const yScale = (v: number) => plotHeight - (v / yMax) * plotHeight;
+  const [xMin, xMax] = symmetricDomain(points.map((p) => p.x));
+  const yMax = Math.max(...points.map((p) => p.y), -Math.log10(pThreshold), 1) * 1.08;
+  const xScale = linearScale([xMin, xMax], [0, plotW]);
+  const yScale = linearScale([0, yMax], [plotH, 0]);
+  const xTicks = niceTicks(xMin, xMax, 5);
+  const yTicks = niceTicks(0, yMax, 5);
+  const pLine = -Math.log10(pThreshold);
 
   return (
-    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`}>
-      <g transform={`translate(${padding.left}, ${padding.top})`}>
-        <line x1={xScale(-0.5)} y1={0} x2={xScale(-0.5)} y2={plotHeight} strokeDasharray="4 4" className="stroke-blue-500/50" strokeWidth="1.5" />
-        <line x1={xScale(0.5)} y1={0} x2={xScale(0.5)} y2={plotHeight} strokeDasharray="4 4" className="stroke-rose-500/50" strokeWidth="1.5" />
-        <line x1={0} y1={yScale(-Math.log10(0.05))} x2={plotWidth} y2={yScale(-Math.log10(0.05))} strokeDasharray="4 4" className="stroke-muted-foreground/50" strokeWidth="1.5" />
+    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Volcano plot">
+      <rect x={0} y={0} width={width} height={height} className="fill-card" />
+      <g transform={`translate(${pad.left}, ${pad.top})`}>
+        {yTicks.map((t) => (
+          <line key={`gy-${t}`} x1={0} y1={yScale(t)} x2={plotW} y2={yScale(t)} className="stroke-border/60" strokeWidth={1} />
+        ))}
+
+        <line x1={xScale(-fcThreshold)} y1={0} x2={xScale(-fcThreshold)} y2={plotH} stroke="#0891b2" strokeOpacity={0.35} strokeDasharray="5 4" strokeWidth={1.5} />
+        <line x1={xScale(fcThreshold)} y1={0} x2={xScale(fcThreshold)} y2={plotH} stroke="#dc2626" strokeOpacity={0.35} strokeDasharray="5 4" strokeWidth={1.5} />
+        <line x1={0} y1={yScale(pLine)} x2={plotW} y2={yScale(pLine)} className="stroke-muted-foreground/50" strokeDasharray="5 4" strokeWidth={1.5} />
+
         {points.filter((p) => !p.significant).map((d, i) => (
-          <circle key={`ns-${i}`} cx={xScale(d.x)} cy={yScale(d.y)} r="2.5" className="fill-muted-foreground" opacity="0.4" />
+          <circle key={`ns-${i}`} cx={xScale(d.x)} cy={yScale(d.y)} r={2.5} className="fill-muted-foreground" opacity={0.35}>
+            {d.name && <title>{`${d.name}\nlog2FC: ${d.x}\n-log10 p: ${d.y}`}</title>}
+          </circle>
         ))}
         {points.filter((p) => p.significant).map((d, i) => (
-          <circle key={`sig-${i}`} cx={xScale(d.x)} cy={yScale(d.y)} r="3" className={d.direction === "up" ? "fill-rose-500" : "fill-blue-500"} opacity="0.75" />
+          <circle key={`sig-${i}`} cx={xScale(d.x)} cy={yScale(d.y)} r={4} fill={d.direction === "up" ? "#dc2626" : "#0891b2"} stroke="white" strokeWidth={1} opacity={0.85}>
+            {d.name && <title>{`${d.name}\nlog2FC: ${d.x}\n-log10 p: ${d.y}`}</title>}
+          </circle>
         ))}
-        <line x1={0} y1={plotHeight} x2={plotWidth} y2={plotHeight} className="stroke-foreground" strokeWidth="2" />
-        <line x1={xScale(0)} y1={0} x2={xScale(0)} y2={plotHeight} className="stroke-foreground" strokeWidth="2" />
-        <text x={plotWidth / 2} y={plotHeight + 45} fontSize="13" textAnchor="middle" className="fill-foreground">log₂ Fold Change</text>
-        <text x={-plotHeight / 2} y={-40} fontSize="13" textAnchor="middle" transform={`rotate(-90, ${-plotHeight / 2}, -40)`} className="fill-foreground">-log₁₀ p-value</text>
+
+        <line x1={0} y1={plotH} x2={plotW} y2={plotH} className="stroke-foreground/80" strokeWidth={1.5} />
+        <line x1={xScale(0)} y1={0} x2={xScale(0)} y2={plotH} className="stroke-foreground/80" strokeWidth={1.5} />
+        {xTicks.map((t) => (
+          <text key={`tx-${t}`} x={xScale(t)} y={plotH + 18} fontSize={11} textAnchor="middle" className="fill-muted-foreground">{formatTick(t)}</text>
+        ))}
+        {yTicks.map((t) => (
+          <text key={`ty-${t}`} x={-10} y={yScale(t) + 4} fontSize={11} textAnchor="end" className="fill-muted-foreground">{formatTick(t)}</text>
+        ))}
+        <text x={plotW / 2} y={plotH + 48} fontSize={13} fontWeight={500} textAnchor="middle" className="fill-foreground">log₂ fold change</text>
+        <text x={-plotH / 2} y={-48} fontSize={13} fontWeight={500} textAnchor="middle" transform={`rotate(-90, ${-plotH / 2}, -48)`} className="fill-foreground">−log₁₀ p-value</text>
       </g>
-      <g transform={`translate(${width - padding.right - 120}, ${padding.top + 20})`}>
-        <rect x={-10} y={-10} width={130} height={75} className="fill-background stroke-border" strokeWidth="1" rx="4" />
-        <circle cx={5} cy={10} r="3.5" className="fill-rose-500" />
-        <text x={15} y={13} fontSize="10" className="fill-foreground">Upregulated ({up})</text>
-        <circle cx={5} cy={30} r="3.5" className="fill-blue-500" />
-        <text x={15} y={33} fontSize="10" className="fill-foreground">Downregulated ({down})</text>
-        <circle cx={5} cy={50} r="2.5" className="fill-muted-foreground" opacity="0.4" />
-        <text x={15} y={53} fontSize="10" className="fill-foreground">Not significant</text>
+
+      <g transform={`translate(${width - 148}, ${pad.top + 8})`}>
+        <rect x={0} y={0} width={132} height={88} className="fill-card stroke-border" strokeWidth={1} rx={6} />
+        <circle cx={12} cy={18} r={4} fill="#dc2626" />
+        <text x={22} y={22} fontSize={10} className="fill-foreground">Upregulated ({up})</text>
+        <circle cx={12} cy={38} r={4} fill="#0891b2" />
+        <text x={22} y={42} fontSize={10} className="fill-foreground">Downregulated ({down})</text>
+        <circle cx={12} cy={58} r={2.5} className="fill-muted-foreground" opacity={0.4} />
+        <text x={22} y={62} fontSize={10} className="fill-foreground">Not significant</text>
+        <text x={10} y={80} fontSize={9} className="fill-muted-foreground">p &lt; {pThreshold}, |FC| &gt; {fcThreshold}</text>
       </g>
     </svg>
   );

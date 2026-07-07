@@ -67,7 +67,8 @@ services:
       PYTHON_SERVICE_URL: http://python:47824
       USE_PYTHON_ANALYSIS: "true"
       RAW_DATA_DIR: /data/raw
-      SEED_DEMO_DATA: "true"
+      APP_URL: https://CHANGE_ME_YOUR_DOMAIN
+      SEED_DEMO_DATA: "false"
     expose:
       - "47822"
     volumes:
@@ -95,8 +96,8 @@ services:
       args:
         METABO_API_PORT: "47822"
     restart: unless-stopped
-    ports:
-      - "47821:80"
+    expose:
+      - "80"
     depends_on:
       api:
         condition: service_healthy

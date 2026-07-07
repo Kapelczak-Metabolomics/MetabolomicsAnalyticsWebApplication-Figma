@@ -1,3 +1,5 @@
+import { GROUP_COLORS, PLOT_PAD, PLOT_SIZE, formatTick, groupColor, linearScale, niceTicks, paddedDomain } from "./plot-theme";
+
 export interface PCAScore {
   sampleId: string;
   group: string;
@@ -10,71 +12,88 @@ interface PCAPlotProps {
   explainedVariance?: number[];
 }
 
-const GROUP_COLORS = ["#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444"];
+function PlotEmpty({ message }: { message: string }) {
+  return (
+    <div className="flex h-full min-h-[280px] items-center justify-center text-sm text-muted-foreground">
+      {message}
+    </div>
+  );
+}
 
 export function PCAPlot({ scores = [], explainedVariance = [] }: PCAPlotProps) {
-  const width = 600;
-  const height = 450;
-  const padding = { left: 60, right: 120, top: 40, bottom: 60 };
-  const plotWidth = width - padding.left - padding.right;
-  const plotHeight = height - padding.top - padding.bottom;
+  if (!scores.length) return <PlotEmpty message="Run analysis to generate PCA scores from your dataset" />;
 
-  if (!scores.length) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Run analysis to generate PCA scores from your dataset
-      </div>
-    );
-  }
+  const { width, height } = PLOT_SIZE;
+  const pad = PLOT_PAD;
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
 
   const groups = [...new Set(scores.map((s) => s.group))];
   const xs = scores.map((s) => s.PC1);
   const ys = scores.map((s) => s.PC2);
-  const xMin = Math.min(...xs) * 1.1;
-  const xMax = Math.max(...xs) * 1.1;
-  const yMin = Math.min(...ys) * 1.1;
-  const yMax = Math.max(...ys) * 1.1;
-
-  const xScale = (v: number) => ((v - xMin) / (xMax - xMin || 1)) * plotWidth;
-  const yScale = (v: number) => plotHeight - ((v - yMin) / (yMax - yMin || 1)) * plotHeight;
+  const [xMin, xMax] = paddedDomain(xs);
+  const [yMin, yMax] = paddedDomain(ys);
+  const xScale = linearScale([xMin, xMax], [0, plotW]);
+  const yScale = linearScale([yMin, yMax], [plotH, 0]);
+  const xTicks = niceTicks(xMin, xMax, 5);
+  const yTicks = niceTicks(yMin, yMax, 5);
 
   const pc1Var = explainedVariance[0] ?? 0;
   const pc2Var = explainedVariance[1] ?? 0;
+  const zeroX = xScale(0);
+  const zeroY = yScale(0);
+  const showZeroX = zeroX >= 0 && zeroX <= plotW;
+  const showZeroY = zeroY >= 0 && zeroY <= plotH;
 
   return (
-    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`}>
-      <g transform={`translate(${padding.left}, ${padding.top})`}>
+    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="PCA score plot">
+      <rect x={0} y={0} width={width} height={height} className="fill-card" />
+      <g transform={`translate(${pad.left}, ${pad.top})`}>
+        {yTicks.map((t) => (
+          <line key={`gy-${t}`} x1={0} y1={yScale(t)} x2={plotW} y2={yScale(t)} className="stroke-border/60" strokeWidth={1} />
+        ))}
+        {xTicks.map((t) => (
+          <line key={`gx-${t}`} x1={xScale(t)} y1={0} x2={xScale(t)} y2={plotH} className="stroke-border/60" strokeWidth={1} />
+        ))}
+        {showZeroX && <line x1={zeroX} y1={0} x2={zeroX} y2={plotH} className="stroke-muted-foreground/40" strokeDasharray="4 4" />}
+        {showZeroY && <line x1={0} y1={zeroY} x2={plotW} y2={zeroY} className="stroke-muted-foreground/40" strokeDasharray="4 4" />}
+
         {scores.map((d, i) => {
           const gi = groups.indexOf(d.group);
-          const color = GROUP_COLORS[gi % GROUP_COLORS.length];
+          const color = groupColor(gi);
           return (
-            <circle
-              key={i}
-              cx={xScale(d.PC1)}
-              cy={yScale(d.PC2)}
-              r="4"
-              fill={color}
-              opacity="0.75"
-              stroke={color}
-              strokeWidth="1"
-            />
+            <g key={`${d.sampleId}-${i}`}>
+              <circle cx={xScale(d.PC1)} cy={yScale(d.PC2)} r={7} fill={color} opacity={0.15} />
+              <circle cx={xScale(d.PC1)} cy={yScale(d.PC2)} r={4.5} fill={color} stroke="white" strokeWidth={1.25} opacity={0.9}>
+                <title>{`${d.sampleId} (${d.group})\nPC1: ${d.PC1}\nPC2: ${d.PC2}`}</title>
+              </circle>
+            </g>
           );
         })}
-        <line x1={0} y1={plotHeight} x2={plotWidth} y2={plotHeight} className="stroke-foreground" strokeWidth="2" />
-        <line x1={0} y1={0} x2={0} y2={plotHeight} className="stroke-foreground" strokeWidth="2" />
-        <text x={plotWidth / 2} y={plotHeight + 45} fontSize="13" textAnchor="middle" className="fill-foreground">
+
+        <line x1={0} y1={plotH} x2={plotW} y2={plotH} className="stroke-foreground/80" strokeWidth={1.5} />
+        <line x1={0} y1={0} x2={0} y2={plotH} className="stroke-foreground/80" strokeWidth={1.5} />
+        {xTicks.map((t) => (
+          <text key={`tx-${t}`} x={xScale(t)} y={plotH + 18} fontSize={11} textAnchor="middle" className="fill-muted-foreground">{formatTick(t)}</text>
+        ))}
+        {yTicks.map((t) => (
+          <text key={`ty-${t}`} x={-10} y={yScale(t) + 4} fontSize={11} textAnchor="end" className="fill-muted-foreground">{formatTick(t)}</text>
+        ))}
+        <text x={plotW / 2} y={plotH + 48} fontSize={13} fontWeight={500} textAnchor="middle" className="fill-foreground">
           PC1 ({pc1Var}% variance)
         </text>
-        <text x={-plotHeight / 2} y={-40} fontSize="13" textAnchor="middle" transform={`rotate(-90, ${-plotHeight / 2}, -40)`} className="fill-foreground">
+        <text x={-plotH / 2} y={-48} fontSize={13} fontWeight={500} textAnchor="middle" transform={`rotate(-90, ${-plotH / 2}, -48)`} className="fill-foreground">
           PC2 ({pc2Var}% variance)
         </text>
       </g>
-      <g transform={`translate(${width - padding.right - 100}, ${padding.top + 20})`}>
-        <rect x={-10} y={-10} width={110} height={20 + groups.length * 22} className="fill-background stroke-border" strokeWidth="1" rx="4" />
+
+      <g transform={`translate(${width - pad.right + 8}, ${pad.top})`}>
+        <rect x={0} y={0} width={120} height={24 + groups.length * 22} className="fill-card stroke-border" strokeWidth={1} rx={6} />
+        <text x={10} y={16} fontSize={10} fontWeight={600} className="fill-muted-foreground">Groups</text>
         {groups.map((g, i) => (
-          <g key={g} transform={`translate(0, ${i * 22})`}>
-            <circle cx={5} cy={10} r="4" fill={GROUP_COLORS[i % GROUP_COLORS.length]} />
-            <text x={15} y={13} fontSize="11" className="fill-foreground">
+          <g key={g} transform={`translate(10, ${20 + i * 22})`}>
+            <circle cx={6} cy={8} r={5} fill={GROUP_COLORS[i % GROUP_COLORS.length]} />
+            <text x={18} y={12} fontSize={11} className="fill-foreground">
               {g} (n={scores.filter((s) => s.group === g).length})
             </text>
           </g>

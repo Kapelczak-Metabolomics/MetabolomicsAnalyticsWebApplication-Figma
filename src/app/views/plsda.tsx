@@ -123,7 +123,7 @@ export function PLSDAView() {
               <h3 className="text-sm">Permutation Test</h3>
               <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PLS-DA" filename="plsda-permutation" plotContainerId="plot-plsda-permutation" />
             </div>
-            <ChartPlaceholder type="Model Validation" height="280px" exportId="plot-plsda-permutation" permScores={permScores} />
+            <ChartPlaceholder type="Model Validation" height="280px" exportId="plot-plsda-permutation" permScores={permScores} observedR2={r2} observedQ2={q2} />
           </div>
         </div>
       </div>

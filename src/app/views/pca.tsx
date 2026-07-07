@@ -7,7 +7,7 @@ import { AnalysisExportMenu } from "../components/analysis-export-menu";
 import { useAnalysisPage } from "../../hooks/use-analysis-page";
 import { useApp } from "../../contexts/app-context";
 import { pcaConfig } from "../../lib/analysis-config";
-import type { PCAScore } from "../components/plots/pca-plot";
+import { GROUP_COLORS } from "../components/plots/plot-theme";
 
 const pcaStages = [
   "Loading dataset into memory",
@@ -104,7 +104,7 @@ export function PCAView() {
           <div className="space-y-1.5">
             {Object.entries(groupCounts).map(([group, count], i) => (
               <div key={group} className="flex items-center gap-2 text-xs">
-                <div className={`h-2.5 w-2.5 rounded-full bg-chart-${(i % 5) + 1}`} />
+                <div className={`h-2.5 w-2.5 rounded-full`} style={{ backgroundColor: GROUP_COLORS[i % GROUP_COLORS.length] }} />
                 <span>{group} (n={count})</span>
               </div>
             ))}

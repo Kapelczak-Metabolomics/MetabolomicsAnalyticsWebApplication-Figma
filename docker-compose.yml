@@ -45,6 +45,7 @@ services:
       PYTHON_SERVICE_URL: http://python:47824
       USE_PYTHON_ANALYSIS: "true"
       RAW_DATA_DIR: /data/raw
+      APP_URL: ${APP_URL:-http://localhost:47821}
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
     ports:
       - "${METABO_API_PORT:-47822}:${METABO_API_PORT:-47822}"
