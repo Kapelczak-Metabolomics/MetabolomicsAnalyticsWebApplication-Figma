@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import {
   Search, Filter, Download, ChevronDown, CheckCircle2,
-  Loader2, AlertCircle, Clock, User, Database, RefreshCw,
+  Loader2, AlertCircle, Clock, User, Database, RefreshCw, Trash2,
 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
@@ -75,6 +75,17 @@ export function AdminRuns() {
       }))))
       .catch(console.error)
       .finally(() => setLoading(false));
+  }
+
+  function deleteRun(run: Run) {
+    const numericId = parseInt(String(run.id).replace(/^r/, ""), 10);
+    if (!window.confirm(`Delete analysis run "${run.name}" by ${run.user}? This cannot be undone.`)) return;
+    api.admin.deleteRun(numericId)
+      .then(() => {
+        setRuns((prev) => prev.filter((r) => r.id !== run.id));
+        toast.success(`"${run.name}" deleted`);
+      })
+      .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to delete run"));
   }
 
   useEffect(() => { loadRuns(); }, []);
@@ -290,6 +301,11 @@ export function AdminRuns() {
                                 </DropdownMenu.Item>
                               </>
                             )}
+                            <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                            <DropdownMenu.Item className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-destructive/10 text-destructive"
+                              onSelect={() => deleteRun(run)}>
+                              <span className="flex items-center gap-2"><Trash2 className="h-3.5 w-3.5" /> Delete Run</span>
+                            </DropdownMenu.Item>
                           </DropdownMenu.Content>
                         </DropdownMenu.Portal>
                       </DropdownMenu.Root>

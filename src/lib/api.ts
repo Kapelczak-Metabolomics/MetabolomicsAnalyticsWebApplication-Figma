@@ -132,11 +132,13 @@ export const api = {
   },
 
   getExperiments: (projectId?: number) =>
-    request<Array<{ id: string; name: string; project: string; type: string; created: string; status: string }>>(
+    request<Array<{ id: string; name: string; project: string; type: string; created: string; status: string; userId?: number | null; canDelete?: boolean }>>(
       `/experiments${projectId ? `?projectId=${projectId}` : ""}`
     ),
 
   getExperiment: (id: number) => request<Record<string, unknown>>(`/experiments/${id}`),
+
+  deleteExperiment: (id: number) => request<{ success: boolean }>(`/experiments/${id}`, { method: "DELETE" }),
 
   cancelExperiment: (id: number) => request<{ success: boolean }>(`/experiments/${id}/cancel`, { method: "POST" }),
 
@@ -281,6 +283,7 @@ export const api = {
     deleteUser: (id: number) => request<{ success: boolean }>(`/admin/users/${id}`, { method: "DELETE" }),
     resetUserPassword: (id: number) => request<{ success: boolean }>(`/admin/users/${id}/reset-password`, { method: "POST" }),
     getRuns: () => request<Array<Record<string, unknown>>>("/admin/runs"),
+    deleteRun: (id: number) => request<{ success: boolean }>(`/admin/runs/${id}`, { method: "DELETE" }),
     getLogs: (since?: string) => request<{ counts: Record<string, number>; logs: Array<Record<string, unknown>> }>(`/admin/logs${since ? `?since=${since}` : ""}`),
     getAudit: () => request<Array<Record<string, unknown>>>("/admin/audit"),
     getSystem: () => request<Record<string, unknown>>("/admin/system"),

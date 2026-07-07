@@ -60,9 +60,9 @@ router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
   );
 
   const experiments = await query<{
-    id: number; name: string; type: string; status: string; created_at: Date;
+    id: number; name: string; type: string; status: string; created_at: Date; user_id: number | null;
   }>(
-    `SELECT id, name, type, status, created_at FROM experiments WHERE project_id = $1 ORDER BY created_at DESC LIMIT 10`,
+    `SELECT id, name, type, status, created_at, user_id FROM experiments WHERE project_id = $1 ORDER BY created_at DESC LIMIT 50`,
     [id]
   );
 
@@ -102,6 +102,7 @@ router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
       type: e.type,
       status: e.status,
       created: formatRelativeTime(e.created_at),
+      userId: e.user_id,
     })),
     members: [
       ...(owner.rows[0] ? [{ id: 0, name: owner.rows[0].name, email: owner.rows[0].email, role: "Owner", status: "active", joined: "Project start" }] : []),

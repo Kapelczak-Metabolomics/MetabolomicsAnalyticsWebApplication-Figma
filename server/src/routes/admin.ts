@@ -175,6 +175,34 @@ router.get("/runs", async (_req: Request, res: Response) => {
   );
 });
 
+router.delete("/runs/:id", async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params.id).replace(/^r/, ""), 10);
+  if (!id || Number.isNaN(id)) {
+    res.status(400).json({ error: "Invalid run id" });
+    return;
+  }
+
+  const exp = await query<{ id: number; name: string; type: string; status: string }>(
+    "SELECT id, name, type, status FROM experiments WHERE id = $1",
+    [id]
+  );
+  if (!exp.rows[0]) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+
+  await query("DELETE FROM experiments WHERE id = $1", [id]);
+  await logAudit(
+    req.user,
+    "DELETE_RUN",
+    "admin",
+    `Experiment: ${exp.rows[0].name}`,
+    `Admin deleted ${exp.rows[0].type} run #${id} (${exp.rows[0].status})`,
+    req
+  );
+  res.json({ success: true });
+});
+
 router.get("/logs", async (req: Request, res: Response) => {
   const since = req.query.since as string | undefined;
   const params: unknown[] = [];
