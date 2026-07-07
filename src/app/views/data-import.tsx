@@ -11,7 +11,7 @@ import {
   Dna,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "../../lib/api";
+import { api, ApiError } from "../../lib/api";
 import {
   type ColumnRole,
   type ParsedTable,
@@ -40,6 +40,8 @@ export function DataImportView() {
   const [mzxmlFiles, setMzxmlFiles] = useState<File[]>([]);
   const [mzxmlSamples, setMzxmlSamples] = useState<MzxmlSampleRow[]>([]);
   const [mzxmlPreviewLoading, setMzxmlPreviewLoading] = useState(false);
+  const [mzxmlPreviewWarning, setMzxmlPreviewWarning] = useState<string | null>(null);
+  const [pythonReady, setPythonReady] = useState<boolean | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [importing, setImporting] = useState(false);
   const [polling, setPolling] = useState(false);
@@ -62,6 +64,13 @@ export function DataImportView() {
       })
       .catch(() => toast.error("Failed to load projects"));
   }, []);
+
+  useEffect(() => {
+    if (format !== "mzxml") return;
+    api.getHealth()
+      .then((h) => setPythonReady(Boolean(h.python)))
+      .catch(() => setPythonReady(false));
+  }, [format]);
 
   const table: ParsedTable = useMemo(() => parseDelimitedTable(csvContent), [csvContent]);
 
@@ -121,6 +130,7 @@ export function DataImportView() {
     setMzxmlFiles([]);
     setMzxmlSamples([]);
     setGroupMappings({});
+    setMzxmlPreviewWarning(null);
     setColumnRoles({});
     setSampleGroups({});
     setCustomGroups([]);
@@ -155,6 +165,7 @@ export function DataImportView() {
 
   async function loadMzxmlPreview(files: File[]) {
     setMzxmlPreviewLoading(true);
+    setMzxmlPreviewWarning(null);
     try {
       const preview = await api.previewMzxml(files);
       const samples = preview.samples.length
@@ -174,7 +185,9 @@ export function DataImportView() {
       setGroupMappings(mappings);
       setStep(1);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to read mzXML files");
+      const message = e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Failed to read mzXML files";
+      setMzxmlPreviewWarning(message);
+      toast.error(message);
       const fallback = files.map((f) => ({
         filename: f.name,
         sampleId: f.name.replace(/\.(mzxml|xml|zip)$/i, ""),
@@ -308,7 +321,8 @@ export function DataImportView() {
         await pollImportStatus(id);
       }
     } catch (e) {
-      toast.error(e instanceof Error && e.message.trim() ? e.message : "Import failed");
+      const message = e instanceof ApiError ? e.message : e instanceof Error && e.message.trim() ? e.message : "Import failed";
+      toast.error(message);
     } finally {
       setImporting(false);
       setPolling(false);
@@ -376,7 +390,12 @@ export function DataImportView() {
                 <>
                   <Dna className="mx-auto h-10 w-10 text-muted-foreground mb-4" />
                   <h3 className="text-sm font-medium">Drop mzXML file(s) or a ZIP archive</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Each file = one sample. MS1 spectra are binned by m/z into features.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Each file = one sample. MS1 spectra are binned by m/z into features (up to 500 MB per file).</p>
+                  {pythonReady === false && (
+                    <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                      Python analysis service is offline — mzXML import will fail until it is running.
+                    </p>
+                  )}
                 </>
               )}
               <label className="mt-4 inline-flex cursor-pointer rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground hover:bg-primary/90">
@@ -535,6 +554,12 @@ export function DataImportView() {
 
         {format === "mzxml" && step === 1 && (
           <div className="space-y-4">
+            {mzxmlPreviewWarning && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-400">
+                <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                <span>Preview could not read spectra: {mzxmlPreviewWarning}. Sample names were taken from filenames — import may still work if the Python service can parse your files.</span>
+              </div>
+            )}
             <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-700 dark:text-emerald-400">
               {mzxmlPreviewLoading ? (
                 <><Loader2 className="h-4 w-4 animate-spin" /> Reading mzXML files...</>
@@ -614,16 +639,23 @@ export function DataImportView() {
                 </select>
               </div>
               {format === "mzxml" && (
-                <p className="text-xs text-muted-foreground">
-                  Import runs on the Python analysis service (pymzML). Large files may take several minutes.
-                </p>
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Import runs on the Python analysis service (pymzML). Large files may take several minutes.
+                  </p>
+                  {pythonReady === false && (
+                    <p className="text-xs text-destructive">
+                      Python service is not reachable — fix the python container before importing.
+                    </p>
+                  )}
+                </>
               )}
             </div>
             <div className="flex justify-between">
               <button onClick={() => setStep(step - 1)} className="flex items-center gap-1.5 rounded-md border border-border px-4 py-2 text-xs hover:bg-accent">
                 <ArrowLeft className="h-3.5 w-3.5" /> Back
               </button>
-              <button onClick={handleImport} disabled={importing || polling || !projectId} className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-violet-500 to-cyan-500 px-5 py-2 text-xs font-medium text-white disabled:opacity-50">
+              <button onClick={handleImport} disabled={importing || polling || !projectId || (format === "mzxml" && pythonReady === false)} className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-violet-500 to-cyan-500 px-5 py-2 text-xs font-medium text-white disabled:opacity-50">
                 {(importing || polling) ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> {polling ? "Processing mzXML..." : "Importing..."}</> : <><Upload className="h-3.5 w-3.5" /> Import Dataset</>}
               </button>
             </div>

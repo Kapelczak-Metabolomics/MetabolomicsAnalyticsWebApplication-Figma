@@ -24,6 +24,33 @@ function formatApiError(body: unknown, fallback: string): string {
   return fallback;
 }
 
+function httpStatusFallback(status: number): string {
+  if (status === 413) return "File too large — maximum upload size is 500 MB";
+  if (status === 401) return "Not signed in — please log in and try again";
+  if (status === 502) return "API server unreachable";
+  if (status === 503) return "Analysis service unavailable";
+  if (status === 504) return "Upload timed out — try fewer or smaller files";
+  return "Request failed";
+}
+
+async function parseErrorResponse(res: Response): Promise<string> {
+  const text = await res.text().catch(() => "");
+  if (text) {
+    try {
+      const body = JSON.parse(text) as unknown;
+      const msg = formatApiError(body, "");
+      if (msg) return msg;
+    } catch {
+      if (text.includes("413") || text.toLowerCase().includes("too large")) {
+        return "File too large — maximum upload size is 500 MB";
+      }
+      const trimmed = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      if (trimmed.length > 0 && trimmed.length < 300) return trimmed;
+    }
+  }
+  return httpStatusFallback(res.status) || res.statusText || "Request failed";
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -47,6 +74,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
+
+  getHealth: () => request<{ status: string; python: boolean }>("/health"),
 
   forgotPassword: (email: string) =>
     request<{ success: boolean; message: string }>("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
@@ -153,8 +182,7 @@ export const api = {
       body: form,
     });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: res.statusText }));
-      throw new ApiError(res.status, formatApiError(body, res.statusText || "Request failed"));
+      throw new ApiError(res.status, await parseErrorResponse(res));
     }
     return res.json() as Promise<{ samples: Array<{ filename: string; sampleId: string }> }>;
   },
@@ -172,8 +200,7 @@ export const api = {
       body: form,
     });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: res.statusText }));
-      throw new ApiError(res.status, formatApiError(body, res.statusText || "Request failed"));
+      throw new ApiError(res.status, await parseErrorResponse(res));
     }
     return res.json() as Promise<{ id: number; status: string; message: string }>;
   },
