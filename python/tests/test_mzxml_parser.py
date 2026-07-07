@@ -1,0 +1,64 @@
+import base64
+import os
+import struct
+import tempfile
+import unittest
+
+from app.mzxml_parser import _extract_ms1_bins, parse_mzxml_files
+
+
+FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
+
+
+def _encode_peaks(pairs: list[tuple[float, float]], precision: str = "32", little: bool = True) -> str:
+    fmt = ("<" if little else ">") + ("dd" if precision == "64" else "ff")
+    raw = b"".join(struct.pack(fmt, mz, intensity) for mz, intensity in pairs)
+    return base64.b64encode(raw).decode("ascii")
+
+
+class MzxmlParserTests(unittest.TestCase):
+    def test_minimal_fixture(self):
+        path = os.path.join(FIXTURES, "minimal.mzXML")
+        bins = _extract_ms1_bins(path)
+        self.assertTrue(bins)
+
+    def test_legacy_scan_peaks_little_endian(self):
+        peaks = _encode_peaks([(100.0, 1000.0), (200.0, 500.0)], little=True)
+        xml = f"""<?xml version="1.0"?>
+<mzXML>
+  <msRun scanCount="1">
+    <scan num="1" msLevel="1" peaksCount="2">
+      <peaks precision="32" byteOrder="little" contentType="raw">{peaks}</peaks>
+    </scan>
+  </msRun>
+</mzXML>"""
+        with tempfile.NamedTemporaryFile("w", suffix=".mzXML", delete=False) as f:
+            f.write(xml)
+            path = f.name
+        try:
+            bins = _extract_ms1_bins(path)
+            self.assertIn(100.0, bins)
+            self.assertIn(200.0, bins)
+            self.assertEqual(bins[100.0], 1000.0)
+        finally:
+            os.unlink(path)
+
+    def test_rejects_html_upload(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".mzXML", delete=False) as f:
+            f.write("<!DOCTYPE html><html><body>Service is not reachable</body></html>")
+            path = f.name
+        try:
+            with self.assertRaisesRegex(ValueError, "HTML error page"):
+                _extract_ms1_bins(path)
+        finally:
+            os.unlink(path)
+
+    def test_parse_multiple_samples(self):
+        path = os.path.join(FIXTURES, "minimal.mzXML")
+        result = parse_mzxml_files([path])
+        self.assertEqual(result["samplesCount"], 1)
+        self.assertGreaterEqual(result["featuresCount"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

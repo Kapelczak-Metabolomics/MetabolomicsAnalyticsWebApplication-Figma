@@ -10,6 +10,7 @@ import struct
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 from collections import defaultdict
 from typing import Any
 
@@ -28,6 +29,248 @@ def _round_mz(mz: float, decimals: int = 2) -> float:
 def _sample_id_from_filename(filename: str) -> str:
     base = os.path.basename(filename)
     return re.sub(r"\.(mzxml|mzml|xml)$", "", base, flags=re.IGNORECASE)
+
+
+def _local_tag(tag: str) -> str:
+    return tag.split("}")[-1] if "}" in tag else tag
+
+
+def _sniff_file_kind(path: str) -> str:
+    with open(path, "rb") as f:
+        head = f.read(4096).decode("utf-8", errors="ignore").lower()
+    if head.lstrip().startswith("<!doctype") or "<html" in head:
+        return "html"
+    if "<mzml" in head:
+        return "mzml"
+    if "<mzxml" in head:
+        return "mzxml"
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".mzxml", ".xml"):
+        return "mzxml"
+    if ext == ".mzml":
+        return "mzml"
+    return "unknown"
+
+
+def _validate_ms_file(path: str) -> None:
+    kind = _sniff_file_kind(path)
+    if kind == "html":
+        raise ValueError(
+            "Uploaded file is not mzXML — received an HTML error page instead of spectra data. "
+            "Re-upload the file and confirm the Python service stays healthy during import."
+        )
+
+
+def _struct_fmt(precision: str, byte_order: str) -> str:
+    endian = ">" if byte_order in ("network", "big", "") else "<"
+    return f"{endian}dd" if precision == "64" else f"{endian}ff"
+
+
+def _decode_mzxml_peaks(
+    text: str,
+    precision: str = "32",
+    byte_order: str = "network",
+    compression: str = "none",
+) -> tuple[list[float], list[float]]:
+    raw = base64.b64decode(text.strip())
+    if compression.lower() in ("zlib", "gzip"):
+        raw = zlib.decompress(raw)
+    fmt = _struct_fmt(precision, byte_order)
+    step = 16 if precision == "64" else 8
+    mzs: list[float] = []
+    intensities: list[float] = []
+    for offset in range(0, len(raw) - step + 1, step):
+        mz, intensity = struct.unpack_from(fmt, raw, offset)
+        mzs.append(float(mz))
+        intensities.append(float(intensity))
+    return mzs, intensities
+
+
+def _accumulate_bins(
+    bins: dict[float, float],
+    mzs: list[float],
+    intensities: list[float],
+    mz_decimals: int,
+) -> None:
+    for mz, intensity in zip(mzs, intensities, strict=False):
+        if intensity and float(intensity) > 0:
+            bins[_round_mz(float(mz), mz_decimals)] += float(intensity)
+
+
+def _ms_level_from_element(elem: ET.Element) -> int:
+    for attr in ("msLevel", "ms_level", "level"):
+        value = elem.get(attr)
+        if value is not None and str(value).strip().isdigit():
+            return int(value)
+    for child in elem.iter():
+        tag = _local_tag(child.tag)
+        if tag in ("msLevel", "ms_level") and child.text and child.text.strip().isdigit():
+            return int(child.text.strip())
+        if tag == "cvParam":
+            name = (child.get("name") or "").lower()
+            if name == "ms level" and child.get("value", "").strip().isdigit():
+                return int(child.get("value", "1"))
+    return 1
+
+
+def _binary_array_kind(array_elem: ET.Element) -> str | None:
+    for child in array_elem.iter():
+        if _local_tag(child.tag) != "cvParam":
+            continue
+        name = (child.get("name") or "").lower()
+        if "m/z array" in name or name == "mass-to-charge ratio array":
+            return "mz"
+        if "intensity array" in name:
+            return "intensity"
+    return None
+
+
+def _decode_mzml_binary(text: str, precision_bits: int = 64) -> list[float]:
+    raw = base64.b64decode(text.strip())
+    if precision_bits >= 64:
+        return [float(v) for v in struct.unpack(f">{len(raw) // 8}d", raw)]
+    return [float(v) for v in struct.unpack(f">{len(raw) // 4}f", raw)]
+
+
+def _extract_peaks_from_spectrum(
+    spectrum: ET.Element,
+    bins: dict[float, float],
+    mz_decimals: int,
+) -> None:
+    peaks_b64 = spectrum.get("peaksBase64")
+    if peaks_b64:
+        precision = spectrum.get("precision", "32")
+        byte_order = spectrum.get("byteOrder", "network")
+        mzs, intensities = _decode_mzxml_peaks(peaks_b64, precision, byte_order)
+        _accumulate_bins(bins, mzs, intensities, mz_decimals)
+
+    mz_array: list[float] | None = None
+    intensity_array: list[float] | None = None
+
+    for child in spectrum.iter():
+        tag = _local_tag(child.tag)
+        if tag in ("mzXMLPeaks", "peaks") and child.text and child.text.strip():
+            precision = child.get("precision", "32")
+            byte_order = child.get("byteOrder", child.get("byteorder", "network"))
+            compression = child.get("compressionType", child.get("compression", "none"))
+            mzs, intensities = _decode_mzxml_peaks(child.text, precision, byte_order, compression)
+            _accumulate_bins(bins, mzs, intensities, mz_decimals)
+            continue
+        if tag == "binaryDataArray":
+            kind = _binary_array_kind(child)
+            binary_elem = next((c for c in child if _local_tag(c.tag) == "binary"), None)
+            if kind and binary_elem is not None and binary_elem.text:
+                values = _decode_mzml_binary(binary_elem.text)
+                if kind == "mz":
+                    mz_array = values
+                else:
+                    intensity_array = values
+
+    if mz_array and intensity_array:
+        _accumulate_bins(bins, mz_array, intensity_array, mz_decimals)
+
+
+def _extract_ms1_bins_xml(path: str, mz_decimals: int = 2) -> dict[float, float]:
+    """Parse inline spectrum/scan peak data from mzXML or mzML."""
+    bins: dict[float, float] = defaultdict(float)
+    root = ET.parse(path).getroot()
+
+    for spectrum in root.iter():
+        tag = _local_tag(spectrum.tag)
+        if tag not in ("spectrum", "scan"):
+            continue
+        if _ms_level_from_element(spectrum) != 1:
+            continue
+        _extract_peaks_from_spectrum(spectrum, bins, mz_decimals)
+
+    return dict(bins)
+
+
+def _extract_ms1_bins_indexed(path: str, mz_decimals: int = 2) -> dict[float, float]:
+    """Read peak data from indexed mzXML files (ProteoWizard / msconvert)."""
+    with open(path, "rb") as f:
+        data = f.read()
+
+    index_match = re.search(
+        rb"<index\b[^>]*\bname=[\"'](?:scan|spectrum)[\"'][^>]*>(.*?)</index>",
+        data,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if not index_match:
+        return {}
+
+    offsets = re.findall(
+        rb"<offset\b[^>]*\bid=[\"']([^\"']*)[\"'][^>]*>(\d+)</offset>",
+        index_match.group(1),
+        flags=re.IGNORECASE,
+    )
+    if not offsets:
+        return {}
+
+    bins: dict[float, float] = defaultdict(float)
+    peaks_re = re.compile(
+        rb"<(?:peaks|mzXMLPeaks)\b([^>]*)>([^<]+)</(?:peaks|mzXMLPeaks)>",
+        flags=re.IGNORECASE,
+    )
+
+    with open(path, "rb") as f:
+        for _scan_id, offset_raw in offsets:
+            offset = int(offset_raw)
+            f.seek(offset)
+            chunk = f.read(256 * 1024)
+            if not chunk:
+                continue
+            if b'msLevel="1"' not in chunk and b"msLevel='1'" not in chunk and b"<msLevel>1</msLevel>" not in chunk:
+                continue
+            text = chunk.decode("utf-8", errors="ignore")
+            try:
+                elem = ET.fromstring(text[: text.rfind(">") + 1])
+            except ET.ParseError:
+                continue
+            if _ms_level_from_element(elem) != 1:
+                continue
+            _extract_peaks_from_spectrum(elem, bins, mz_decimals)
+            if not bins:
+                for attrs_raw, payload in peaks_re.findall(chunk):
+                    attrs = attrs_raw.decode("utf-8", errors="ignore")
+                    precision = "64" if 'precision="64"' in attrs or "precision='64'" in attrs else "32"
+                    byte_order = "little" if "little" in attrs.lower() else "network"
+                    compression = "zlib" if "zlib" in attrs.lower() else "none"
+                    mzs, intensities = _decode_mzxml_peaks(
+                        payload.decode("utf-8", errors="ignore"),
+                        precision,
+                        byte_order,
+                        compression,
+                    )
+                    _accumulate_bins(bins, mzs, intensities, mz_decimals)
+
+    return dict(bins)
+
+
+def _extract_ms1_bins_raw(path: str, mz_decimals: int = 2) -> dict[float, float]:
+    """Last-resort scan for MS1 peak blocks anywhere in the file."""
+    with open(path, "rb") as f:
+        data = f.read().decode("utf-8", errors="ignore")
+
+    bins: dict[float, float] = defaultdict(float)
+    block_re = re.compile(
+        r"<(?:scan|spectrum)\b[^>]*\bmsLevel=[\"']?1[\"']?[^>]*>.*?</(?:scan|spectrum)>",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    peaks_re = re.compile(
+        r"<(?:peaks|mzXMLPeaks)\b([^>]*)>([^<]+)</(?:peaks|mzXMLPeaks)>",
+        flags=re.IGNORECASE,
+    )
+
+    for block in block_re.findall(data):
+        for attrs, payload in peaks_re.findall(block):
+            precision = "64" if 'precision="64"' in attrs or "precision='64'" in attrs else "32"
+            byte_order = "little" if "little" in attrs.lower() else "network"
+            compression = "zlib" if "zlib" in attrs.lower() else "none"
+            mzs, intensities = _decode_mzxml_peaks(payload, precision, byte_order, compression)
+            _accumulate_bins(bins, mzs, intensities, mz_decimals)
+
+    return dict(bins)
 
 
 def _spectrum_ms_level(spectrum: Any) -> int:
@@ -60,55 +303,6 @@ def _spectrum_peaks(spectrum: Any) -> tuple[Any, Any]:
     return None, None
 
 
-def _local_tag(tag: str) -> str:
-    return tag.split("}")[-1] if "}" in tag else tag
-
-
-def _decode_mzxml_peaks(text: str, precision: str = "32") -> tuple[list[float], list[float]]:
-    raw = base64.b64decode(text.strip())
-    fmt = ">ff" if precision == "32" else ">dd"
-    step = 8 if precision == "32" else 16
-    mzs: list[float] = []
-    intensities: list[float] = []
-    for offset in range(0, len(raw) - step + 1, step):
-        mz, intensity = struct.unpack_from(fmt, raw, offset)
-        mzs.append(float(mz))
-        intensities.append(float(intensity))
-    return mzs, intensities
-
-
-def _extract_ms1_bins_xml(path: str, mz_decimals: int = 2) -> dict[float, float]:
-    """Fallback mzXML parser using ElementTree (handles namespaced mzXML 3.x)."""
-    bins: dict[float, float] = defaultdict(float)
-    root = ET.parse(path).getroot()
-
-    for spectrum in root.iter():
-        tag = _local_tag(spectrum.tag)
-        if tag not in ("spectrum", "scan"):
-            continue
-        ms_level = (
-            spectrum.get("msLevel")
-            or spectrum.get("ms_level")
-            or spectrum.get("level")
-            or "1"
-        )
-        if int(ms_level) != 1:
-            continue
-        for child in spectrum:
-            child_tag = _local_tag(child.tag)
-            if child_tag not in ("mzXMLPeaks", "peaks"):
-                continue
-            precision = child.get("precision", "32")
-            if not child.text:
-                continue
-            mzs, intensities = _decode_mzxml_peaks(child.text, precision)
-            for mz, intensity in zip(mzs, intensities, strict=False):
-                if intensity and float(intensity) > 0:
-                    bins[_round_mz(float(mz), mz_decimals)] += float(intensity)
-
-    return dict(bins)
-
-
 def _extract_ms1_bins_pymzml(path: str, mz_decimals: int = 2) -> dict[float, float]:
     if pymzml is None:
         raise RuntimeError("pymzML is not installed")
@@ -132,20 +326,26 @@ def _extract_ms1_bins_pymzml(path: str, mz_decimals: int = 2) -> dict[float, flo
 
 def _extract_ms1_bins(path: str, mz_decimals: int = 2) -> dict[float, float]:
     """Sum intensities per rounded m/z from MS1 spectra in one mzXML/mzML file."""
+    _validate_ms_file(path)
+    kind = _sniff_file_kind(path)
+    is_mzxml_family = kind in ("mzxml", "unknown")
     errors: list[str] = []
-    is_mzxml = path.lower().endswith((".mzxml", ".xml"))
 
-    # Prefer native XML parsing for mzXML — pymzML often mis-handles mzXML structure
-    if is_mzxml:
+    for label, extractor in (
+        ("XML", _extract_ms1_bins_xml),
+        ("indexed", _extract_ms1_bins_indexed),
+        ("raw", _extract_ms1_bins_raw),
+    ):
         try:
-            bins = _extract_ms1_bins_xml(path, mz_decimals)
+            bins = extractor(path, mz_decimals)
             if bins:
                 return bins
-            errors.append("XML: no MS1 peaks found")
+            errors.append(f"{label}: no MS1 peaks found")
         except Exception as exc:
-            errors.append(f"XML: {exc}")
+            errors.append(f"{label}: {exc}")
 
-    if pymzml is not None:
+    # pymzML is unreliable for mzXML (raises 'str' object has no attribute 'tag')
+    if not is_mzxml_family and pymzml is not None:
         try:
             bins = _extract_ms1_bins_pymzml(path, mz_decimals)
             if bins:
@@ -153,15 +353,6 @@ def _extract_ms1_bins(path: str, mz_decimals: int = 2) -> dict[float, float]:
             errors.append("pymzML: no MS1 peaks found")
         except Exception as exc:
             errors.append(f"pymzML: {exc}")
-
-    if not is_mzxml:
-        try:
-            bins = _extract_ms1_bins_xml(path, mz_decimals)
-            if bins:
-                return bins
-            errors.append("XML: no MS1 peaks found")
-        except Exception as exc:
-            errors.append(f"XML: {exc}")
 
     detail = "; ".join(errors) if errors else "no MS1 peaks found"
     raise ValueError(f"Could not parse mzXML ({detail})")
@@ -286,7 +477,6 @@ def materialize_uploads(uploads: list[tuple[str, bytes]], work_dir: str | None =
                 f.write(content)
             paths.append(out_path)
 
-    # Deduplicate while preserving order
     seen: set[str] = set()
     unique_paths: list[str] = []
     for p in paths:
