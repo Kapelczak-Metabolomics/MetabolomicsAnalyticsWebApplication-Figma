@@ -13,7 +13,7 @@ export const pcaConfig = [
   {
     title: "Display",
     fields: [
-      { key: "showGroupEllipses", label: "Show group confidence ellipses (95%)", type: "checkbox" as const, value: true, description: "Draw grouping circles around each sample group on the score plot" },
+      { key: "showGroupEllipses", label: "Show group confidence circles (95%)", type: "checkbox" as const, value: true, description: "Draw filled circles around each sample group on the score plot" },
     ],
   },
 ];
@@ -80,7 +80,7 @@ export const plsdaConfig = [
   {
     title: "Display",
     fields: [
-      { key: "showGroupEllipses", label: "Show group confidence regions (95%)", type: "checkbox" as const, value: true, description: "Draw filled grouping regions around each class on the score plot" },
+      { key: "showGroupEllipses", label: "Show group confidence circles (95%)", type: "checkbox" as const, value: true, description: "Draw filled circles around each class on the score plot" },
     ],
   },
 ];

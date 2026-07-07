@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { Data, Layout, Shape } from "plotly.js-dist-min";
 import { PlotlyChart } from "./plotly-chart";
 import { PlotEmpty } from "./plotly-utils";
+import { placeVolcanoLabels } from "./volcano-labels";
 
 export interface VolcanoPoint {
   log2fc: number;
@@ -18,18 +19,16 @@ interface VolcanoPlotProps {
   labelTopN?: number;
 }
 
-function selectLabelIndices(
+function selectLabeledFeatures(
   features: VolcanoPoint[],
   pThreshold: number,
   fcThreshold: number,
   topN: number,
-): Set<number> {
-  const significant = features
-    .map((f, i) => ({ i, f }))
-    .filter(({ f }) => f.pValue < pThreshold && Math.abs(f.log2fc) > fcThreshold)
-    .sort((a, b) => a.f.pValue - b.f.pValue)
+): VolcanoPoint[] {
+  return features
+    .filter((f) => f.pValue < pThreshold && Math.abs(f.log2fc) > fcThreshold)
+    .sort((a, b) => a.pValue - b.pValue)
     .slice(0, topN);
-  return new Set(significant.map((s) => s.i));
 }
 
 export function VolcanoPlot({
@@ -41,10 +40,6 @@ export function VolcanoPlot({
 }: VolcanoPlotProps) {
   const plot = useMemo(() => {
     if (!features.length) return null;
-
-    const labelSet = showLabels
-      ? selectLabelIndices(features, pThreshold, fcThreshold, labelTopN)
-      : new Set<number>();
 
     const ns: VolcanoPoint[] = [];
     const up: VolcanoPoint[] = [];
@@ -90,37 +85,60 @@ export function VolcanoPlot({
       },
     ];
 
-    if (showLabels && labelSet.size > 0) {
-      const labeled = features.filter((_, i) => labelSet.has(i));
-      traces.push({
-        type: "scatter",
-        mode: "text",
-        name: "Labels",
-        x: labeled.map((f) => f.log2fc),
-        y: labeled.map((f) => f.negLogP),
-        text: labeled.map((f) => f.name ?? ""),
-        textposition: "top center",
-        textfont: { size: 10, color: "#334155" },
-        hoverinfo: "skip",
-        showlegend: false,
-      });
-    }
-
     const pLine = -Math.log10(pThreshold);
-    const yMax = Math.max(...features.map((f) => f.negLogP), pLine, 1) * 1.08;
-    const xMaxAbs = Math.max(...features.map((f) => Math.abs(f.log2fc)), fcThreshold) * 1.12;
+    const yMax = Math.max(...features.map((f) => f.negLogP), pLine, 1) * 1.12;
+    const xMaxAbs = Math.max(...features.map((f) => Math.abs(f.log2fc)), fcThreshold) * 1.15;
+
+    const labelAnnotations = showLabels
+      ? placeVolcanoLabels(
+          selectLabeledFeatures(features, pThreshold, fcThreshold, labelTopN).map((f) => ({
+            log2fc: f.log2fc,
+            negLogP: f.negLogP,
+            name: f.name ?? "Feature",
+          })),
+          xMaxAbs,
+          yMax,
+        )
+      : [];
+
+    const labelYMax = labelAnnotations.length
+      ? Math.max(...labelAnnotations.map((l) => l.ay), yMax)
+      : yMax;
+    const plotYMax = labelYMax * 1.06;
 
     const shapes: Partial<Shape>[] = [
-      { type: "line", x0: -fcThreshold, x1: -fcThreshold, y0: 0, y1: yMax, line: { color: "#0891b2", width: 1.5, dash: "dash" } },
-      { type: "line", x0: fcThreshold, x1: fcThreshold, y0: 0, y1: yMax, line: { color: "#dc2626", width: 1.5, dash: "dash" } },
-      { type: "line", x0: -xMaxAbs, x1: xMaxAbs, y0: pLine, y1: pLine, line: { color: "#64748b", width: 1.5, dash: "dash" } },
-      { type: "line", x0: 0, x1: 0, y0: 0, y1: yMax, line: { color: "#cbd5e1", width: 1 } },
+      { type: "line", x0: -fcThreshold, x1: -fcThreshold, y0: 0, y1: plotYMax, line: { color: "#0891b2", width: 1.5, dash: "dash" } },
+      { type: "line", x0: fcThreshold, x1: fcThreshold, y0: 0, y1: plotYMax, line: { color: "#dc2626", width: 1.5, dash: "dash" } },
+      { type: "line", x0: -xMaxAbs, x1: xMaxAbs, y0: pLine, y1: plotYMax, line: { color: "#64748b", width: 1.5, dash: "dash" } },
+      { type: "line", x0: 0, x1: 0, y0: 0, y1: plotYMax, line: { color: "#cbd5e1", width: 1 } },
     ];
+
+    const annotationLayouts = labelAnnotations.map((l) => ({
+          x: l.pointX,
+          y: l.pointY,
+          ax: l.ax,
+          ay: l.ay,
+          xref: "x" as const,
+          yref: "y" as const,
+          axref: "x" as const,
+          ayref: "y" as const,
+          text: l.text,
+          showarrow: true,
+          arrowhead: 2,
+          arrowsize: 0.65,
+          arrowwidth: 1,
+          arrowcolor: "#64748b",
+          font: { size: 10, color: "#1e293b" },
+          bgcolor: "rgba(255,255,255,0.88)",
+          bordercolor: "#cbd5e1",
+          borderwidth: 1,
+          borderpad: 3,
+        }));
 
     const layout: Partial<Layout> = {
       title: { text: "Volcano plot", font: { size: 14 } },
       xaxis: { title: { text: "log₂ fold change" }, range: [-xMaxAbs, xMaxAbs], zeroline: true },
-      yaxis: { title: { text: "−log₁₀ p-value" }, range: [0, yMax] },
+      yaxis: { title: { text: "−log₁₀ p-value" }, range: [0, plotYMax] },
       shapes,
       annotations: [
         {
@@ -134,7 +152,9 @@ export function VolcanoPlot({
           xanchor: "left",
           yanchor: "bottom",
         },
+        ...annotationLayouts,
       ],
+      margin: { t: 48, r: 40, b: 64, l: 64 },
     };
 
     return { traces, layout };

@@ -1,6 +1,6 @@
-import type { Data } from "plotly.js-dist-min";
+import type { Data, Layout } from "plotly.js-dist-min";
 import { GROUP_COLORS } from "./plot-theme";
-import { confidenceEllipse, type Point2D } from "./plot-ellipses";
+import { groupConfidenceCircle, type Point2D } from "./plot-ellipses";
 
 export function PlotEmpty({ message }: { message: string }) {
   return (
@@ -19,64 +19,13 @@ export function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-function circlePoints(cx: number, cy: number, radius: number, segments = 72): Point2D[] {
-  const pts: Point2D[] = [];
-  for (let i = 0; i <= segments; i++) {
-    const t = (2 * Math.PI * i) / segments;
-    pts.push({ x: cx + radius * Math.cos(t), y: cy + radius * Math.sin(t) });
-  }
-  return pts;
-}
-
-function minRadiusForPoints(points: Point2D[], fallback: number): number {
-  if (points.length < 2) return fallback;
-  const mx = points.reduce((s, p) => s + p.x, 0) / points.length;
-  const my = points.reduce((s, p) => s + p.y, 0) / points.length;
-  const maxDist = Math.max(...points.map((p) => Math.hypot(p.x - mx, p.y - my)), fallback * 0.25);
-  return Math.max(maxDist * 1.15, fallback * 0.08);
-}
-
-function groupRegionPoints(points: Point2D[], plotSpan: number): Point2D[] | null {
-  if (!points.length) return null;
-  const mx = points.reduce((s, p) => s + p.x, 0) / points.length;
-  const my = points.reduce((s, p) => s + p.y, 0) / points.length;
-
-  if (points.length === 1) {
-    return circlePoints(mx, my, plotSpan * 0.06);
-  }
-
-  const ellipse = confidenceEllipse(points, 0.95, 120);
-  if (!ellipse) return null;
-
-  const minR = minRadiusForPoints(points, plotSpan);
-  const cx = ellipse.reduce((s, p) => s + p.x, 0) / ellipse.length;
-  const cy = ellipse.reduce((s, p) => s + p.y, 0) / ellipse.length;
-
-  const scaled = ellipse.map((p) => {
-    const dx = p.x - cx;
-    const dy = p.y - cy;
-    const dist = Math.hypot(dx, dy);
-    if (dist < minR && dist > 1e-9) {
-      const scale = minR / dist;
-      return { x: cx + dx * scale, y: cy + dy * scale };
-    }
-    if (dist < 1e-9) {
-      const angle = Math.atan2(dy || 1, dx || 1);
-      return { x: cx + minR * Math.cos(angle), y: cy + minR * Math.sin(angle) };
-    }
-    return p;
-  });
-
-  return scaled;
-}
-
 export function buildGroupRegionTrace(
   group: string,
   color: string,
   points: Point2D[],
   plotSpan: number,
 ): Data | null {
-  const region = groupRegionPoints(points, plotSpan);
+  const region = groupConfidenceCircle(points, plotSpan);
   if (!region) return null;
 
   return {
@@ -85,9 +34,9 @@ export function buildGroupRegionTrace(
     name: `${group} (95% region)`,
     x: region.map((p) => p.x),
     y: region.map((p) => p.y),
-    line: { color, width: 2, shape: "spline", smoothing: 1.3 },
+    line: { color, width: 2, shape: "linear" },
     fill: "toself",
-    fillcolor: hexToRgba(color, 0.18),
+    fillcolor: hexToRgba(color, 0.2),
     hoverinfo: "skip",
     showlegend: false,
   };
@@ -101,13 +50,13 @@ export function buildGroupedScatterTraces(
     showGroupRegions?: boolean;
     title?: string;
   },
-): { traces: Data[]; layoutExtras: Record<string, unknown> } {
+): { traces: Data[]; layoutExtras: Partial<Layout> } {
   const groups = [...new Set(items.map((i) => i.group))];
   const xs = items.map((i) => i.x);
   const ys = items.map((i) => i.y);
   const xSpan = Math.max(...xs) - Math.min(...xs) || 1;
   const ySpan = Math.max(...ys) - Math.min(...ys) || 1;
-  const plotSpan = Math.max(xSpan, ySpan);
+  const plotSpan = Math.max(xSpan, ySpan, 0.01);
 
   const traces: Data[] = [];
 
@@ -137,7 +86,7 @@ export function buildGroupedScatterTraces(
     traces,
     layoutExtras: {
       title: options.title ? { text: options.title, font: { size: 14 } } : undefined,
-      xaxis: { title: { text: options.xLabel }, zeroline: true, zerolinecolor: "#cbd5e1" },
+      xaxis: { title: { text: options.xLabel }, zeroline: true, zerolinecolor: "#cbd5e1", scaleanchor: "y", scaleratio: 1 },
       yaxis: { title: { text: options.yLabel }, zeroline: true, zerolinecolor: "#cbd5e1" },
       legend: { orientation: "v", x: 1.02, y: 1 },
     },
