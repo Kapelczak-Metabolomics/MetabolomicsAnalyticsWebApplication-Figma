@@ -207,27 +207,46 @@ export function DataImportView() {
   async function loadMzxmlPreview(files: File[]) {
     const localSamples = buildMzxmlSamplesFromFiles(files);
     applyMzxmlSamples(localSamples);
-    setMzxmlPreviewLoading(true);
     setMzxmlPreviewWarning(null);
 
-    if (pythonReady === false) {
+    try {
+      const h = await api.getHealth();
+      setPythonReady(Boolean(h.python));
+      if (!h.python) {
+        setMzxmlPreviewWarning(
+          "Python service is offline. Sample names are from filenames — start the Python container before importing.",
+        );
+      }
+    } catch {
+      setPythonReady(false);
       setMzxmlPreviewWarning(
-        "Python service is offline — sample names are from filenames. Start the Python service before importing.",
+        "Could not verify Python service status. Sample names are from filenames — you can still assign groups and import.",
       );
-      setMzxmlPreviewLoading(false);
+    }
+  }
+
+  async function verifyMzxmlWithPython() {
+    if (!mzxmlFiles.length) {
+      toast.error("Select mzXML files first");
       return;
     }
-
+    setMzxmlPreviewLoading(true);
+    setMzxmlPreviewWarning(null);
     try {
-      const preview = await api.previewMzxml(files);
+      const preview = await api.previewMzxml(mzxmlFiles);
+      const localSamples = buildMzxmlSamplesFromFiles(mzxmlFiles);
       const samples = preview.samples.length ? preview.samples : localSamples;
       setMzxmlSamples(samples);
       setGroupMappings(buildMzxmlGroupMappings(samples, guessGroupFromSampleId));
+      if (preview.warning) {
+        setMzxmlPreviewWarning(preview.warning);
+        toast.message("Preview used filename fallback", { description: preview.warning });
+      } else {
+        toast.success("Spectra verified with Python service");
+      }
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Failed to read mzXML files";
-      setMzxmlPreviewWarning(
-        `${message} Sample names were taken from filenames — import may still work if the Python service can parse your files.`,
-      );
+      const message = e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Preview failed";
+      setMzxmlPreviewWarning(message);
       toast.error(message);
     } finally {
       setMzxmlPreviewLoading(false);
@@ -612,14 +631,23 @@ export function DataImportView() {
             {mzxmlPreviewWarning && (
               <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-400">
                 <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                <span>Preview could not read spectra: {mzxmlPreviewWarning}. Sample names were taken from filenames — import may still work if the Python service can parse your files.</span>
+                <span>{mzxmlPreviewWarning}</span>
               </div>
             )}
-            <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-700 dark:text-emerald-400">
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-700 dark:text-emerald-400">
               {mzxmlPreviewLoading ? (
-                <><Loader2 className="h-4 w-4 animate-spin" /> Reading mzXML files...</>
+                <><Loader2 className="h-4 w-4 animate-spin" /> Verifying mzXML with Python...</>
               ) : (
-                <><Check className="h-4 w-4 flex-shrink-0" /><span><strong>{fileName}</strong> — {mzxmlSamples.length} sample(s) detected</span></>
+                <><Check className="h-4 w-4 flex-shrink-0" /><span><strong>{fileName}</strong> — {mzxmlSamples.length} sample(s) from filenames</span></>
+              )}
+              {!mzxmlPreviewLoading && mzxmlFiles.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void verifyMzxmlWithPython()}
+                  className="ml-auto rounded-md border border-emerald-600/30 bg-background/80 px-2.5 py-1 text-[11px] font-medium text-emerald-800 hover:bg-background dark:text-emerald-300"
+                >
+                  Verify spectra (optional)
+                </button>
               )}
             </div>
             <div className="rounded-xl border border-border bg-card overflow-hidden">

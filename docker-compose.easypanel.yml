@@ -98,6 +98,8 @@ services:
     restart: unless-stopped
     expose:
       - "80"
+    # If large mzXML uploads fail with 502 at your host proxy (Traefik/Caddy),
+    # raise the request body limit in EasyPanel domain settings (≥ 500 MB).
     depends_on:
       api:
         condition: service_healthy
