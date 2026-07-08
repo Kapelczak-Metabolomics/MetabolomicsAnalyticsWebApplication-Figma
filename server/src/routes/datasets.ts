@@ -3,7 +3,7 @@ import { query } from "../db/index.js";
 import { authMiddleware, logAudit, createNotification } from "../middleware/auth.js";
 import { loadDatasetMatrix } from "../utils/dataset.js";
 import { computeFeatureStats } from "../services/analysis.js";
-import { bulkLoadMatrix, clearDatasetMatrix } from "../utils/bulk-import.js";
+import { bulkLoadMatrix, clearDatasetMatrix, recalculateDatasetStats } from "../utils/bulk-import.js";
 import { pythonHealth, pythonImportMzxml, pythonPreviewMzxml, pythonExtractXic } from "../services/python-client.js";
 import { saveRawDatasetFiles, deleteRawDatasetFiles, listRawDatasetFiles, deleteRawDatasetFile, materializeRawDatasetFiles, cleanupWorkDir } from "../services/storage.js";
 import { getActiveMetaboliteTargetsForImport, loadMetaboliteTargetSettings } from "../services/metabolite-targets.js";
@@ -800,6 +800,276 @@ router.get("/:id/download", authMiddleware, async (req: Request, res: Response) 
   res.setHeader("Content-Type", "text/csv");
   res.setHeader("Content-Disposition", `attachment; filename="dataset-${id}.csv"`);
   res.send(csv);
+});
+
+function rawFileStem(filename: string) {
+  return filename.replace(/\.(mzxml|mzml|xml|zip)$/i, "");
+}
+
+function findRawFileForSample(
+  files: Array<{ filename: string }>,
+  sampleId: string
+) {
+  return files.find((f) => rawFileStem(f.filename) === sampleId)?.filename ?? null;
+}
+
+router.get("/:id/samples", authMiddleware, async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!(await canAccessDataset(req.user!, id))) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
+  const result = await query<{ id: number; sample_id: string; group_label: string }>(
+    `SELECT id, sample_id, group_label FROM samples WHERE dataset_id = $1 ORDER BY sample_id`,
+    [id]
+  );
+  res.json({
+    samples: result.rows.map((r) => ({
+      id: r.id,
+      sampleId: r.sample_id,
+      groupLabel: r.group_label,
+    })),
+  });
+});
+
+router.patch("/:id/samples/:sampleId", authMiddleware, async (req: Request, res: Response) => {
+  const datasetId = parseInt(String(req.params.id), 10);
+  const sampleDbId = parseInt(String(req.params.sampleId), 10);
+  if (!(await canAccessDataset(req.user!, datasetId))) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
+
+  const body = req.body as { sampleId?: string; groupLabel?: string };
+  const existing = await query<{ id: number; sample_id: string; group_label: string }>(
+    `SELECT id, sample_id, group_label FROM samples WHERE id = $1 AND dataset_id = $2`,
+    [sampleDbId, datasetId]
+  );
+  const row = existing.rows[0];
+  if (!row) {
+    res.status(404).json({ error: "Sample not found" });
+    return;
+  }
+
+  const dataset = await query<{ source_format: string; project_id: number; name: string }>(
+    `SELECT source_format, project_id, name FROM datasets WHERE id = $1`,
+    [datasetId]
+  );
+  const ds = dataset.rows[0];
+  if (!ds) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
+
+  const nextSampleId = body.sampleId?.trim() || row.sample_id;
+  const nextGroup = body.groupLabel?.trim() || row.group_label;
+  if (!nextSampleId || !nextGroup) {
+    res.status(400).json({ error: "sampleId and groupLabel cannot be empty" });
+    return;
+  }
+  if (ds.source_format === "mzXML" && nextSampleId !== row.sample_id) {
+    res.status(400).json({ error: "mzXML sample IDs are tied to filenames and cannot be renamed" });
+    return;
+  }
+
+  if (nextSampleId !== row.sample_id) {
+    const dup = await query<{ id: number }>(
+      `SELECT id FROM samples WHERE dataset_id = $1 AND sample_id = $2 AND id <> $3`,
+      [datasetId, nextSampleId, sampleDbId]
+    );
+    if (dup.rows[0]) {
+      res.status(400).json({ error: "Another sample already uses that ID" });
+      return;
+    }
+  }
+
+  await query(
+    `UPDATE samples SET sample_id = $1, group_label = $2 WHERE id = $3`,
+    [nextSampleId, nextGroup, sampleDbId]
+  );
+  await query(`UPDATE projects SET updated_at = NOW() WHERE id = $1`, [ds.project_id]);
+  await logAudit(
+    req.user,
+    "DATASET_SAMPLE_UPDATE",
+    "data",
+    `Dataset: ${ds.name}`,
+    `Updated sample ${row.sample_id} → group "${nextGroup}"${nextSampleId !== row.sample_id ? `, renamed to ${nextSampleId}` : ""}.`,
+    req
+  );
+
+  res.json({ id: sampleDbId, sampleId: nextSampleId, groupLabel: nextGroup });
+});
+
+router.delete("/:id/samples/:sampleId", authMiddleware, async (req: Request, res: Response) => {
+  const datasetId = parseInt(String(req.params.id), 10);
+  const sampleDbId = parseInt(String(req.params.sampleId), 10);
+  if (!(await canAccessDataset(req.user!, datasetId))) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
+
+  const existing = await query<{ id: number; sample_id: string }>(
+    `SELECT id, sample_id FROM samples WHERE id = $1 AND dataset_id = $2`,
+    [sampleDbId, datasetId]
+  );
+  const row = existing.rows[0];
+  if (!row) {
+    res.status(404).json({ error: "Sample not found" });
+    return;
+  }
+
+  const dataset = await query<{
+    raw_file_path: string | null;
+    source_format: string;
+    name: string;
+    project_id: number;
+  }>(
+    `SELECT raw_file_path, source_format, name, project_id FROM datasets WHERE id = $1`,
+    [datasetId]
+  );
+  const ds = dataset.rows[0];
+  if (!ds) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
+
+  const totalSamples = await query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM samples WHERE dataset_id = $1`,
+    [datasetId]
+  );
+  if (parseInt(totalSamples.rows[0]?.count ?? "0", 10) <= 1) {
+    res.status(400).json({ error: "Cannot remove the last sample from a dataset" });
+    return;
+  }
+
+  if (ds.source_format === "mzXML" && ds.raw_file_path) {
+    const files = await listRawDatasetFiles(ds.raw_file_path);
+    const filename = findRawFileForSample(files, row.sample_id);
+    if (filename) {
+      try {
+        await deleteRawDatasetFile(ds.raw_file_path, filename);
+        const remaining = await listRawDatasetFiles(ds.raw_file_path);
+        if (!remaining.length) {
+          await query(
+            `UPDATE datasets SET status = 'failed', import_status = 'failed', import_error = $1 WHERE id = $2`,
+            ["All mzXML files were removed from this dataset", datasetId]
+          );
+          await clearDatasetMatrix(datasetId);
+          await recalculateDatasetStats(datasetId);
+          res.json({ success: true, reprocessed: false, removedSampleId: row.sample_id });
+          return;
+        }
+        res.status(202).json({
+          success: true,
+          reprocessed: true,
+          removedSampleId: row.sample_id,
+          status: "processing",
+        });
+        reprocessStoredMzxmlDataset(datasetId, req.user!.id).catch(async (err) => {
+          const message = err instanceof Error ? err.message : "Failed to reprocess mzXML dataset";
+          await query(
+            `UPDATE datasets SET status = 'failed', import_status = 'failed', import_error = $1 WHERE id = $2`,
+            [message, datasetId]
+          );
+          await createNotification(req.user!.id, "error", "mzXML Reprocess Failed", `${ds.name}: ${message}`, "/data", "View dataset");
+        });
+        return;
+      } catch (err) {
+        res.status(400).json({ error: err instanceof Error ? err.message : "Failed to remove mzXML file" });
+        return;
+      }
+    }
+  }
+
+  await query(`DELETE FROM samples WHERE id = $1`, [sampleDbId]);
+  const stats = await recalculateDatasetStats(datasetId);
+  await query(`UPDATE projects SET updated_at = NOW() WHERE id = $1`, [ds.project_id]);
+  await logAudit(
+    req.user,
+    "DATASET_SAMPLE_DELETE",
+    "data",
+    `Dataset: ${ds.name}`,
+    `Removed sample ${row.sample_id}.`,
+    req
+  );
+  res.json({ success: true, reprocessed: false, removedSampleId: row.sample_id, ...stats });
+});
+
+router.get("/:id/features-list", authMiddleware, async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!(await canAccessDataset(req.user!, id))) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
+  const result = await query<{ id: number; feature_id: string; name: string; feature_class: string | null; pathway: string | null }>(
+    `SELECT id, feature_id, name, feature_class, pathway FROM features WHERE dataset_id = $1 ORDER BY name`,
+    [id]
+  );
+  res.json({
+    features: result.rows.map((r) => ({
+      id: r.id,
+      featureId: r.feature_id,
+      name: r.name,
+      featureClass: r.feature_class,
+      pathway: r.pathway,
+    })),
+  });
+});
+
+router.delete("/:id/features/:featureId", authMiddleware, async (req: Request, res: Response) => {
+  const datasetId = parseInt(String(req.params.id), 10);
+  const featureKey = String(req.params.featureId);
+  if (!(await canAccessDataset(req.user!, datasetId))) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
+
+  const existing = await query<{ id: number; name: string }>(
+    `SELECT id, name FROM features WHERE dataset_id = $1 AND feature_id = $2`,
+    [datasetId, featureKey]
+  );
+  const row = existing.rows[0];
+  if (!row) {
+    res.status(404).json({ error: "Feature not found" });
+    return;
+  }
+
+  const totalFeatures = await query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM features WHERE dataset_id = $1`,
+    [datasetId]
+  );
+  if (parseInt(totalFeatures.rows[0]?.count ?? "0", 10) <= 1) {
+    res.status(400).json({ error: "Cannot remove the last feature from a dataset" });
+    return;
+  }
+
+  const ds = await query<{ name: string; project_id: number; source_format: string }>(
+    `SELECT name, project_id, source_format FROM datasets WHERE id = $1`,
+    [datasetId]
+  );
+  if (!ds.rows[0]) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
+  if (ds.rows[0].source_format === "mzXML") {
+    res.status(400).json({
+      error: "mzXML features are derived from spectra — remove samples (raw files) instead, or re-import with different targets",
+    });
+    return;
+  }
+
+  await query(`DELETE FROM features WHERE id = $1`, [row.id]);
+  const stats = await recalculateDatasetStats(datasetId);
+  await query(`UPDATE projects SET updated_at = NOW() WHERE id = $1`, [ds.rows[0].project_id]);
+  await logAudit(
+    req.user,
+    "DATASET_FEATURE_DELETE",
+    "data",
+    `Dataset: ${ds.rows[0].name}`,
+    `Removed feature ${row.name}.`,
+    req
+  );
+  res.json({ success: true, removedFeatureId: featureKey, ...stats });
 });
 
 router.get("/:id/groups", authMiddleware, async (req: Request, res: Response) => {

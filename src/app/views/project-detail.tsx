@@ -128,6 +128,247 @@ function MzxmlDatasetFiles({ datasetId, datasetName, status, onUpdated }: {
   );
 }
 
+type DatasetSampleRow = { id: number; sampleId: string; groupLabel: string };
+type DatasetFeatureRow = { id: number; featureId: string; name: string; featureClass: string | null; pathway: string | null };
+
+function DatasetDataManager({ datasetId, datasetName, status, sourceFormat, onUpdated }: {
+  datasetId: string;
+  datasetName: string;
+  status: string;
+  sourceFormat?: string;
+  onUpdated: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<"samples" | "features">("samples");
+  const [samples, setSamples] = useState<DatasetSampleRow[]>([]);
+  const [features, setFeatures] = useState<DatasetFeatureRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editSampleId, setEditSampleId] = useState("");
+  const [editGroup, setEditGroup] = useState("");
+  const isMzxml = sourceFormat === "mzXML";
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    const id = parseInt(datasetId, 10);
+    Promise.all([api.getDatasetSamples(id), api.getDatasetFeaturesList(id)])
+      .then(([s, f]) => {
+        setSamples(s.samples);
+        setFeatures(f.features);
+      })
+      .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to load dataset data"))
+      .finally(() => setLoading(false));
+  }, [open, datasetId, status]);
+
+  function startEdit(sample: DatasetSampleRow) {
+    setEditingId(sample.id);
+    setEditSampleId(sample.sampleId);
+    setEditGroup(sample.groupLabel);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditSampleId("");
+    setEditGroup("");
+  }
+
+  async function saveEdit(sampleDbId: number) {
+    if (!editGroup.trim()) {
+      toast.error("Group label is required");
+      return;
+    }
+    if (!isMzxml && !editSampleId.trim()) {
+      toast.error("Sample ID is required");
+      return;
+    }
+    setBusyId(`edit-${sampleDbId}`);
+    try {
+      const updated = await api.updateDatasetSample(parseInt(datasetId, 10), sampleDbId, {
+        sampleId: isMzxml ? undefined : editSampleId.trim(),
+        groupLabel: editGroup.trim(),
+      });
+      setSamples((prev) => prev.map((s) => (s.id === sampleDbId ? { ...s, ...updated } : s)));
+      cancelEdit();
+      toast.success("Sample updated");
+      onUpdated();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update sample");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function removeSample(sample: DatasetSampleRow) {
+    const msg = isMzxml
+      ? `Remove sample "${sample.sampleId}" from ${datasetName}? Its mzXML file will be deleted and the dataset reprocessed.`
+      : `Remove sample "${sample.sampleId}" from ${datasetName}?`;
+    if (!window.confirm(msg)) return;
+    setBusyId(`del-sample-${sample.id}`);
+    try {
+      const result = await api.deleteDatasetSample(parseInt(datasetId, 10), sample.id);
+      setSamples((prev) => prev.filter((s) => s.id !== sample.id));
+      if (result.reprocessed) {
+        toast.info("Reprocessing dataset without removed sample…");
+      } else {
+        toast.success("Sample removed");
+      }
+      onUpdated();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove sample");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function removeFeature(feature: DatasetFeatureRow) {
+    if (!window.confirm(`Remove feature "${feature.name}" from ${datasetName}?`)) return;
+    setBusyId(`del-feature-${feature.id}`);
+    try {
+      await api.deleteDatasetFeature(parseInt(datasetId, 10), feature.featureId);
+      setFeatures((prev) => prev.filter((f) => f.id !== feature.id));
+      toast.success("Feature removed");
+      onUpdated();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove feature");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-border pt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-xs font-medium text-primary hover:underline"
+      >
+        {open ? "Hide" : "Manage"} samples & features
+      </button>
+      {open && (
+        <div className="mt-2 rounded-lg border border-border bg-muted/20 overflow-hidden">
+          <div className="flex border-b border-border bg-muted/30">
+            {(["samples", "features"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={`px-3 py-2 text-xs font-medium capitalize ${tab === t ? "border-b-2 border-primary text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {t} ({t === "samples" ? samples.length : features.length})
+              </button>
+            ))}
+          </div>
+          {loading ? (
+            <p className="p-3 text-xs text-muted-foreground flex items-center gap-2">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
+            </p>
+          ) : tab === "samples" ? (
+            samples.length === 0 ? (
+              <p className="p-3 text-xs text-muted-foreground">No samples in this dataset.</p>
+            ) : (
+              <ul className="divide-y divide-border max-h-64 overflow-y-auto">
+                {samples.map((sample) => (
+                  <li key={sample.id} className="flex flex-col gap-2 px-3 py-2 text-xs sm:flex-row sm:items-center sm:justify-between">
+                    {editingId === sample.id ? (
+                      <div className="flex flex-1 flex-wrap items-end gap-2">
+                        {!isMzxml && (
+                          <div className="min-w-[120px] flex-1">
+                            <label className="text-[10px] text-muted-foreground">Sample ID</label>
+                            <input
+                              value={editSampleId}
+                              onChange={(e) => setEditSampleId(e.target.value)}
+                              className="mt-0.5 w-full rounded border border-border bg-background px-2 py-1 text-xs"
+                            />
+                          </div>
+                        )}
+                        <div className="min-w-[100px] flex-1">
+                          <label className="text-[10px] text-muted-foreground">Group</label>
+                          <input
+                            value={editGroup}
+                            onChange={(e) => setEditGroup(e.target.value)}
+                            className="mt-0.5 w-full rounded border border-border bg-background px-2 py-1 text-xs"
+                          />
+                        </div>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            disabled={busyId === `edit-${sample.id}` || status === "processing"}
+                            onClick={() => void saveEdit(sample.id)}
+                            className="rounded border border-primary/30 px-2 py-1 text-primary hover:bg-primary/10 disabled:opacity-50"
+                          >
+                            {busyId === `edit-${sample.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+                          </button>
+                          <button type="button" onClick={cancelEdit} className="rounded border border-border px-2 py-1 hover:bg-accent">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{sample.sampleId}</p>
+                          <p className="text-muted-foreground">Group: {sample.groupLabel}</p>
+                        </div>
+                        <div className="flex shrink-0 gap-1">
+                          <button
+                            type="button"
+                            disabled={status === "processing"}
+                            onClick={() => startEdit(sample)}
+                            className="flex items-center gap-1 rounded-md border border-border px-2 py-1 hover:bg-accent disabled:opacity-50"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" /> Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === `del-sample-${sample.id}` || status === "processing"}
+                            onClick={() => void removeSample(sample)}
+                            className="flex items-center gap-1 rounded-md border border-destructive/30 px-2 py-1 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                          >
+                            {busyId === `del-sample-${sample.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                            Remove
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : features.length === 0 ? (
+            <p className="p-3 text-xs text-muted-foreground">No features in this dataset.</p>
+          ) : isMzxml ? (
+            <p className="p-3 text-xs text-muted-foreground">
+              mzXML features are derived from spectra. Remove samples (raw files) to change which metabolites appear, or adjust admin metabolite targets.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border max-h-64 overflow-y-auto">
+              {features.map((feature) => (
+                <li key={feature.id} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{feature.name}</p>
+                    <p className="text-muted-foreground truncate">{feature.featureId}</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busyId === `del-feature-${feature.id}` || status === "processing"}
+                    onClick={() => void removeFeature(feature)}
+                    className="flex items-center gap-1 rounded-md border border-destructive/30 px-2 py-1 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                  >
+                    {busyId === `del-feature-${feature.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Add Member Dialog ───────────────────────────────────────────────────────
 
 function AddMemberDialog({ open, onClose, projectId, onAdd }: {
@@ -436,6 +677,13 @@ export function ProjectDetailView() {
                         onUpdated={refreshProject}
                       />
                     )}
+                    <DatasetDataManager
+                      datasetId={ds.id}
+                      datasetName={ds.name}
+                      status={ds.status}
+                      sourceFormat={ds.sourceFormat}
+                      onUpdated={refreshProject}
+                    />
                   </div>
                 </div>
                 <div className="flex items-center gap-3">

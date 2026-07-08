@@ -67,3 +67,31 @@ export async function bulkLoadMatrix(
   const missingPct = total ? Number(((missing / total) * 100).toFixed(1)) : 0;
   return { samplesCount: samples.length, featuresCount: features.length, missingPct };
 }
+
+export async function recalculateDatasetStats(datasetId: number) {
+  const counts = await query<{ samples: string; features: string }>(
+    `SELECT
+       (SELECT COUNT(*)::text FROM samples WHERE dataset_id = $1) AS samples,
+       (SELECT COUNT(*)::text FROM features WHERE dataset_id = $1) AS features`,
+    [datasetId]
+  );
+  const missing = await query<{ missing: string; total: string }>(
+    `SELECT
+       COUNT(*) FILTER (WHERE fv.value IS NULL)::text AS missing,
+       COUNT(*)::text AS total
+     FROM feature_values fv
+     JOIN samples s ON s.id = fv.sample_id
+     WHERE s.dataset_id = $1`,
+    [datasetId]
+  );
+  const samplesCount = parseInt(counts.rows[0]?.samples ?? "0", 10);
+  const featuresCount = parseInt(counts.rows[0]?.features ?? "0", 10);
+  const total = parseInt(missing.rows[0]?.total ?? "0", 10);
+  const missingCount = parseInt(missing.rows[0]?.missing ?? "0", 10);
+  const missingPct = total ? Number(((missingCount / total) * 100).toFixed(1)) : 0;
+  await query(
+    `UPDATE datasets SET samples_count = $1, features_count = $2, missing_pct = $3 WHERE id = $4`,
+    [samplesCount, featuresCount, missingPct, datasetId]
+  );
+  return { samplesCount, featuresCount, missingPct };
+}

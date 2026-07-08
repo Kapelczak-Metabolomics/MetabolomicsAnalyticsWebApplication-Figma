@@ -223,6 +223,32 @@ export const api = {
 
   getDatasetGroups: (id: number) => request<Array<{ label: string; count: number }>>(`/datasets/${id}/groups`),
 
+  getDatasetSamples: (id: number) =>
+    request<{ samples: Array<{ id: number; sampleId: string; groupLabel: string }> }>(`/datasets/${id}/samples`),
+
+  updateDatasetSample: (datasetId: number, sampleDbId: number, data: { sampleId?: string; groupLabel?: string }) =>
+    request<{ id: number; sampleId: string; groupLabel: string }>(
+      `/datasets/${datasetId}/samples/${sampleDbId}`,
+      { method: "PATCH", body: JSON.stringify(data) }
+    ),
+
+  deleteDatasetSample: (datasetId: number, sampleDbId: number) =>
+    request<{ success: boolean; reprocessed: boolean; removedSampleId: string; status?: string; samplesCount?: number; featuresCount?: number; missingPct?: number }>(
+      `/datasets/${datasetId}/samples/${sampleDbId}`,
+      { method: "DELETE" }
+    ),
+
+  getDatasetFeaturesList: (id: number) =>
+    request<{ features: Array<{ id: number; featureId: string; name: string; featureClass: string | null; pathway: string | null }> }>(
+      `/datasets/${id}/features-list`
+    ),
+
+  deleteDatasetFeature: (datasetId: number, featureId: string) =>
+    request<{ success: boolean; removedFeatureId: string; samplesCount?: number; featuresCount?: number; missingPct?: number }>(
+      `/datasets/${datasetId}/features/${encodeURIComponent(featureId)}`,
+      { method: "DELETE" }
+    ),
+
   getDatasetFeatures: (id: number, params?: { page?: number; limit?: number; search?: string }) => {
     const q = new URLSearchParams();
     if (params?.page) q.set("page", String(params.page));
