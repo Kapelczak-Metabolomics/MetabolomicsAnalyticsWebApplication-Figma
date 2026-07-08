@@ -7,6 +7,7 @@ export function computeHeatmapLayout(
     sampleLabelPosition?: "top" | "bottom";
     showClusterBars?: boolean;
     clusterBarPosition?: "top" | "left";
+    groupLegendStyle?: "inline" | "side-panel";
     samplesOnY?: boolean;
   }
 ) {
@@ -56,7 +57,8 @@ export function computeHeatmapLayout(
     }
   }
 
-  const rightMargin = 96;
+  const groupLegendStyle = options?.groupLegendStyle ?? "inline";
+  const rightMargin = groupLegendStyle === "side-panel" ? 132 : 96;
   const height = Math.max(380, sampleCount * 20 + topMargin + bottomMargin + 40);
   const showEveryNth = nFeatures > 24 ? Math.ceil(nFeatures / 24) : 1;
 

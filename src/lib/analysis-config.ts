@@ -98,6 +98,21 @@ export const clusteringConfig = [
         description: "top: bar above heatmap (samples-x) or as top row. left: bar to the left of heatmap (samples-y).",
       },
       {
+        key: "groupLegendStyle",
+        label: "Group legend style",
+        type: "select" as const,
+        value: "inline",
+        options: ["inline", "side-panel"],
+        description: "inline: compact legend beside the colorbar (default). side-panel: boxed class legend below the colorbar (MetaboAnalyst style).",
+      },
+      {
+        key: "groupLegendLabel",
+        label: "Group legend label",
+        type: "text" as const,
+        value: "class",
+        description: "Header text for the side-panel group legend (e.g. class, Group, Condition).",
+      },
+      {
         key: "heatmapTitle",
         label: "Heatmap title",
         type: "text" as const,

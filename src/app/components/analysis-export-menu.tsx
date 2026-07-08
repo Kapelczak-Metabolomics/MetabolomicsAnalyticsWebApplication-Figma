@@ -2,6 +2,19 @@ import { Download, ChevronDown } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
 import { downloadCsv, downloadJson, downloadFromApi, exportPlot } from "../../lib/export";
+import { generatePdfReport, type ReportPlot, type ReportSummaryRow } from "../../lib/pdf-report";
+
+export interface PdfReportConfig {
+  projectName: string;
+  datasetName: string;
+  comparison?: string;
+  preparedBy?: string;
+  preparedFor?: string;
+  reportTitle?: string;
+  reportSubtitle?: string;
+  plots: ReportPlot[];
+  summaryRows?: ReportSummaryRow[];
+}
 
 interface AnalysisExportMenuProps {
   experimentId?: number | null;
@@ -9,9 +22,17 @@ interface AnalysisExportMenuProps {
   analysisType: string;
   filename?: string;
   plotContainerId?: string;
+  pdfReport?: PdfReportConfig;
 }
 
-export function AnalysisExportMenu({ experimentId, results, analysisType, filename, plotContainerId }: AnalysisExportMenuProps) {
+export function AnalysisExportMenu({
+  experimentId,
+  results,
+  analysisType,
+  filename,
+  plotContainerId,
+  pdfReport,
+}: AnalysisExportMenuProps) {
   const base = filename ?? analysisType.toLowerCase().replace(/\s+/g, "-");
 
   function exportClient(fmt: string) {
@@ -45,6 +66,27 @@ export function AnalysisExportMenu({ experimentId, results, analysisType, filena
     }
   }
 
+  async function exportPdfReport() {
+    if (!pdfReport) {
+      toast.error("PDF report not configured for this view");
+      return;
+    }
+    try {
+      await generatePdfReport({
+        filename: `${base}-report.pdf`,
+        analysisType,
+        ...pdfReport,
+      });
+      toast.success("Exported PDF report");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to export PDF report");
+    }
+  }
+
+  const formats = pdfReport
+    ? ["CSV", "JSON", "SVG", "PNG", "PDF Report"]
+    : ["CSV", "JSON", "SVG", "PNG"];
+
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -54,13 +96,17 @@ export function AnalysisExportMenu({ experimentId, results, analysisType, filena
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content className="z-50 min-w-[140px] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg" sideOffset={4} align="end">
-          {["CSV", "JSON", "SVG", "PNG"].map((fmt) => (
+          {formats.map((fmt) => (
             <DropdownMenu.Item
               key={fmt}
               className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
               onSelect={() => {
+                if (fmt === "PDF Report") {
+                  void exportPdfReport();
+                  return;
+                }
                 if (fmt === "SVG" || fmt === "PNG") {
-                  exportFigure(fmt);
+                  void exportFigure(fmt);
                   return;
                 }
                 if (experimentId) {

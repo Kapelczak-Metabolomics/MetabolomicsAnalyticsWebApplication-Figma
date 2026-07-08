@@ -29,6 +29,8 @@ interface ChartPlaceholderProps {
     sampleLabelPosition?: "top" | "bottom";
     showClusterBars?: boolean;
     clusterBarPosition?: "top" | "left";
+    groupLegendStyle?: "inline" | "side-panel";
+    groupLegendLabel?: string;
     title?: string;
     dendrogramTitle?: string;
   };
@@ -102,6 +104,8 @@ export function ChartPlaceholder({
         sampleLabelPosition={heatmapConfig?.sampleLabelPosition}
         showClusterBars={heatmapConfig?.showClusterBars}
         clusterBarPosition={heatmapConfig?.clusterBarPosition}
+        groupLegendStyle={heatmapConfig?.groupLegendStyle}
+        groupLegendLabel={heatmapConfig?.groupLegendLabel}
         title={heatmapConfig?.title ?? plotTitle}
       />
     );
