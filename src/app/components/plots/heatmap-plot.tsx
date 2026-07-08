@@ -13,6 +13,7 @@ import {
 export type HeatmapOrientation = "samples-y" | "samples-x";
 export type SampleLabelPosition = "top" | "bottom";
 export type ClusterBarPosition = "top" | "left";
+export type GroupLegendStyle = "inline" | "side-panel";
 
 interface HeatmapPlotProps {
   matrix?: (number | null)[][];
@@ -23,6 +24,8 @@ interface HeatmapPlotProps {
   sampleLabelPosition?: SampleLabelPosition;
   showClusterBars?: boolean;
   clusterBarPosition?: ClusterBarPosition;
+  groupLegendStyle?: GroupLegendStyle;
+  groupLegendLabel?: string;
   title?: string;
 }
 
@@ -35,6 +38,66 @@ function transposeMatrix(matrix: (number | null)[][]) {
   );
 }
 
+function buildSidePanelLegend(
+  legend: Array<{ name: string; color: string }>,
+  label: string
+) {
+  const boxTop = 0.17;
+  const rowHeight = 0.038;
+  const boxHeight = Math.max(0.08, legend.length * rowHeight + 0.045);
+  const boxBottom = boxTop - boxHeight;
+
+  const shapes = [
+    {
+      type: "rect" as const,
+      xref: "paper" as const,
+      yref: "paper" as const,
+      x0: 1.04,
+      x1: 1.28,
+      y0: boxBottom,
+      y1: boxTop,
+      line: { color: "#cbd5e1", width: 1 },
+      fillcolor: "rgba(255,255,255,0.95)",
+    },
+    ...legend.map((entry, i) => ({
+      type: "rect" as const,
+      xref: "paper" as const,
+      yref: "paper" as const,
+      x0: 1.07,
+      x1: 1.095,
+      y0: boxTop - 0.028 - i * rowHeight,
+      y1: boxTop - 0.008 - i * rowHeight,
+      line: { color: entry.color, width: 0 },
+      fillcolor: entry.color,
+    })),
+  ];
+
+  const annotations = [
+    {
+      x: 1.16,
+      y: boxTop - 0.012,
+      xref: "paper" as const,
+      yref: "paper" as const,
+      text: `<b>${label}</b>`,
+      showarrow: false,
+      font: { size: 10, color: "#334155" },
+      xanchor: "center" as const,
+    },
+    ...legend.map((entry, i) => ({
+      x: 1.105,
+      y: boxTop - 0.018 - i * rowHeight,
+      xref: "paper" as const,
+      yref: "paper" as const,
+      text: entry.name,
+      showarrow: false,
+      font: { size: 9, color: "#334155" },
+      xanchor: "left" as const,
+    })),
+  ];
+
+  return { shapes, annotations };
+}
+
 export function HeatmapPlot({
   matrix = [],
   sampleLabels = [],
@@ -44,6 +107,8 @@ export function HeatmapPlot({
   sampleLabelPosition = "top",
   showClusterBars = true,
   clusterBarPosition = "top",
+  groupLegendStyle = "inline",
+  groupLegendLabel = "class",
   title,
 }: HeatmapPlotProps) {
   const plot = useMemo(() => {
@@ -108,6 +173,7 @@ export function HeatmapPlot({
         sampleLabelPosition,
         showClusterBars: useBars,
         clusterBarPosition,
+        groupLegendStyle,
         samplesOnY,
       }
     );
@@ -275,6 +341,11 @@ export function HeatmapPlot({
     const featureAxisSide = samplesOnY ? "top" : sampleLabelPosition;
     const sampleAxisSide = samplesOnY ? undefined : sampleLabelPosition;
 
+    const sideLegend =
+      useBars && groupLegendStyle === "side-panel"
+        ? buildSidePanelLegend(legend, groupLegendLabel.trim() || "class")
+        : null;
+
     const layout: Partial<Layout> = {
       title: {
         text: plotTitle,
@@ -307,18 +378,20 @@ export function HeatmapPlot({
         b: layoutMetrics.bottomMargin,
       },
       height: layoutMetrics.height,
-      annotations: useBars
-        ? legend.map((entry, i) => ({
-            x: 1.1,
-            y: 1 - i * 0.055,
-            xref: "paper" as const,
-            yref: "paper" as const,
-            text: `■ ${entry.name}`,
-            showarrow: false,
-            font: { size: 10, color: entry.color },
-            xanchor: "left" as const,
-          }))
-        : [],
+      shapes: sideLegend?.shapes ?? [],
+      annotations:
+        useBars && groupLegendStyle === "inline"
+          ? legend.map((entry, i) => ({
+              x: 1.1,
+              y: 1 - i * 0.055,
+              xref: "paper" as const,
+              yref: "paper" as const,
+              text: `■ ${entry.name}`,
+              showarrow: false,
+              font: { size: 10, color: entry.color },
+              xanchor: "left" as const,
+            }))
+          : sideLegend?.annotations ?? [],
     };
 
     return { traces, layout };
@@ -331,6 +404,8 @@ export function HeatmapPlot({
     sampleLabelPosition,
     showClusterBars,
     clusterBarPosition,
+    groupLegendStyle,
+    groupLegendLabel,
     title,
   ]);
 

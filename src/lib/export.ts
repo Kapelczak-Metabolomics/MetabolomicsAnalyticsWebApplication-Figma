@@ -91,6 +91,65 @@ async function exportPlotly(containerId: string | undefined, filename: string, f
   a.click();
 }
 
+export async function capturePlotImage(
+  containerId: string | undefined,
+  format: "png" | "svg" = "png"
+): Promise<string> {
+  const plotEl = findPlotlyElement(containerId);
+  if (plotEl) {
+    const Plotly = (await import("plotly.js-dist-min")).default;
+    return Plotly.toImage(plotEl, { format, width: 1200, height: 900, scale: 2 });
+  }
+
+  const root = containerId ? document.getElementById(containerId) : null;
+  const svg = root?.querySelector("svg") ?? findPlotSvg(containerId);
+  if (!svg) throw new Error("Plot not found — run analysis first");
+
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  const xml = new XMLSerializer().serializeToString(clone);
+  const blob = new Blob([xml], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  if (format === "svg") {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("SVG read failed"));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  const viewBox = clone.viewBox?.baseVal;
+  const width = viewBox?.width || clone.width.baseVal.value || 800;
+  const height = viewBox?.height || clone.height.baseVal.value || 600;
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = width * 2;
+      canvas.height = height * 2;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        URL.revokeObjectURL(url);
+        reject(new Error("Canvas unavailable"));
+        return;
+      }
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Failed to render plot"));
+    };
+    img.src = url;
+  });
+}
+
 export async function exportPlot(containerId: string | undefined, filename: string, format: "SVG" | "PNG") {
   const plotlyEl = findPlotlyElement(containerId);
   if (plotlyEl) {

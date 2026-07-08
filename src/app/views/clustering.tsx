@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChartPlaceholder } from "../components/chart-placeholder";
 import { Play, Settings2 } from "lucide-react";
 import { RunAnalysisDialog } from "../components/run-analysis-dialog";
@@ -7,6 +7,7 @@ import { AnalysisExportMenu } from "../components/analysis-export-menu";
 import { useAnalysisPage } from "../../hooks/use-analysis-page";
 import { api } from "../../lib/api";
 import { useApp } from "../../contexts/app-context";
+import { useAuth } from "../../contexts/auth-context";
 import type { DendrogramMerge } from "../components/plots/dendrogram-plot";
 import { clusteringConfig } from "../../lib/analysis-config";
 import { resolvePlotTitle } from "../../lib/plot-title";
@@ -22,7 +23,8 @@ const clusteringStages = [
 export function ClusteringView() {
   const [runOpen, setRunOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
-  const { saveAnalysisConfig, getAnalysisConfig } = useApp();
+  const { saveAnalysisConfig, getAnalysisConfig, selectedLens } = useApp();
+  const { user } = useAuth();
   const { dataset, results, loading, error, refresh, experimentId } = useAnalysisPage("Clustering");
   const clusteringDisplay = getAnalysisConfig("Clustering");
   const heatmapOrientation = (clusteringDisplay.heatmapOrientation as "samples-y" | "samples-x") ?? "samples-y";
@@ -44,6 +46,69 @@ export function ClusteringView() {
   const linkage = (results?.linkage as string) ?? String(getAnalysisConfig("Clustering").linkageMethod ?? "Average");
   const distanceMetric = (results?.distanceMetric as string) ?? String(getAnalysisConfig("Clustering").distanceMetric ?? "Euclidean");
   const samplesProcessed = (results?.samplesProcessed as number) ?? dataset?.samples_count ?? 0;
+
+  const pdfReport = useMemo(() => {
+    if (!dataset) return undefined;
+    const quality =
+      silhouette == null ? "—" : silhouette >= 0.7 ? "Strong" : silhouette >= 0.5 ? "Reasonable" : silhouette >= 0.25 ? "Weak" : "Poor";
+    return {
+      projectName: dataset.project_name,
+      datasetName: dataset.name,
+      comparison: selectedLens !== "All groups" ? selectedLens : "All groups",
+      preparedBy: user?.name,
+      reportTitle: "CLUSTERING STATISTICAL REPORT",
+      reportSubtitle: "Hierarchical clustering, heatmap, and sample dendrogram",
+      plots: [
+        { containerId: "plot-clustering-heatmap", title: "Heatmap" },
+        { containerId: "plot-clustering-dendrogram", title: "Sample Dendrogram" },
+      ],
+      summaryRows: [
+        { label: "Sample groups", value: String(clusters.length || "—") },
+        { label: "Samples processed", value: String(samplesProcessed) },
+        { label: "Features in heatmap", value: String(heatmap?.featureLabels.length ?? "—") },
+        { label: "Linkage", value: linkage },
+        { label: "Distance metric", value: distanceMetric },
+        { label: "Silhouette score", value: silhouette != null ? silhouette.toFixed(3) : "—" },
+        { label: "Cluster separation", value: quality },
+      ],
+      customPages: [
+        {
+          title: "Silhouette Analysis",
+          render: (doc, margin, _contentWidth, startY) => {
+            let y = startY + 20;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(11);
+            doc.setTextColor(71, 85, 105);
+            doc.text("Average silhouette score", margin, y);
+            y += 14;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(28);
+            doc.setTextColor(5, 150, 105);
+            doc.text(silhouette != null ? silhouette.toFixed(3) : "—", margin, y);
+            y += 12;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(11);
+            doc.setTextColor(30, 41, 59);
+            doc.text(`${quality} cluster separation`, margin, y);
+            y += 16;
+            if (clusters.length) {
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(10);
+              doc.text("Cluster assignments", margin, y);
+              y += 8;
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(9);
+              clusters.forEach((cluster) => {
+                doc.text(`${cluster.name}: n=${cluster.count}`, margin + 4, y);
+                y += 6;
+              });
+            }
+            return y;
+          },
+        },
+      ],
+    };
+  }, [dataset, selectedLens, user?.name, clusters, samplesProcessed, heatmap?.featureLabels.length, linkage, distanceMetric, silhouette]);
 
   const sampleGroups =
     (results?.sampleGroups as string[] | undefined) ??
@@ -154,7 +219,14 @@ export function ClusteringView() {
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm">Heatmap with Dendrograms</h3>
-            <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Clustering" filename="clustering" plotContainerId="plot-clustering-heatmap" />
+            <AnalysisExportMenu
+              experimentId={experimentId}
+              results={results}
+              analysisType="Clustering"
+              filename="clustering"
+              plotContainerId="plot-clustering-heatmap"
+              pdfReport={pdfReport}
+            />
           </div>
           <ChartPlaceholder
             type="Clustered Heatmap"
@@ -171,6 +243,8 @@ export function ClusteringView() {
               sampleLabelPosition: (clusteringDisplay.sampleLabelPosition as "top" | "bottom") ?? "top",
               showClusterBars: clusteringDisplay.showClusterBars !== false,
               clusterBarPosition: (clusteringDisplay.clusterBarPosition as "top" | "left") ?? "top",
+              groupLegendStyle: (clusteringDisplay.groupLegendStyle as "inline" | "side-panel") ?? "inline",
+              groupLegendLabel: String(clusteringDisplay.groupLegendLabel ?? "class"),
               title: resolvePlotTitle(clusteringDisplay.heatmapTitle, "Sample × feature expression"),
               dendrogramTitle: resolvePlotTitle(clusteringDisplay.dendrogramTitle, "Sample dendrogram"),
             }}
