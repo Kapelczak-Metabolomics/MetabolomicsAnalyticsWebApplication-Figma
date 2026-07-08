@@ -7,7 +7,14 @@ export async function clearDatasetMatrix(datasetId: number) {
 export async function bulkLoadMatrix(
   datasetId: number,
   samples: Array<{ sampleId: string; groupLabel: string }>,
-  features: Array<{ featureId: string; name: string; featureClass?: string | null; pathway?: string | null; values: (number | null)[] }>
+  features: Array<{
+    featureId: string;
+    name: string;
+    featureClass?: string | null;
+    pathway?: string | null;
+    metadata?: Record<string, unknown> | null;
+    values: (number | null)[];
+  }>
 ) {
   const sampleIds: number[] = [];
   for (const s of samples) {
@@ -21,8 +28,8 @@ export async function bulkLoadMatrix(
   const featureIds: number[] = [];
   for (const f of features) {
     const r = await query<{ id: number }>(
-      `INSERT INTO features (dataset_id, feature_id, name, feature_class, pathway) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [datasetId, f.featureId, f.name, f.featureClass ?? null, f.pathway ?? null]
+      `INSERT INTO features (dataset_id, feature_id, name, feature_class, pathway, metadata) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [datasetId, f.featureId, f.name, f.featureClass ?? null, f.pathway ?? null, JSON.stringify(f.metadata ?? {})]
     );
     featureIds.push(r.rows[0].id);
   }

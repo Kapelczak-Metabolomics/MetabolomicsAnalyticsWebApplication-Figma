@@ -188,7 +188,7 @@ export const api = {
   removeMember: (projectId: number, memberId: number) =>
     request<{ success: boolean }>(`/projects/${projectId}/members/${memberId}`, { method: "DELETE" }),
 
-  getDatasets: () => request<Array<{ id: number; name: string; type: string; samples_count: number; features_count: number; status: string; project_id: number; project_name: string }>>("/datasets"),
+  getDatasets: () => request<Array<{ id: number; name: string; type: string; samples_count: number; features_count: number; status: string; project_id: number; project_name: string; source_format?: string }>>("/datasets"),
 
   deleteDataset: (id: number) => request<{ success: boolean }>(`/datasets/${id}`, { method: "DELETE" }),
 
@@ -200,6 +200,15 @@ export const api = {
       `/datasets/${id}/raw-files/${encodeURIComponent(filename)}`,
       { method: "DELETE" }
     ),
+
+  getDatasetXic: (datasetId: number, featureId: string) =>
+    request<{
+      featureId: string;
+      name: string;
+      mz: number;
+      mzTolerance: number;
+      traces: Array<{ sampleId: string; groupLabel: string; filename: string; rt: number[]; intensity: number[] }>;
+    }>(`/datasets/${datasetId}/xic/${encodeURIComponent(featureId)}`),
 
   getMzxmlSessionFiles: (sessionId: string) =>
     request<{ sessionId: string; files: Array<{ filename: string; sizeBytes: number }> }>(

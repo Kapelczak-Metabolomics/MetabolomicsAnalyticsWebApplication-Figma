@@ -82,6 +82,34 @@ class MzxmlParserTests(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_extract_xic_from_multiscan_file(self):
+        peaks_a = _encode_peaks([(100.0, 500.0)], little=True)
+        peaks_b = _encode_peaks([(100.0, 1500.0)], little=True)
+        xml = f"""<?xml version="1.0"?>
+<mzXML>
+  <msRun scanCount="2">
+    <scan num="1" msLevel="1" retentionTime="1.0" peaksCount="1">
+      <peaks precision="32" byteOrder="little" contentType="raw">{peaks_a}</peaks>
+    </scan>
+    <scan num="2" msLevel="1" retentionTime="2.0" peaksCount="1">
+      <peaks precision="32" byteOrder="little" contentType="raw">{peaks_b}</peaks>
+    </scan>
+  </msRun>
+</mzXML>"""
+        with tempfile.NamedTemporaryFile("w", suffix=".mzXML", delete=False) as f:
+            f.write(xml)
+            path = f.name
+        try:
+            from app.mzxml_parser import extract_xics_from_files
+
+            result = extract_xics_from_files([path], 100.0, mz_tolerance=0.05)
+            self.assertEqual(len(result["traces"]), 1)
+            trace = result["traces"][0]
+            self.assertEqual(len(trace["rt"]), 2)
+            self.assertEqual(max(trace["intensity"]), 1500.0)
+        finally:
+            os.unlink(path)
+
 
 if __name__ == "__main__":
     unittest.main()

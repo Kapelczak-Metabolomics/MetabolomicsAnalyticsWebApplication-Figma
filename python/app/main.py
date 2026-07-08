@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.analysis_engine import run_analysis
 from app.mzxml_parser import (
     cleanup_work_dir,
+    extract_xics_from_files,
     list_mzxml_samples,
     parse_mzxml_files,
     resolve_upload_paths,
@@ -125,6 +126,40 @@ async def import_mzxml(
             mz_tolerance=mz_tol,
             rt_tolerance=rt_tol,
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    finally:
+        cleanup_work_dir(work_dir)
+
+
+@app.post("/import/mzxml/xic")
+async def extract_mzxml_xic(
+    files: list[UploadFile] = File(...),
+    mz: str = Form(...),
+    mz_tolerance: str | None = Form(None),
+    groups: str | None = Form(None),
+) -> dict[str, Any]:
+    """Extract XIC chromatograms for a target m/z across uploaded mzXML files."""
+    if not files:
+        raise HTTPException(status_code=400, detail="At least one file is required")
+
+    try:
+        target_mz = float(mz)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid m/z value") from e
+
+    mz_tol = float(mz_tolerance) if mz_tolerance else 0.01
+    group_map = _parse_groups(groups)
+
+    import tempfile
+
+    work_dir = tempfile.mkdtemp(prefix="metabo-xic-")
+    try:
+        saved = await _save_uploads(files, work_dir)
+        paths = resolve_upload_paths(work_dir, [path for _, path in saved])
+        if not paths:
+            raise HTTPException(status_code=400, detail="No mzXML/mzML files found in upload")
+        return extract_xics_from_files(paths, target_mz, mz_tol, group_map)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     finally:

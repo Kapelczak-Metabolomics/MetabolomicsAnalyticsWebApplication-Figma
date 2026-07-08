@@ -16,11 +16,32 @@ export type MzxmlFile = { path: string; filename: string };
 
 type MzxmlImportResult = {
   samples: Array<{ sampleId: string; groupLabel: string; values: number[] }>;
-  features: Array<{ featureId: string; name: string; featureClass: string | null; pathway: string | null; values: (number | null)[] }>;
+  features: Array<{
+    featureId: string;
+    name: string;
+    featureClass: string | null;
+    pathway: string | null;
+    metadata?: Record<string, unknown> | null;
+    values: (number | null)[];
+  }>;
   samplesCount: number;
   featuresCount: number;
   missingPct: number;
   sourceFormat: string;
+};
+
+export type XicTrace = {
+  sampleId: string;
+  groupLabel: string;
+  filename: string;
+  rt: number[];
+  intensity: number[];
+};
+
+export type XicResult = {
+  mz: number;
+  mzTolerance: number;
+  traces: XicTrace[];
 };
 
 function formatServiceError(body: unknown, fallback: string): string {
@@ -191,6 +212,84 @@ export async function pythonImportMzxml(
     throw new Error(formatServiceError(parsed, `mzXML import failed (${res.status})`));
   }
   return JSON.parse(res.body) as MzxmlImportResult;
+}
+
+function buildXicForm(
+  files: MzxmlFile[],
+  mz: number,
+  mzTolerance: number,
+  groups?: Record<string, string>
+): FormData {
+  const form = new FormData();
+  for (const f of files) {
+    form.append("files", createReadStream(f.path), {
+      filename: f.filename,
+      contentType: "application/octet-stream",
+    });
+  }
+  form.append("mz", String(mz));
+  form.append("mz_tolerance", String(mzTolerance));
+  if (groups) form.append("groups", JSON.stringify(groups));
+  return form;
+}
+
+function postXicForm(
+  files: MzxmlFile[],
+  mz: number,
+  mzTolerance: number,
+  groups?: Record<string, string>
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const form = buildXicForm(files, mz, mzTolerance, groups);
+    const url = new URL(`${PYTHON_URL}/import/mzxml/xic`);
+    const transport = url.protocol === "https:" ? https : http;
+
+    const req = transport.request(
+      {
+        hostname: url.hostname,
+        port: url.port || (url.protocol === "https:" ? 443 : 80),
+        path: url.pathname,
+        method: "POST",
+        headers: form.getHeaders(),
+        timeout: MZXML_TIMEOUT_MS,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk) => chunks.push(chunk as Buffer));
+        res.on("end", () => resolve({ status: res.statusCode ?? 500, body: Buffer.concat(chunks).toString("utf8") }));
+      }
+    );
+
+    req.on("error", reject);
+    req.on("timeout", () => req.destroy(new Error("Python XIC request timed out")));
+    form.on("error", reject);
+    form.pipe(req);
+  });
+}
+
+export async function pythonExtractXic(
+  files: MzxmlFile[],
+  mz: number,
+  mzTolerance = 0.01,
+  groups?: Record<string, string>
+): Promise<XicResult> {
+  let res: { status: number; body: string };
+  try {
+    res = await postXicForm(files, mz, mzTolerance, groups);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Python service unreachable at ${PYTHON_URL}: ${msg}`);
+  }
+  if (res.status < 200 || res.status >= 300) {
+    let parsed: unknown = {};
+    try {
+      parsed = JSON.parse(res.body || "{}");
+    } catch {
+      /* ignore */
+    }
+    throw new Error(formatServiceError(parsed, `XIC extraction failed (${res.status})`));
+  }
+  return JSON.parse(res.body) as XicResult;
 }
 
 export async function pythonRunAnalysis(

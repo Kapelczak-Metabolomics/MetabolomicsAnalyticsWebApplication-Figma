@@ -181,6 +181,64 @@ def _pick_target_intensity(
     return best
 
 
+def _scan_rt_minutes(scan: Ms1Scan, index: int) -> float:
+    if scan.rt_minutes is not None:
+        return float(scan.rt_minutes)
+    return float(index)
+
+
+def extract_xic_from_scans(
+    scans: list[Ms1Scan],
+    target_mz: float,
+    mz_tolerance: float = 0.01,
+) -> list[dict[str, float]]:
+    """Build an extracted ion chromatogram (RT vs summed target m/z intensity)."""
+    points: list[dict[str, float]] = []
+    for index, scan in enumerate(scans):
+        intensity = _nearest_peak_intensity(scan.mzs, scan.intensities, target_mz, mz_tolerance)
+        points.append({"rt": _scan_rt_minutes(scan, index), "intensity": intensity})
+    points.sort(key=lambda point: point["rt"])
+    return points
+
+
+def extract_xics_from_files(
+    file_paths: list[str],
+    target_mz: float,
+    mz_tolerance: float = 0.01,
+    groups: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Extract XIC traces for one target m/z across multiple mzXML files."""
+    if not file_paths:
+        raise ValueError("No mzXML files provided")
+
+    traces: list[dict[str, Any]] = []
+    for path in file_paths:
+        if not os.path.isfile(path):
+            raise ValueError(f"File not found: {os.path.basename(path)}")
+        sample_id = _sample_id_from_filename(path)
+        group = _resolve_group(sample_id, path, groups)
+        scans = _extract_ms1_scans(path)
+        if not scans:
+            continue
+        chromatogram = extract_xic_from_scans(scans, target_mz, mz_tolerance)
+        traces.append({
+            "sampleId": sample_id,
+            "groupLabel": group,
+            "filename": os.path.basename(path),
+            "rt": [point["rt"] for point in chromatogram],
+            "intensity": [point["intensity"] for point in chromatogram],
+        })
+
+    if not traces:
+        raise ValueError("No XIC data could be extracted from mzXML files")
+
+    return {
+        "mz": target_mz,
+        "mzTolerance": mz_tolerance,
+        "traces": traces,
+    }
+
+
 def _slug_feature_id(name: str, mz: float) -> str:
     slug = re.sub(r"[^a-zA-Z0-9]+", "_", name.strip().lower()).strip("_")
     return slug or f"mz_{mz:.2f}".replace(".", "_")
@@ -615,6 +673,7 @@ def parse_mzxml_files(
                 "name": label,
                 "featureClass": target.adduct or "Targeted MS1",
                 "pathway": None,
+                "metadata": {"mz": target.mz, "rt": target.rt, "adduct": target.adduct, "targeted": True},
                 "values": values,
             })
         samples = [
@@ -636,6 +695,7 @@ def parse_mzxml_files(
                 "name": name,
                 "featureClass": "MS1",
                 "pathway": None,
+                "metadata": {"mz": mz, "targeted": False},
                 "values": values,
             })
 

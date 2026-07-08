@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Settings2, Search, Filter, Columns3 } from "lucide-react";
+import { Download, Settings2, Search, Filter, Columns3, LineChart, Loader2 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { toast } from "sonner";
 import { api } from "../../lib/api";
 import { downloadCsv } from "../../lib/export";
+import { XicPlot } from "../components/plots/xic-plot";
 
 interface FeatureRow {
   featureId: string;
@@ -40,6 +41,11 @@ export function DataTableView() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [datasetId, setDatasetId] = useState<number | null>(null);
+  const [sourceFormat, setSourceFormat] = useState<string | null>(null);
+  const [xicOpen, setXicOpen] = useState(false);
+  const [xicLoading, setXicLoading] = useState(false);
+  const [xicFeature, setXicFeature] = useState<FeatureRow | null>(null);
+  const [xicData, setXicData] = useState<Awaited<ReturnType<typeof api.getDatasetXic>> | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [visibleCols, setVisibleCols] = useState<Set<string>>(new Set(ALL_COLUMNS.map((c) => c.key)));
@@ -51,6 +57,7 @@ export function DataTableView() {
         const ready = datasets.find((d) => d.status === "ready");
         if (ready) {
           setDatasetId(ready.id);
+          setSourceFormat(ready.source_format ?? null);
           return api.getDatasetFeatures(ready.id, { limit: 500 });
         }
         return null;
@@ -74,6 +81,24 @@ export function DataTableView() {
   }, [features, search, filters]);
 
   const columns = ALL_COLUMNS.filter((c) => visibleCols.has(c.key));
+  const showXic = sourceFormat === "mzXML";
+
+  async function openXic(feature: FeatureRow) {
+    if (!datasetId) return;
+    setXicFeature(feature);
+    setXicOpen(true);
+    setXicLoading(true);
+    setXicData(null);
+    try {
+      const data = await api.getDatasetXic(datasetId, feature.featureId);
+      setXicData(data);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to load XIC");
+      setXicOpen(false);
+    } finally {
+      setXicLoading(false);
+    }
+  }
 
   function handleExport() {
     if (!filtered.length) {
@@ -135,6 +160,7 @@ export function DataTableView() {
                   {col.label}
                 </th>
               ))}
+              {showXic && <th className="p-2 font-medium text-right">XIC</th>}
             </tr>
           </thead>
           <tbody>
@@ -147,6 +173,18 @@ export function DataTableView() {
                       : String(f[col.key] ?? "")}
                   </td>
                 ))}
+                {showXic && (
+                  <td className="p-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => void openXic(f)}
+                      className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-accent"
+                    >
+                      <LineChart className="h-3.5 w-3.5" />
+                      View
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -203,6 +241,34 @@ export function DataTableView() {
             </div>
             <div className="mt-4 flex justify-end">
               <button onClick={() => setColumnsOpen(false)} className="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground">Done</button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root open={xicOpen} onOpenChange={(open) => { setXicOpen(open); if (!open) { setXicFeature(null); setXicData(null); } }}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(920px,95vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-5 shadow-xl">
+            <Dialog.Title className="text-sm font-semibold mb-1">Extracted Ion Chromatogram</Dialog.Title>
+            <Dialog.Description className="text-xs text-muted-foreground mb-4">
+              {xicFeature ? xicFeature.name : "Metabolite XIC across samples"}
+            </Dialog.Description>
+            {xicLoading ? (
+              <div className="flex h-[360px] items-center justify-center text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Extracting chromatogram from mzXML…
+              </div>
+            ) : xicData ? (
+              <XicPlot
+                metaboliteName={xicData.name}
+                mz={xicData.mz}
+                mzTolerance={xicData.mzTolerance}
+                traces={xicData.traces}
+              />
+            ) : null}
+            <div className="mt-4 flex justify-end">
+              <button onClick={() => setXicOpen(false)} className="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground">Close</button>
             </div>
           </Dialog.Content>
         </Dialog.Portal>

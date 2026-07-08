@@ -196,6 +196,8 @@ ALTER TABLE datasets ADD COLUMN IF NOT EXISTS import_status VARCHAR(20) DEFAULT 
 ALTER TABLE datasets ADD COLUMN IF NOT EXISTS import_error TEXT;
 ALTER TABLE datasets ADD COLUMN IF NOT EXISTS raw_file_path TEXT;
 
+ALTER TABLE features ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
+
 CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_id);
 CREATE INDEX IF NOT EXISTS idx_datasets_project ON datasets(project_id);
 CREATE INDEX IF NOT EXISTS idx_samples_dataset ON samples(dataset_id);

@@ -4,9 +4,9 @@ import { authMiddleware, logAudit, createNotification } from "../middleware/auth
 import { loadDatasetMatrix } from "../utils/dataset.js";
 import { computeFeatureStats } from "../services/analysis.js";
 import { bulkLoadMatrix, clearDatasetMatrix } from "../utils/bulk-import.js";
-import { pythonHealth, pythonImportMzxml, pythonPreviewMzxml } from "../services/python-client.js";
+import { pythonHealth, pythonImportMzxml, pythonPreviewMzxml, pythonExtractXic } from "../services/python-client.js";
 import { saveRawDatasetFiles, deleteRawDatasetFiles, listRawDatasetFiles, deleteRawDatasetFile, materializeRawDatasetFiles, cleanupWorkDir } from "../services/storage.js";
-import { getActiveMetaboliteTargetsForImport } from "../services/metabolite-targets.js";
+import { getActiveMetaboliteTargetsForImport, loadMetaboliteTargetSettings } from "../services/metabolite-targets.js";
 import fs from "fs";
 import path from "path";
 import {
@@ -549,6 +549,7 @@ async function reprocessMzxmlDataset(
     name: f.name,
     featureClass: f.featureClass,
     pathway: f.pathway,
+    metadata: f.metadata ?? null,
     values: f.values,
   }));
 
@@ -625,6 +626,90 @@ async function reprocessStoredMzxmlDataset(datasetId: number, userId: number) {
     cleanupWorkDir(workDir);
   }
 }
+
+function resolveFeatureMz(feature: {
+  feature_id: string;
+  name: string;
+  metadata?: unknown;
+}): number | null {
+  const meta = feature.metadata as Record<string, unknown> | null | undefined;
+  if (meta?.mz != null && Number.isFinite(Number(meta.mz))) return Number(meta.mz);
+  const fromName = feature.name.match(/m\/z\s*([\d.]+)/i);
+  if (fromName) return Number(fromName[1]);
+  const fromId = feature.feature_id.match(/^mz_([\d_]+)$/i);
+  if (fromId) return Number(fromId[1].replace(/_/g, "."));
+  return null;
+}
+
+router.get("/:id/xic/:featureId", authMiddleware, async (req: Request, res: Response) => {
+  const datasetId = parseInt(String(req.params.id), 10);
+  const featureKey = String(req.params.featureId);
+  if (!(await canAccessDataset(req.user!, datasetId))) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
+
+  const dataset = await query<{ raw_file_path: string | null; source_format: string }>(
+    `SELECT raw_file_path, source_format FROM datasets WHERE id = $1`,
+    [datasetId]
+  );
+  const ds = dataset.rows[0];
+  if (!ds || ds.source_format !== "mzXML" || !ds.raw_file_path) {
+    res.status(400).json({ error: "XIC chromatograms are only available for mzXML datasets with stored raw files" });
+    return;
+  }
+
+  const feature = await query<{ feature_id: string; name: string; metadata: unknown }>(
+    `SELECT feature_id, name, metadata FROM features WHERE dataset_id = $1 AND feature_id = $2`,
+    [datasetId, featureKey]
+  );
+  const row = feature.rows[0];
+  if (!row) {
+    res.status(404).json({ error: "Feature not found" });
+    return;
+  }
+
+  const mz = resolveFeatureMz(row);
+  if (mz == null) {
+    res.status(400).json({ error: "Could not determine target m/z for this feature" });
+    return;
+  }
+
+  if (!(await pythonHealth()).ok) {
+    res.status(503).json({ error: "Python analysis service is not running" });
+    return;
+  }
+
+  const settings = await loadMetaboliteTargetSettings();
+  const sampleRows = await query<{ sample_id: string; group_label: string }>(
+    `SELECT sample_id, group_label FROM samples WHERE dataset_id = $1`,
+    [datasetId]
+  );
+  const groups: Record<string, string> = {};
+  for (const s of sampleRows.rows) groups[s.sample_id] = s.group_label;
+
+  let workDir = "";
+  try {
+    const materialized = await materializeRawDatasetFiles(ds.raw_file_path);
+    workDir = materialized.workDir;
+    const uploads: MzxmlUploadFile[] = materialized.files.map((f) => ({
+      path: f.path!,
+      filename: f.filename,
+    }));
+    const xic = await pythonExtractXic(uploads, mz, settings.mzTolerance, groups);
+    res.json({
+      featureId: row.feature_id,
+      name: row.name,
+      mz: xic.mz,
+      mzTolerance: xic.mzTolerance,
+      traces: xic.traces,
+    });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "XIC extraction failed" });
+  } finally {
+    if (workDir) cleanupWorkDir(workDir);
+  }
+});
 
 router.get("/:id/import-status", authMiddleware, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
