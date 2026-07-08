@@ -44,12 +44,12 @@ export function VolcanoView() {
   if (loading) return <div className="flex h-full items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div>;
 
   return (
-    <div className="flex h-full min-h-0 flex-col lg:flex-row">
+    <div className="flex h-full max-sm:flex-col max-sm:min-h-0">
       <RunAnalysisDialog open={runOpen} onClose={() => { setRunOpen(false); refresh(); }} analysisName="Volcano Plot Analysis" analysisType="Volcano" projectId={dataset?.project_id} datasetId={dataset?.id} stages={volcanoStages} onComplete={refresh} />
       <ConfigureDialog open={configOpen} onClose={() => setConfigOpen(false)} title="Configure Volcano Plot" groups={volcanoConfig} initialValues={getAnalysisConfig("Volcano")} onSave={(c) => saveAnalysisConfig("Volcano", c)} />
 
-      <div className="min-h-0 flex-1 overflow-auto p-4 space-y-4 sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex-1 overflow-auto p-6 space-y-4 max-sm:p-4">
+        <div className="flex items-center justify-between max-sm:flex-col max-sm:items-stretch max-sm:gap-3">
           <div>
             <h2 className="text-base">Volcano Plot Analysis</h2>
             <p className="text-xs text-muted-foreground mt-0.5">{dataset ? `${dataset.project_name} · ${dataset.name}` : "No dataset"}</p>
@@ -61,7 +61,7 @@ export function VolcanoView() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-4 gap-3 max-sm:grid-cols-2">
           <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-3"><p className="text-xs text-muted-foreground">Upregulated</p><p className="text-xl font-semibold text-rose-600">{stats.up}</p></div>
           <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3"><p className="text-xs text-muted-foreground">Downregulated</p><p className="text-xl font-semibold text-blue-600">{stats.down}</p></div>
           <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Not Significant</p><p className="text-xl font-semibold">{stats.ns}</p></div>

@@ -51,7 +51,7 @@ export function PathwayView() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col lg:flex-row">
+    <div className="flex h-full max-sm:flex-col max-sm:min-h-0">
       <RunAnalysisDialog
         open={runOpen}
         onClose={() => { setRunOpen(false); refresh(); }}
@@ -71,8 +71,8 @@ export function PathwayView() {
         onSave={(c) => saveAnalysisConfig("Pathway", c)}
       />
 
-      <div className="min-h-0 flex-1 overflow-auto p-4 space-y-4 sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex-1 overflow-auto p-6 space-y-4 max-sm:p-4">
+        <div className="flex items-center justify-between max-sm:flex-col max-sm:items-stretch max-sm:gap-3">
           <div>
             <h2 className="text-base">Pathway Enrichment Analysis</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
@@ -114,7 +114,7 @@ export function PathwayView() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-4 gap-3 max-sm:grid-cols-2">
           <div className="rounded-md border border-border bg-card p-3">
             <p className="text-xs text-muted-foreground">Enriched Pathways</p>
             <p className="mt-1 text-xl tabular-nums">{pathways.length}</p>
@@ -181,7 +181,7 @@ export function PathwayView() {
         </div>
       </div>
 
-      <div className="max-h-[45vh] w-full shrink-0 space-y-4 overflow-auto border-t border-border bg-muted/30 p-4 lg:max-h-none lg:w-64 lg:border-t-0 lg:border-l">
+      <div className="w-64 border-l border-border bg-muted/30 p-4 space-y-4 overflow-auto max-sm:max-h-[45vh] max-sm:w-full max-sm:shrink-0 max-sm:border-t max-sm:border-l-0">
         <div>
           <h3 className="text-xs text-muted-foreground mb-2">Analysis Settings</h3>
           <div className="space-y-2 text-xs">

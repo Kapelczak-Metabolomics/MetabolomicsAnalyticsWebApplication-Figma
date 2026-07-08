@@ -476,7 +476,7 @@ export function DataImportView() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6">
+      <div className="mx-auto max-w-3xl space-y-6 p-6 max-sm:p-4">
         <div className="flex items-center gap-0">
           {steps.map((s, idx) => (
             <div key={s} className="flex items-center flex-1 last:flex-none">
@@ -580,7 +580,7 @@ export function DataImportView() {
                 </ul>
               </div>
             )}
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2 max-sm:grid-cols-1">
               {format === "csv" ? (
                 <>
                   <div className="rounded-lg border border-border bg-card p-3 flex items-start gap-2">

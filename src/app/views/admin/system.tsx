@@ -60,7 +60,7 @@ function BrandingSection() {
   const preset = ACCENT_PRESETS[accent];
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+    <div className="rounded-xl border border-border bg-card p-6 max-sm:p-4">
       <div className="mb-5 flex items-center gap-2">
         <Palette className="h-5 w-5 text-violet-500" />
         <h3 className="text-base font-medium">Branding</h3>
@@ -91,7 +91,7 @@ function BrandingSection() {
 
       <div className="space-y-5">
         {/* App name + tagline */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
           <div>
             <label className="text-sm font-medium">Application Name</label>
             <input type="text" value={appName} onChange={(e) => setAppName(e.target.value)}
@@ -107,7 +107,7 @@ function BrandingSection() {
         </div>
 
         {/* Logo + favicon */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
           <div>
             <label className="text-sm font-medium">Logo</label>
             <p className="text-xs text-muted-foreground mt-0.5 mb-2">SVG or PNG, max 2 MB, recommended 64×64 px</p>
@@ -250,14 +250,14 @@ function MetaboliteTargetsSection() {
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-border bg-card p-4 sm:p-6 text-sm text-muted-foreground">
+      <div className="rounded-xl border border-border bg-card p-6 max-sm:p-4 text-sm text-muted-foreground">
         Loading metabolite target settings…
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+    <div className="rounded-xl border border-border bg-card p-6 max-sm:p-4">
       <div className="mb-5 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Target className="h-5 w-5 text-violet-500" />
@@ -277,7 +277,7 @@ function MetaboliteTargetsSection() {
         </label>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mb-4">
+      <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1 mb-4">
         <div>
           <label className="text-sm font-medium">m/z tolerance (Da)</label>
           <input type="number" step="0.001" value={mzTolerance} onChange={(e) => setMzTolerance(Number(e.target.value))}
@@ -433,7 +433,7 @@ export function AdminSystem() {
   const diskPct = storage?.local.diskPct ?? health.disk;
 
   return (
-    <div className="h-full overflow-auto bg-gradient-to-br from-background via-background to-muted/20 p-4 sm:p-6">
+    <div className="h-full overflow-auto bg-gradient-to-br from-background via-background to-muted/20 p-6 max-sm:p-4">
       <div className="mx-auto max-w-5xl space-y-6">
         <div>
           <h2 className="text-lg font-semibold">System Settings</h2>
@@ -448,9 +448,9 @@ export function AdminSystem() {
         <MetaboliteTargetsSection />
 
         {/* System Health */}
-        <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+        <div className="rounded-xl border border-border bg-card p-6 max-sm:p-4">
           <h3 className="mb-4 text-base font-medium">System Health</h3>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
             {[
               { icon: Cpu, label: "CPU Usage", value: health.cpu, color: "from-violet-500 to-violet-600", sub: `load ${health.loadAvg[0]?.toFixed(2) ?? "—"}` },
               { icon: Server, label: "Memory Usage", value: health.memory, color: "from-cyan-500 to-cyan-600", sub: null },
@@ -475,7 +475,7 @@ export function AdminSystem() {
         </div>
 
         {/* S3 Storage */}
-        <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+        <div className="rounded-xl border border-border bg-card p-6 max-sm:p-4">
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Cloud className="h-5 w-5 text-cyan-500" />
@@ -515,7 +515,7 @@ export function AdminSystem() {
           </div>
 
           <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
               <div>
                 <label className="text-sm font-medium">Provider</label>
                 <select value={s3Provider} onChange={(e) => setS3Provider(e.target.value)}
@@ -603,7 +603,7 @@ export function AdminSystem() {
 
             <div className="border-t border-border pt-4">
               <p className="text-sm font-medium mb-3">Lifecycle & Retention</p>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
                 <div>
                   <label className="text-xs text-muted-foreground">Raw data retention</label>
                   <select className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none">
@@ -664,7 +664,7 @@ export function AdminSystem() {
         </div>
 
         {/* Server Configuration */}
-        <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+        <div className="rounded-xl border border-border bg-card p-6 max-sm:p-4">
           <h3 className="mb-4 text-base font-medium">Server Configuration</h3>
           <div className="space-y-4">
             {[
@@ -720,7 +720,7 @@ export function AdminSystem() {
         </div>
 
         {/* Database */}
-        <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+        <div className="rounded-xl border border-border bg-card p-6 max-sm:p-4">
           <h3 className="mb-4 text-base font-medium">Database</h3>
           <div className="space-y-4">
             <div className="rounded-lg border border-border bg-muted/30 p-4">
@@ -755,7 +755,7 @@ export function AdminSystem() {
         </div>
 
         {/* Email Settings */}
-        <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+        <div className="rounded-xl border border-border bg-card p-6 max-sm:p-4">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-base font-medium">Email Configuration</h3>
             <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${smtpEnabled && smtpHost ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>
@@ -777,7 +777,7 @@ export function AdminSystem() {
                 className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
               />
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
               <div>
                 <label className="text-sm font-medium">Port</label>
                 <input
@@ -797,7 +797,7 @@ export function AdminSystem() {
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
               <div>
                 <label className="text-sm font-medium">Username</label>
                 <input type="text" value={smtpUsername} onChange={(e) => setSmtpUsername(e.target.value)}
@@ -810,7 +810,7 @@ export function AdminSystem() {
                   className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none" />
               </div>
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
               <div>
                 <label className="text-sm font-medium">From email</label>
                 <input type="email" value={smtpFromEmail} onChange={(e) => setSmtpFromEmail(e.target.value)}

@@ -87,7 +87,7 @@ export function AdminLogs() {
         </div>
 
         {/* Stats — top */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+        <div className="grid grid-cols-4 gap-4 max-sm:grid-cols-2 max-sm:gap-3">
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center gap-2 mb-1">
               <Activity className="h-4 w-4 text-muted-foreground" />

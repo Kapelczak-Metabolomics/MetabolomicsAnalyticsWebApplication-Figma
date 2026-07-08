@@ -114,7 +114,7 @@ export function ExperimentDetailView() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-4 gap-3 max-sm:grid-cols-2">
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Samples</p><p className="text-lg font-semibold">{String(exp.samplesCount ?? "—")}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Features</p><p className="text-lg font-semibold">{String(exp.featuresCount ?? "—")}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Duration</p><p className="text-lg font-semibold">{String(exp.duration ?? "—")}</p></div>

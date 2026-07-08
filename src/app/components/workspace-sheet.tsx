@@ -4,6 +4,7 @@ import { useApp } from "../../contexts/app-context";
 import { ChevronDown } from "lucide-react";
 import * as Select from "@radix-ui/react-select";
 
+/** Phone-only workspace picker (< 640px) */
 export function WorkspaceSheet() {
   const { workspaceOpen, setWorkspaceOpen } = useLayout();
   const {
@@ -16,44 +17,46 @@ export function WorkspaceSheet() {
   const selectedDataset = datasets.find((d) => d.id === selectedDatasetId);
 
   return (
-    <Sheet open={workspaceOpen} onOpenChange={setWorkspaceOpen}>
-      <SheetContent side="bottom" className="max-h-[85vh] rounded-t-2xl">
-        <SheetHeader>
-          <SheetTitle>Workspace</SheetTitle>
-          <SheetDescription>Choose project, dataset, and analysis lens</SheetDescription>
-        </SheetHeader>
-        <div className="space-y-4 overflow-auto px-1 pb-4">
-          <WorkspaceSelect
-            label="Project"
-            value={selectedProject?.name ?? ""}
-            options={projects.map((p) => p.name)}
-            onChange={(name) => {
-              const p = projects.find((x) => x.name === name);
-              if (p) {
-                setSelectedProjectId(p.id);
-                const ds = datasets.find((d) => d.project_id === p.id);
+    <div className="sm:hidden">
+      <Sheet open={workspaceOpen} onOpenChange={setWorkspaceOpen}>
+        <SheetContent side="bottom" className="max-h-[85vh] rounded-t-2xl">
+          <SheetHeader>
+            <SheetTitle>Workspace</SheetTitle>
+            <SheetDescription>Choose project, dataset, and analysis lens</SheetDescription>
+          </SheetHeader>
+          <div className="space-y-4 overflow-auto px-1 pb-4">
+            <WorkspaceSelect
+              label="Project"
+              value={selectedProject?.name ?? ""}
+              options={projects.map((p) => p.name)}
+              onChange={(name) => {
+                const p = projects.find((x) => x.name === name);
+                if (p) {
+                  setSelectedProjectId(p.id);
+                  const ds = datasets.find((d) => d.project_id === p.id);
+                  if (ds) setSelectedDatasetId(ds.id);
+                }
+              }}
+            />
+            <WorkspaceSelect
+              label="Dataset"
+              value={selectedDataset ? `${selectedDataset.name} (n=${selectedDataset.samples_count})` : ""}
+              options={(projectDatasets.length ? projectDatasets : datasets).map((d) => `${d.name} (n=${d.samples_count})`)}
+              onChange={(label) => {
+                const ds = (projectDatasets.length ? projectDatasets : datasets).find((d) => label.startsWith(d.name));
                 if (ds) setSelectedDatasetId(ds.id);
-              }
-            }}
-          />
-          <WorkspaceSelect
-            label="Dataset"
-            value={selectedDataset ? `${selectedDataset.name} (n=${selectedDataset.samples_count})` : ""}
-            options={(projectDatasets.length ? projectDatasets : datasets).map((d) => `${d.name} (n=${d.samples_count})`)}
-            onChange={(label) => {
-              const ds = (projectDatasets.length ? projectDatasets : datasets).find((d) => label.startsWith(d.name));
-              if (ds) setSelectedDatasetId(ds.id);
-            }}
-          />
-          <WorkspaceSelect
-            label="Lens"
-            value={selectedLens}
-            options={groupLenses}
-            onChange={setSelectedLens}
-          />
-        </div>
-      </SheetContent>
-    </Sheet>
+              }}
+            />
+            <WorkspaceSelect
+              label="Lens"
+              value={selectedLens}
+              options={groupLenses}
+              onChange={setSelectedLens}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
+    </div>
   );
 }
 

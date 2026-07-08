@@ -372,7 +372,7 @@ export function ProjectDetailView() {
       </div>
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 gap-3 border-b border-border bg-card/30 px-4 py-4 sm:grid-cols-4 sm:gap-4 sm:px-6">
+      <div className="grid grid-cols-4 gap-4 border-b border-border bg-card/30 px-6 py-4 max-sm:grid-cols-2 max-sm:gap-3 max-sm:px-4">
         {[
           { icon: Database, label: "Datasets", value: datasets.length, color: "text-violet-500" },
           { icon: Users, label: "Samples", value: datasets.reduce((a, d) => a + d.samples, 0).toLocaleString(), color: "text-cyan-500" },
@@ -410,7 +410,7 @@ export function ProjectDetailView() {
         </div>
 
         {/* ── Datasets ─────────────────────────────────────────────────────── */}
-        <Tabs.Content value="datasets" className="space-y-4 p-4 sm:p-6">
+        <Tabs.Content value="datasets" className="space-y-4 p-6 max-sm:p-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium">Datasets ({datasets.length})</h3>
             <Link to="/data/import" className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">
@@ -469,15 +469,15 @@ export function ProjectDetailView() {
         </Tabs.Content>
 
         {/* ── Experiments ──────────────────────────────────────────────────── */}
-        <Tabs.Content value="experiments" className="space-y-4 p-4 sm:p-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs.Content value="experiments" className="space-y-4 p-6 max-sm:p-4">
+          <div className="flex items-center justify-between max-sm:flex-col max-sm:items-stretch max-sm:gap-3">
             <h3 className="text-sm font-medium">Experiments ({experiments.length})</h3>
             <Link to="/pca" className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">
               <Plus className="h-3.5 w-3.5" /> New Experiment
             </Link>
           </div>
-          <div className="overflow-x-auto rounded-xl border border-border bg-card">
-            <table className="w-full min-w-[640px] text-sm">
+          <div className="overflow-hidden rounded-xl border border-border bg-card max-sm:overflow-x-auto">
+            <table className="w-full text-sm max-sm:min-w-[640px]">
               <thead className="border-b border-border bg-muted/30">
                 <tr>
                   <th className="p-3 text-left text-xs font-medium">Experiment</th>

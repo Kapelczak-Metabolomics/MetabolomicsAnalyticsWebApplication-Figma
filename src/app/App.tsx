@@ -39,13 +39,13 @@ import { WorkspaceSheet } from "./components/workspace-sheet";
 function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <LayoutProvider>
-      <div className="flex h-[100dvh] w-screen overflow-hidden bg-background text-foreground">
+      <div className="flex h-[100dvh] w-screen overflow-hidden bg-background text-foreground sm:h-screen">
         <Sidebar />
         <MobileNav />
         <WorkspaceSheet />
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <TopBar />
-          <main className="min-h-0 flex-1 overflow-auto overscroll-y-contain">{children}</main>
+          <main className="flex-1 overflow-auto overscroll-y-contain sm:overflow-hidden">{children}</main>
         </div>
       </div>
     </LayoutProvider>
@@ -107,11 +107,10 @@ export default function App() {
           </AppProvider>
           </NotificationsProvider>
           <Toaster
-            position="top-center"
+            position="bottom-right"
             toastOptions={{
               style: { fontSize: "12px" },
             }}
-            className="sm:!bottom-4 sm:!top-auto"
           />
         </AuthProvider>
       </BrowserRouter>

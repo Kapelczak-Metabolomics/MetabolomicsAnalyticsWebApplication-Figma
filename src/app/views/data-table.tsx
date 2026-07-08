@@ -124,19 +124,19 @@ export function DataTableView() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-border p-3 sm:p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="border-b border-border p-4 max-sm:p-3">
+        <div className="flex items-center justify-between max-sm:flex-col max-sm:items-stretch max-sm:gap-3">
           <div>
             <h2 className="text-base">Client Data Table</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
               Raw feature abundance and sample metadata {datasetId ? `(dataset #${datasetId})` : ""} · {filtered.length} rows
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative w-full sm:w-auto sm:min-w-[200px] sm:flex-1 lg:max-w-xs">
+          <div className="flex items-center gap-2 max-sm:flex-wrap">
+            <div className="relative max-sm:w-full sm:min-w-0">
               <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search features..."
-                className="h-10 w-full rounded-md border border-border bg-background pl-8 pr-3 text-xs outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50" />
+                className="h-8 w-64 rounded-md border border-border bg-background pl-8 pr-3 text-xs outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 max-sm:h-10 max-sm:w-full" />
             </div>
             <button onClick={() => setFilterOpen(true)} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent">
               <Filter className="h-3.5 w-3.5" /> Filter
@@ -151,9 +151,8 @@ export function DataTableView() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
-        <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-xs">
+      <div className="flex-1 overflow-auto max-sm:overflow-x-auto">
+        <table className="w-full text-xs max-sm:min-w-[720px]">
           <thead className="sticky top-0 border-b border-border bg-muted/50 backdrop-blur">
             <tr>
               {columns.map((col) => (
@@ -190,7 +189,6 @@ export function DataTableView() {
             ))}
           </tbody>
         </table>
-        </div>
       </div>
 
       <Dialog.Root open={filterOpen} onOpenChange={setFilterOpen}>

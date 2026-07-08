@@ -54,7 +54,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             key={item.name}
             to={item.href}
             onClick={onNavigate}
-            className={`flex min-h-11 items-center gap-2.5 rounded-md px-3 py-2.5 text-[13px] transition-colors ${
+            className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] transition-colors max-sm:min-h-11 max-sm:px-3 max-sm:py-2.5 ${
               isActive
                 ? "bg-sidebar-accent text-sidebar-accent-foreground"
                 : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
@@ -71,7 +71,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
       <button
         type="button"
         onClick={() => setAdminOpen(!adminOpen)}
-        className={`flex min-h-11 w-full items-center justify-between rounded-md px-3 py-2.5 text-[13px] transition-colors ${
+        className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-[13px] transition-colors max-sm:min-h-11 max-sm:px-3 max-sm:py-2.5 ${
           isInAdmin
             ? "bg-gradient-to-r from-violet-500/20 to-cyan-500/20 text-sidebar-accent-foreground"
             : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
@@ -95,7 +95,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                 key={item.name}
                 to={item.href}
                 onClick={onNavigate}
-                className={`flex min-h-10 items-center gap-2 rounded-md px-2 py-2 text-[12px] transition-colors ${
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px] transition-colors max-sm:min-h-10 max-sm:py-2 ${
                   isActive
                     ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
