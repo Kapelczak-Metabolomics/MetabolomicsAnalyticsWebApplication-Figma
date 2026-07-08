@@ -32,15 +32,23 @@ import { AuthProvider, ProtectedRoute, AdminRoute } from "../contexts/auth-conte
 import { AppProvider } from "../contexts/app-context";
 import { NotificationsProvider } from "../contexts/notifications-context";
 
+import { LayoutProvider } from "../contexts/layout-context";
+import { MobileNav } from "./components/mobile-nav";
+import { WorkspaceSheet } from "./components/workspace-sheet";
+
 function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
-      <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <TopBar />
-        <main className="flex-1 overflow-hidden">{children}</main>
+    <LayoutProvider>
+      <div className="flex h-[100dvh] w-screen overflow-hidden bg-background text-foreground">
+        <Sidebar />
+        <MobileNav />
+        <WorkspaceSheet />
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <TopBar />
+          <main className="min-h-0 flex-1 overflow-auto overscroll-y-contain">{children}</main>
+        </div>
       </div>
-    </div>
+    </LayoutProvider>
   );
 }
 
@@ -99,10 +107,11 @@ export default function App() {
           </AppProvider>
           </NotificationsProvider>
           <Toaster
-            position="bottom-right"
+            position="top-center"
             toastOptions={{
               style: { fontSize: "12px" },
             }}
+            className="sm:!bottom-4 sm:!top-auto"
           />
         </AuthProvider>
       </BrowserRouter>

@@ -61,7 +61,7 @@ export function ClusteringView() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full min-h-0 flex-col lg:flex-row">
       <RunAnalysisDialog
         open={runOpen}
         onClose={() => { setRunOpen(false); refresh(); }}
@@ -81,8 +81,8 @@ export function ClusteringView() {
         onSave={(config) => saveAnalysisConfig("Clustering", config)}
       />
 
-      <div className="flex-1 overflow-auto p-6 space-y-4">
-        <div className="flex items-center justify-between">
+      <div className="min-h-0 flex-1 overflow-auto p-4 space-y-4 sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-base">Hierarchical Clustering</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
@@ -109,7 +109,7 @@ export function ClusteringView() {
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="rounded-md border border-border bg-card p-3">
             <p className="text-xs text-muted-foreground">Sample Groups</p>
             <p className="mt-1 text-xl tabular-nums">{clusters.length || "—"}</p>
@@ -136,7 +136,7 @@ export function ClusteringView() {
           <ChartPlaceholder type="Clustered Heatmap" height="550px" exportId="plot-clustering-heatmap" heatmap={heatmap ? { matrix: heatmap.matrix, sampleLabels: heatmap.sampleLabels, featureLabels: heatmap.featureLabels } : undefined} heatmapOrientation={heatmapOrientation} />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm">Sample Dendrogram</h3>
@@ -154,7 +154,7 @@ export function ClusteringView() {
         </div>
       </div>
 
-      <div className="w-64 border-l border-border bg-muted/30 p-4 space-y-4 overflow-auto">
+      <div className="max-h-[45vh] w-full shrink-0 space-y-4 overflow-auto border-t border-border bg-muted/30 p-4 lg:max-h-none lg:w-64 lg:border-t-0 lg:border-l">
         <div>
           <h3 className="text-xs text-muted-foreground mb-2">Clustering Parameters</h3>
           <div className="space-y-2 text-xs">
@@ -187,7 +187,7 @@ export function ClusteringView() {
                 key={cluster.name}
                 className="rounded-md bg-card p-2 text-xs"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-2">
                     <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: cluster.color }} />
                     <span>{cluster.name}</span>

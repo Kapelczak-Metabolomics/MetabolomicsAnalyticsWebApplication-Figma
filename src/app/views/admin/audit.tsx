@@ -136,7 +136,7 @@ export function AdminAudit() {
         </div>
 
         {/* KPI strip */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[
             { label: "Total Events", value: counts.total, cls: "text-foreground", bg: "border-border" },
             { label: "Critical Events", value: counts.critical, cls: "text-rose-600 dark:text-rose-400", bg: "border-rose-500/20 bg-rose-500/5" },

@@ -114,7 +114,7 @@ export function ExperimentDetailView() {
         )}
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Samples</p><p className="text-lg font-semibold">{String(exp.samplesCount ?? "—")}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Features</p><p className="text-lg font-semibold">{String(exp.featuresCount ?? "—")}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Duration</p><p className="text-lg font-semibold">{String(exp.duration ?? "—")}</p></div>
@@ -128,7 +128,7 @@ export function ExperimentDetailView() {
             <ChartPlaceholder type={chartType} height="420px" {...chartProps} />
           </div>
           {type === "PLS-DA" && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="rounded-lg border border-border bg-card p-4">
                 <h3 className="text-sm mb-3">VIP Scores</h3>
                 <ChartPlaceholder type="Variable Importance in Projection" height="280px" vipFeatures={chartProps.vipFeatures} />
@@ -140,7 +140,7 @@ export function ExperimentDetailView() {
             </div>
           )}
           {type === "Clustering" && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="rounded-lg border border-border bg-card p-4">
                 <h3 className="text-sm mb-3">Sample Dendrogram</h3>
                 <ChartPlaceholder type="Hierarchical Tree" height="280px" dendrogram={chartProps.dendrogram} dendrogramLabels={chartProps.dendrogramLabels} />

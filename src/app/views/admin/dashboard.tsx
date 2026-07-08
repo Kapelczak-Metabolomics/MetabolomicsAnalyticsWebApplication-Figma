@@ -72,7 +72,7 @@ export function AdminDashboard() {
         </div>
 
         {/* KPI cards */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
           {stats.map(({ label, change, color, icon: Icon, key }) => {
             const c = colorMap[color];
             const value = statData[key] ?? "—";

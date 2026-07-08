@@ -44,7 +44,7 @@ export function PLSDAView() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full min-h-0 flex-col lg:flex-row">
       <RunAnalysisDialog
         open={runOpen}
         onClose={() => { setRunOpen(false); refresh(); }}
@@ -57,8 +57,8 @@ export function PLSDAView() {
       />
       <ConfigureDialog open={configOpen} onClose={() => setConfigOpen(false)} title="Configure PLS-DA" groups={plsdaConfig} initialValues={getAnalysisConfig("PLS-DA")} onSave={(c) => saveAnalysisConfig("PLS-DA", c)} />
 
-      <div className="flex-1 overflow-auto p-6 space-y-4">
-        <div className="flex items-center justify-between">
+      <div className="min-h-0 flex-1 overflow-auto p-4 space-y-4 sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-base">Partial Least Squares - DA</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
@@ -85,7 +85,7 @@ export function PLSDAView() {
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="rounded-lg border border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 to-emerald-600/10 p-3">
             <p className="text-xs font-medium text-muted-foreground">Accuracy</p>
             <p className="mt-1 text-xl font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{accuracy ? `${accuracy}%` : "—"}</p>
@@ -118,7 +118,7 @@ export function PLSDAView() {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm">VIP Scores</h3>
@@ -136,7 +136,7 @@ export function PLSDAView() {
         </div>
       </div>
 
-      <div className="w-64 border-l border-border bg-muted/30 p-4 space-y-4 overflow-auto">
+      <div className="max-h-[45vh] w-full shrink-0 space-y-4 overflow-auto border-t border-border bg-muted/30 p-4 lg:max-h-none lg:w-64 lg:border-t-0 lg:border-l">
         <div>
           <h3 className="text-xs text-muted-foreground mb-2">Model Performance</h3>
           <div className="space-y-2 text-xs">

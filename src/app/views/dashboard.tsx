@@ -44,8 +44,8 @@ export function Dashboard() {
   const kpis = data?.kpis;
 
   return (
-    <div className="p-6 space-y-6 bg-gradient-to-br from-background via-background to-muted/20">
-      <div className="flex items-center justify-between">
+    <div className="p-4 space-y-6 bg-gradient-to-br from-background via-background to-muted/20 sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
             Project Overview
@@ -64,7 +64,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KPICard
           title="Total Metabolites"
           value={kpis?.totalMetabolites.toLocaleString() ?? "0"}

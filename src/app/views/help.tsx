@@ -405,7 +405,7 @@ export function HelpView() {
 
   if (article) {
     return (
-      <div className="flex h-full overflow-hidden bg-gradient-to-br from-background via-background to-muted/20">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-gradient-to-br from-background via-background to-muted/20 lg:flex-row">
         {/* Left nav */}
         <div className="w-56 flex-shrink-0 border-r border-border overflow-auto p-3 space-y-1">
           {categories.map((cat) => (
