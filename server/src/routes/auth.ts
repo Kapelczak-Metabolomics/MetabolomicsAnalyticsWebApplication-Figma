@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { query } from "../db/index.js";
-import { signToken, authMiddleware, updateLastActive, logAudit } from "../middleware/auth.js";
+import { signToken, authMiddleware, updateLastActive, logAudit, logSystem } from "../middleware/auth.js";
 import { trySendPasswordReset } from "../services/email.js";
 
 const router = Router();
@@ -59,12 +59,14 @@ router.post("/login", async (req: Request, res: Response) => {
 
   const user = result.rows[0];
   if (!user || user.status !== "active") {
+    await logSystem("warning", "LOGIN_FAILED", `Failed login attempt for ${email.toLowerCase().trim()}`, { req });
     res.status(401).json({ error: "Invalid email or password" });
     return;
   }
 
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) {
+    await logSystem("warning", "LOGIN_FAILED", `Invalid password for ${user.email}`, { req });
     res.status(401).json({ error: "Invalid email or password" });
     return;
   }

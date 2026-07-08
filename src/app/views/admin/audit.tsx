@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Search, Download, ChevronDown, Shield, Info,
   AlertTriangle, CheckCircle2, LogIn, LogOut, Settings,
@@ -7,7 +7,18 @@ import {
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
 import { api } from "../../../lib/api";
-import { downloadCsv, downloadJson, downloadText } from "../../../lib/export";
+import { downloadCsv, downloadJson } from "../../../lib/export";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "../../components/ui/alert-dialog";
 
 type AuditSeverity = "info" | "warning" | "critical" | "success";
 type AuditCategory = "auth" | "data" | "analysis" | "admin" | "export";
@@ -40,6 +51,8 @@ const actionIcons: Record<string, typeof Info> = {
   DATASET_IMPORT: Upload, DATASET_DELETE: Trash2, EXPORT_DATA: Download,
   SETTINGS_CHANGE: Settings, USER_ROLE_CHANGE: UserCog, USER_INVITE: UserCog,
   BACKUP_COMPLETED: CheckCircle2, VIEW_DATA: Eye, PASSWORD_RESET: Key,
+  CLEAR_LOGS: Trash2, CLEAR_AUDIT: Trash2, CREATE_USER: UserCog, RESET_PASSWORD: Key,
+  UPDATE_SETTINGS: Settings, DELETE_RUN: Trash2, CREATE_PROJECT: Upload, DELETE_PROJECT: Trash2,
 };
 
 const categoryColors: Record<AuditCategory, string> = {
@@ -57,8 +70,11 @@ export function AdminAudit() {
   const [userFilter, setUserFilter] = useState("All Users");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>(events);
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearScope, setClearScope] = useState<"all" | "older">("all");
+  const [clearing, setClearing] = useState(false);
 
-  useEffect(() => {
+  const loadAudit = useCallback(() => {
     api.admin.getAudit()
       .then((data) => setAuditEvents(data.map((e) => ({
         id: String(e.id),
@@ -75,6 +91,10 @@ export function AdminAudit() {
       }))))
       .catch(console.error);
   }, []);
+
+  useEffect(() => {
+    loadAudit();
+  }, [loadAudit]);
 
   const uniqueUsers = [...new Set(auditEvents.map((e) => e.user))];
 
@@ -99,6 +119,21 @@ export function AdminAudit() {
     toast.success(`Audit log exported as ${fmt}`);
   };
 
+  async function handleClearAudit() {
+    setClearing(true);
+    try {
+      const olderThan = clearScope === "older" ? "90 days" : undefined;
+      const result = await api.admin.clearAudit(olderThan);
+      toast.success(`Cleared ${result.deleted} audit ${result.deleted === 1 ? "event" : "events"}`);
+      setClearOpen(false);
+      loadAudit();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to clear audit trail");
+    } finally {
+      setClearing(false);
+    }
+  }
+
   const counts = {
     critical: auditEvents.filter((e) => e.severity === "critical").length,
     warning: auditEvents.filter((e) => e.severity === "warning").length,
@@ -116,7 +151,43 @@ export function AdminAudit() {
               Full log of all user actions and system events across the platform
             </p>
           </div>
-          <DropdownMenu.Root>
+          <div className="flex items-center gap-2">
+            <AlertDialog open={clearOpen} onOpenChange={setClearOpen}>
+              <AlertDialogTrigger asChild>
+                <button className="flex items-center gap-1.5 rounded-md border border-rose-500/30 bg-rose-500/5 px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-500/10 dark:text-rose-400">
+                  <Trash2 className="h-3.5 w-3.5" /> Clear Audit Trail
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear audit trail?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This permanently removes user action history. The clear action itself is recorded before deletion.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="space-y-2 text-sm">
+                  <label className="flex items-center gap-2">
+                    <input type="radio" checked={clearScope === "all"} onChange={() => setClearScope("all")} />
+                    Clear entire audit trail
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="radio" checked={clearScope === "older"} onChange={() => setClearScope("older")} />
+                    Clear audit events older than 90 days
+                  </label>
+                </div>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={clearing}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={clearing}
+                    onClick={(e) => { e.preventDefault(); void handleClearAudit(); }}
+                    className="bg-rose-600 hover:bg-rose-700"
+                  >
+                    {clearing ? "Clearing…" : "Clear audit trail"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <button className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent">
                 <Download className="h-3.5 w-3.5" /> Export Log <ChevronDown className="h-3 w-3" />
@@ -132,7 +203,8 @@ export function AdminAudit() {
                 ))}
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
-          </DropdownMenu.Root>
+            </DropdownMenu.Root>
+          </div>
         </div>
 
         {/* KPI strip */}

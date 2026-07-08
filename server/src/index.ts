@@ -1,8 +1,9 @@
 import express from "express";
 import cors from "cors";
-import { waitForDb, initSchema, isSeeded } from "./db/index.js";
+import { waitForDb, initSchema, isSeeded, query } from "./db/index.js";
 import { seedDatabase } from "./db/seed.js";
 import { ensureDefaultMetaboliteTargets } from "./services/metabolite-targets.js";
+import { logSystem } from "./middleware/auth.js";
 import authRoutes from "./routes/auth.js";
 import projectRoutes from "./routes/projects.js";
 import datasetRoutes from "./routes/datasets.js";
@@ -52,6 +53,44 @@ app.use("/api/analysis", analysisRoutes);
 app.use("/api/lenses", lensesRoutes);
 app.use("/api/help", helpRoutes);
 
+async function backfillSystemLogsFromAudit() {
+  const existing = await query<{ count: string }>("SELECT COUNT(*)::text AS count FROM system_logs");
+  if (parseInt(existing.rows[0].count, 10) > 0) return;
+
+  const audits = await query<{
+    action: string;
+    severity: string;
+    resource: string;
+    details: string;
+    user_email: string | null;
+    user_id: number | null;
+    ip: string | null;
+    created_at: Date;
+  }>(
+    `SELECT action, severity, resource, details, user_email, user_id, ip, created_at
+     FROM audit_logs ORDER BY created_at ASC LIMIT 500`
+  );
+
+  for (const row of audits.rows) {
+    const level =
+      row.severity === "critical" || row.severity === "error"
+        ? "error"
+        : row.severity === "warning"
+          ? "warning"
+          : "info";
+    const details = row.resource ? `${row.resource}: ${row.details}` : row.details;
+    await query(
+      `INSERT INTO system_logs (level, user_id, user_email, action, details, ip, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [level, row.user_id, row.user_email, row.action, details, row.ip, row.created_at]
+    );
+  }
+
+  if (audits.rows.length) {
+    console.log(`Backfilled ${audits.rows.length} activity log entries from audit trail`);
+  }
+}
+
 async function start() {
   console.log("Starting MetaboAnalytics API...");
   await waitForDb();
@@ -66,8 +105,15 @@ async function start() {
     await ensureDefaultMetaboliteTargets();
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  await backfillSystemLogsFromAudit();
+
+  app.listen(PORT, "0.0.0.0", async () => {
     console.log(`API server listening on port ${PORT}`);
+    await logSystem("info", "SERVER_START", `API server listening on port ${PORT}`);
+    const python = await pythonHealth();
+    if (!python.ok) {
+      await logSystem("warning", "PYTHON_UNREACHABLE", python.error ?? "Python service health check failed");
+    }
   });
 }
 
