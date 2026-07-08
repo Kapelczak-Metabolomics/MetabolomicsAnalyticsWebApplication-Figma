@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Server, Database, HardDrive, Cpu, Cloud, Key, Check, RefreshCw, Upload, Palette, ImageIcon } from "lucide-react";
+import { Server, Database, HardDrive, Cpu, Cloud, Key, Check, RefreshCw, Upload, Palette, ImageIcon, Target } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../../lib/api";
 
@@ -177,6 +177,174 @@ function BrandingSection() {
   );
 }
 
+const METABOLITE_TARGET_TEMPLATE = `compound,mz,adduct,rt
+Glucose,179.055,[M+H]+,5.2
+Lactate,89.024,[M-H]-,3.1`;
+
+function MetaboliteTargetsSection() {
+  const [enabled, setEnabled] = useState(false);
+  const [mzTolerance, setMzTolerance] = useState(0.01);
+  const [rtTolerance, setRtTolerance] = useState(0.5);
+  const [targets, setTargets] = useState<Array<{ name: string; mz: number; adduct?: string | null; rt?: number | null }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    api.admin.getMetaboliteTargets()
+      .then((settings) => {
+        setEnabled(settings.enabled);
+        setMzTolerance(settings.mzTolerance);
+        setRtTolerance(settings.rtTolerance);
+        setTargets(settings.targets);
+      })
+      .catch(() => toast.error("Failed to load metabolite targets"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function saveSettings(next?: { enabled?: boolean; targets?: typeof targets }) {
+    setSaving(true);
+    try {
+      const saved = await api.admin.saveMetaboliteTargets({
+        enabled: next?.enabled ?? enabled,
+        mzTolerance,
+        rtTolerance,
+        targets: next?.targets ?? targets,
+      });
+      setEnabled(saved.enabled);
+      setTargets(saved.targets);
+      toast.success("Metabolite target settings saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCsvUpload(file: File) {
+    const csv = await file.text();
+    setSaving(true);
+    try {
+      const saved = await api.admin.uploadMetaboliteTargetCsv(csv);
+      setEnabled(saved.enabled);
+      setMzTolerance(saved.mzTolerance);
+      setRtTolerance(saved.rtTolerance);
+      setTargets(saved.targets);
+      toast.success(`Loaded ${saved.targets.length} metabolite target(s)`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "CSV upload failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function downloadTemplate() {
+    const blob = new Blob([METABOLITE_TARGET_TEMPLATE], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "metabolite_targets_template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
+        Loading metabolite target settings…
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-6">
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Target className="h-5 w-5 text-violet-500" />
+          <div>
+            <h3 className="text-base font-medium">Targeted Metabolite Detection</h3>
+            <p className="text-xs text-muted-foreground">
+              Upload a CSV of known compounds so mzXML imports report only matched peaks (m/z, adduct, optional RT).
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-4 flex items-center gap-3 text-sm">
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          Enable targeted peak picking for mzXML imports
+        </label>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <label className="text-sm font-medium">m/z tolerance (Da)</label>
+          <input type="number" step="0.001" value={mzTolerance} onChange={(e) => setMzTolerance(Number(e.target.value))}
+            className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/50" />
+        </div>
+        <div>
+          <label className="text-sm font-medium">RT tolerance (min)</label>
+          <input type="number" step="0.1" value={rtTolerance} onChange={(e) => setRtTolerance(Number(e.target.value))}
+            className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/50" />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <input ref={fileRef} type="file" accept=".csv,text/csv" className="sr-only"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void handleCsvUpload(file);
+            e.currentTarget.value = "";
+          }} />
+        <button type="button" onClick={() => fileRef.current?.click()}
+          className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm hover:bg-accent">
+          <Upload className="h-4 w-4" /> Upload target CSV
+        </button>
+        <button type="button" onClick={downloadTemplate}
+          className="rounded-lg border border-border bg-background px-3 py-2 text-sm hover:bg-accent">
+          Download template
+        </button>
+        <button type="button" disabled={saving} onClick={() => void saveSettings()}
+          className="rounded-lg bg-gradient-to-r from-violet-500 to-cyan-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+          {saving ? "Saving…" : "Save settings"}
+        </button>
+      </div>
+
+      <p className="text-xs text-muted-foreground mb-3">
+        CSV columns: compound/name, mz (required), adduct (optional), rt in minutes (optional).
+      </p>
+
+      {targets.length > 0 ? (
+        <div className="rounded-lg border border-border overflow-hidden">
+          <table className="w-full text-xs">
+            <thead className="bg-muted/30 border-b border-border">
+              <tr>
+                <th className="p-2 text-left">Compound</th>
+                <th className="p-2 text-left">m/z</th>
+                <th className="p-2 text-left">Adduct</th>
+                <th className="p-2 text-left">RT (min)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {targets.map((t) => (
+                <tr key={`${t.name}-${t.mz}`} className="border-b border-border last:border-0">
+                  <td className="p-2">{t.name}</td>
+                  <td className="p-2 font-mono">{t.mz}</td>
+                  <td className="p-2 text-muted-foreground">{t.adduct || "—"}</td>
+                  <td className="p-2 text-muted-foreground">{t.rt ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">No targets loaded — mzXML imports will use full-spectrum m/z binning.</p>
+      )}
+    </div>
+  );
+}
+
 export function AdminSystem() {
   const [testingS3, setTestingS3] = useState(false);
   const [s3Status, setS3Status] = useState<"idle" | "ok" | "fail">("idle");
@@ -276,6 +444,8 @@ export function AdminSystem() {
 
         {/* Branding */}
         <BrandingSection />
+
+        <MetaboliteTargetsSection />
 
         {/* System Health */}
         <div className="rounded-xl border border-border bg-card p-6">

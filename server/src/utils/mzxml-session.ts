@@ -63,6 +63,21 @@ export function addFileToMzxmlSession(
   return session;
 }
 
+export function removeFileFromMzxmlSession(sessionId: string, userId: number, filename: string): MzxmlSession | null {
+  const session = loadMzxmlSession(sessionId, userId);
+  if (!session) return null;
+  const safeName = path.basename(filename);
+  session.files = session.files.filter((f) => {
+    if (f.filename === safeName) {
+      if (fs.existsSync(f.path)) fs.rmSync(f.path, { force: true });
+      return false;
+    }
+    return true;
+  });
+  saveMzxmlSession(session);
+  return session;
+}
+
 export function getSessionUploadFiles(sessionId: string, userId: number): MzxmlUploadFile[] {
   return loadMzxmlSession(sessionId, userId)?.files ?? [];
 }

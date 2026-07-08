@@ -14,6 +14,12 @@ import {
 } from "../services/s3.js";
 import { loadEmailConfig, sanitizeEmailForResponse, sendUserWelcomeEmail, trySendPasswordReset, verifySmtpConnection, type EmailConfig } from "../services/email.js";
 import { getActiveStorageProvider } from "../services/storage.js";
+import {
+  loadMetaboliteTargetSettings,
+  parseMetaboliteTargetCsv,
+  saveMetaboliteTargetSettings,
+  type MetaboliteTargetSettings,
+} from "../services/metabolite-targets.js";
 
 const router = Router();
 
@@ -434,6 +440,46 @@ router.post("/system/test-email", async (req: Request, res: Response) => {
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : "SMTP connection failed" });
+  }
+});
+
+router.get("/metabolite-targets", async (_req: Request, res: Response) => {
+  const settings = await loadMetaboliteTargetSettings();
+  res.json(settings);
+});
+
+router.put("/metabolite-targets", async (req: Request, res: Response) => {
+  const body = req.body as Partial<MetaboliteTargetSettings>;
+  const current = await loadMetaboliteTargetSettings();
+  const next: MetaboliteTargetSettings = {
+    enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled,
+    mzTolerance: typeof body.mzTolerance === "number" ? body.mzTolerance : current.mzTolerance,
+    rtTolerance: typeof body.rtTolerance === "number" ? body.rtTolerance : current.rtTolerance,
+    targets: Array.isArray(body.targets) ? body.targets : current.targets,
+  };
+  const saved = await saveMetaboliteTargetSettings(next);
+  await logAudit(req.user, "UPDATE_SETTINGS", "admin", "Metabolite targets", `Updated ${saved.targets.length} target(s)`, req);
+  res.json(saved);
+});
+
+router.post("/metabolite-targets/upload", async (req: Request, res: Response) => {
+  const csv = typeof req.body?.csv === "string" ? req.body.csv : "";
+  if (!csv.trim()) {
+    res.status(400).json({ error: "CSV content is required" });
+    return;
+  }
+  try {
+    const targets = parseMetaboliteTargetCsv(csv);
+    const current = await loadMetaboliteTargetSettings();
+    const saved = await saveMetaboliteTargetSettings({
+      ...current,
+      enabled: true,
+      targets,
+    });
+    await logAudit(req.user, "UPDATE_SETTINGS", "admin", "Metabolite targets", `Uploaded CSV with ${targets.length} target(s)`, req);
+    res.json(saved);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Invalid metabolite target CSV" });
   }
 });
 

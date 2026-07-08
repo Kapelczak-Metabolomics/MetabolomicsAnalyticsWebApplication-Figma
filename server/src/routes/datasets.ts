@@ -3,9 +3,10 @@ import { query } from "../db/index.js";
 import { authMiddleware, logAudit, createNotification } from "../middleware/auth.js";
 import { loadDatasetMatrix } from "../utils/dataset.js";
 import { computeFeatureStats } from "../services/analysis.js";
-import { bulkLoadMatrix } from "../utils/bulk-import.js";
+import { bulkLoadMatrix, clearDatasetMatrix } from "../utils/bulk-import.js";
 import { pythonHealth, pythonImportMzxml, pythonPreviewMzxml } from "../services/python-client.js";
-import { saveRawDatasetFiles, deleteRawDatasetFiles } from "../services/storage.js";
+import { saveRawDatasetFiles, deleteRawDatasetFiles, listRawDatasetFiles, deleteRawDatasetFile, materializeRawDatasetFiles, cleanupWorkDir } from "../services/storage.js";
+import { getActiveMetaboliteTargetsForImport } from "../services/metabolite-targets.js";
 import fs from "fs";
 import path from "path";
 import {
@@ -14,6 +15,7 @@ import {
   createMzxmlSession,
   getSessionUploadFiles,
   loadMzxmlSession,
+  removeFileFromMzxmlSession,
 } from "../utils/mzxml-session.js";
 import {
   cleanupUploadFiles,
@@ -354,6 +356,38 @@ router.post(
   }
 );
 
+router.get("/import/mzxml/session/:sessionId/files", authMiddleware, (req: Request, res: Response) => {
+  const sessionId = String(req.params.sessionId);
+  const session = loadMzxmlSession(sessionId, req.user!.id);
+  if (!session) {
+    res.status(404).json({ error: "Upload session not found or expired" });
+    return;
+  }
+  res.json({
+    sessionId,
+    files: session.files.map((f) => {
+      let sizeBytes = 0;
+      try {
+        sizeBytes = fs.statSync(f.path).size;
+      } catch {
+        /* ignore */
+      }
+      return { filename: f.filename, sizeBytes };
+    }),
+  });
+});
+
+router.delete("/import/mzxml/session/:sessionId/file/:filename", authMiddleware, (req: Request, res: Response) => {
+  const sessionId = String(req.params.sessionId);
+  const filename = path.basename(String(req.params.filename));
+  const updated = removeFileFromMzxmlSession(sessionId, req.user!.id, filename);
+  if (!updated) {
+    res.status(404).json({ error: "Upload session not found or expired" });
+    return;
+  }
+  res.json({ sessionId, filename, fileCount: updated.files.length });
+});
+
 router.post("/import/mzxml/preview-session", authMiddleware, async (req: Request, res: Response) => {
   const sessionId = String(req.body?.sessionId ?? "");
   if (!sessionId) {
@@ -472,31 +506,7 @@ async function launchMzxmlImport(opts: {
     );
     await query(`UPDATE datasets SET raw_file_path = $1 WHERE id = $2`, [storagePath, datasetId]);
 
-    const parsed = await pythonImportMzxml(uploads, groups);
-    const samples = parsed.samples.map((s) => ({ sampleId: s.sampleId, groupLabel: s.groupLabel }));
-    const features = parsed.features.map((f) => ({
-      featureId: f.featureId,
-      name: f.name,
-      featureClass: f.featureClass,
-      pathway: f.pathway,
-      values: f.values,
-    }));
-
-    const { samplesCount, featuresCount, missingPct } = await bulkLoadMatrix(datasetId, samples, features);
-    await query(
-      `UPDATE datasets SET samples_count = $1, features_count = $2, missing_pct = $3,
-       status = 'ready', import_status = 'ready' WHERE id = $4`,
-      [samplesCount, featuresCount, missingPct, datasetId]
-    );
-    await query(`UPDATE projects SET updated_at = NOW() WHERE id = $1`, [projectId]);
-    await createNotification(
-      userId,
-      "success",
-      "mzXML Import Complete",
-      `${name}: ${featuresCount} m/z features from ${samplesCount} samples.`,
-      "/data",
-      "View dataset"
-    );
+    await reprocessMzxmlDataset(datasetId, projectId, name, userId, uploads, groups);
   } catch (err) {
     const message = err instanceof Error && err.message.trim()
       ? err.message
@@ -515,6 +525,104 @@ async function launchMzxmlImport(opts: {
     } else {
       await cleanupUploadFiles(uploads);
     }
+  }
+}
+
+async function reprocessMzxmlDataset(
+  datasetId: number,
+  projectId: number,
+  name: string,
+  userId: number,
+  uploads: MzxmlUploadFile[],
+  groups: Record<string, string>
+) {
+  const targetConfig = await getActiveMetaboliteTargetsForImport();
+  const parsed = await pythonImportMzxml(uploads, groups, {
+    targets: targetConfig.targets,
+    targeted: targetConfig.enabled,
+    mzTolerance: targetConfig.mzTolerance,
+    rtTolerance: targetConfig.rtTolerance,
+  });
+  const samples = parsed.samples.map((s) => ({ sampleId: s.sampleId, groupLabel: s.groupLabel }));
+  const features = parsed.features.map((f) => ({
+    featureId: f.featureId,
+    name: f.name,
+    featureClass: f.featureClass,
+    pathway: f.pathway,
+    values: f.values,
+  }));
+
+  await clearDatasetMatrix(datasetId);
+  const { samplesCount, featuresCount, missingPct } = await bulkLoadMatrix(datasetId, samples, features);
+  const featureLabel = targetConfig.enabled
+    ? `${featuresCount} targeted metabolite(s)`
+    : `${featuresCount} m/z features`;
+  await query(
+    `UPDATE datasets SET samples_count = $1, features_count = $2, missing_pct = $3,
+     status = 'ready', import_status = 'ready', import_error = NULL WHERE id = $4`,
+    [samplesCount, featuresCount, missingPct, datasetId]
+  );
+  await query(`UPDATE projects SET updated_at = NOW() WHERE id = $1`, [projectId]);
+  await createNotification(
+    userId,
+    "success",
+    "mzXML Import Complete",
+    `${name}: ${featureLabel} from ${samplesCount} sample(s).`,
+    "/data",
+    "View dataset"
+  );
+}
+
+async function reprocessStoredMzxmlDataset(datasetId: number, userId: number) {
+  const ds = await query<{
+    id: number;
+    project_id: number;
+    name: string;
+    raw_file_path: string | null;
+    source_format: string;
+  }>(
+    `SELECT id, project_id, name, raw_file_path, source_format FROM datasets WHERE id = $1`,
+    [datasetId]
+  );
+  const row = ds.rows[0];
+  if (!row || row.source_format !== "mzXML" || !row.raw_file_path) {
+    throw new Error("Dataset is not an mzXML import");
+  }
+
+  if (!(await pythonHealth()).ok) {
+    throw new Error("Python analysis service is not running");
+  }
+
+  await query(
+    `UPDATE datasets SET status = 'processing', import_status = 'processing', import_error = NULL WHERE id = $1`,
+    [datasetId]
+  );
+
+  const sampleRows = await query<{ sample_id: string; group_label: string }>(
+    `SELECT sample_id, group_label FROM samples WHERE dataset_id = $1`,
+    [datasetId]
+  );
+  const remainingFiles = await listRawDatasetFiles(row.raw_file_path);
+  const remainingSampleIds = new Set(
+    remainingFiles.map((f) => f.filename.replace(/\.(mzxml|mzml|xml)$/i, ""))
+  );
+  const groups: Record<string, string> = {};
+  for (const s of sampleRows.rows) {
+    if (remainingSampleIds.has(s.sample_id)) {
+      groups[s.sample_id] = s.group_label;
+    }
+  }
+
+  const { workDir, files } = await materializeRawDatasetFiles(row.raw_file_path);
+  const uploads: MzxmlUploadFile[] = files.map((f) => ({
+    path: f.path!,
+    filename: f.filename,
+  }));
+
+  try {
+    await reprocessMzxmlDataset(datasetId, row.project_id, row.name, userId, uploads, groups);
+  } finally {
+    cleanupWorkDir(workDir);
   }
 }
 
@@ -620,6 +728,75 @@ router.get("/:id/groups", authMiddleware, async (req: Request, res: Response) =>
     [id]
   );
   res.json(result.rows.map((r) => ({ label: r.group_label, count: parseInt(r.count, 10) })));
+});
+
+router.get("/:id/raw-files", authMiddleware, async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!(await canAccessDataset(req.user!, id))) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
+  const result = await query<{ raw_file_path: string | null; source_format: string }>(
+    `SELECT raw_file_path, source_format FROM datasets WHERE id = $1`,
+    [id]
+  );
+  const row = result.rows[0];
+  if (!row || row.source_format !== "mzXML") {
+    res.status(400).json({ error: "Dataset does not contain mzXML raw files" });
+    return;
+  }
+  const files = await listRawDatasetFiles(row.raw_file_path);
+  res.json({ files });
+});
+
+router.delete("/:id/raw-files/:filename", authMiddleware, async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params.id), 10);
+  const filename = path.basename(String(req.params.filename));
+  if (!(await canAccessDataset(req.user!, id))) {
+    res.status(404).json({ error: "Dataset not found" });
+    return;
+  }
+
+  const result = await query<{ raw_file_path: string | null; source_format: string; name: string }>(
+    `SELECT raw_file_path, source_format, name FROM datasets WHERE id = $1`,
+    [id]
+  );
+  const row = result.rows[0];
+  if (!row || row.source_format !== "mzXML" || !row.raw_file_path) {
+    res.status(400).json({ error: "Dataset does not contain mzXML raw files" });
+    return;
+  }
+
+  const before = await listRawDatasetFiles(row.raw_file_path);
+  if (!before.some((f) => f.filename === filename)) {
+    res.status(404).json({ error: "File not found" });
+    return;
+  }
+
+  try {
+    await deleteRawDatasetFile(row.raw_file_path, filename);
+    const remaining = await listRawDatasetFiles(row.raw_file_path);
+    if (!remaining.length) {
+      await query(
+        `UPDATE datasets SET status = 'failed', import_status = 'failed', import_error = $1 WHERE id = $2`,
+        ["All mzXML files were removed from this dataset", id]
+      );
+      res.json({ success: true, reprocessed: false, files: [] });
+      return;
+    }
+
+    res.status(202).json({ success: true, reprocessed: true, files: remaining, status: "processing" });
+    reprocessStoredMzxmlDataset(id, req.user!.id).catch(async (err) => {
+      const message = err instanceof Error ? err.message : "Failed to reprocess mzXML dataset";
+      await query(
+        `UPDATE datasets SET status = 'failed', import_status = 'failed', import_error = $1 WHERE id = $2`,
+        [message, id]
+      );
+      await createNotification(req.user!.id, "error", "mzXML Reprocess Failed", `${row.name}: ${message}`, "/data", "View dataset");
+    });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Failed to delete file" });
+  }
 });
 
 router.delete("/:id", authMiddleware, async (req: Request, res: Response) => {

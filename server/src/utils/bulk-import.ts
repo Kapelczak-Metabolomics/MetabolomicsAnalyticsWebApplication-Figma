@@ -1,5 +1,9 @@
 import { query } from "../db/index.js";
 
+export async function clearDatasetMatrix(datasetId: number) {
+  await query("DELETE FROM samples WHERE dataset_id = $1", [datasetId]);
+}
+
 export async function bulkLoadMatrix(
   datasetId: number,
   samples: Array<{ sampleId: string; groupLabel: string }>,

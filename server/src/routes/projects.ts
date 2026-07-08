@@ -60,9 +60,9 @@ router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
   }
 
   const datasets = await query<{
-    id: number; name: string; type: string; samples_count: number; features_count: number; status: string; created_at: Date;
+    id: number; name: string; type: string; samples_count: number; features_count: number; status: string; created_at: Date; source_format: string;
   }>(
-    `SELECT id, name, type, samples_count, features_count, status, created_at
+    `SELECT id, name, type, samples_count, features_count, status, created_at, source_format
      FROM datasets WHERE project_id = $1 ORDER BY created_at DESC`,
     [id]
   );
@@ -105,6 +105,7 @@ router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
       features: d.features_count,
       created: new Date(d.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
       status: d.status,
+      sourceFormat: d.source_format,
     })),
     experiments: experiments.rows.map((e) => ({
       id: String(e.id),

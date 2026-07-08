@@ -86,6 +86,10 @@ async def preview_mzxml(files: list[UploadFile] = File(...)) -> dict[str, Any]:
 async def import_mzxml(
     files: list[UploadFile] = File(...),
     groups: str | None = Form(None),
+    targets: str | None = Form(None),
+    targeted: str | None = Form(None),
+    mz_tolerance: str | None = Form(None),
+    rt_tolerance: str | None = Form(None),
 ) -> dict[str, Any]:
     """Parse mzXML/mzML file(s) or a zip archive into a feature matrix."""
     if not files:
@@ -94,6 +98,18 @@ async def import_mzxml(
     import tempfile
 
     group_map = _parse_groups(groups)
+    target_list: list[dict[str, Any]] = []
+    if targets:
+        try:
+            parsed_targets = json.loads(targets)
+            if isinstance(parsed_targets, list):
+                target_list = [t for t in parsed_targets if isinstance(t, dict)]
+        except json.JSONDecodeError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid targets JSON: {e}") from e
+
+    use_targeted = str(targeted).lower() in ("1", "true", "yes")
+    mz_tol = float(mz_tolerance) if mz_tolerance else 0.01
+    rt_tol = float(rt_tolerance) if rt_tolerance else 0.5
     work_dir = tempfile.mkdtemp(prefix="metabo-import-")
 
     try:
@@ -101,7 +117,14 @@ async def import_mzxml(
         paths = resolve_upload_paths(work_dir, [path for _, path in saved])
         if not paths:
             raise HTTPException(status_code=400, detail="No mzXML/mzML files found in upload")
-        return parse_mzxml_files(paths, group_map)
+        return parse_mzxml_files(
+            paths,
+            group_map,
+            targets=target_list,
+            targeted=use_targeted,
+            mz_tolerance=mz_tol,
+            rt_tolerance=rt_tol,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     finally:

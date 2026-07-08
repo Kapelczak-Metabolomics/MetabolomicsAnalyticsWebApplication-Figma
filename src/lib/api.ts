@@ -166,7 +166,7 @@ export const api = {
   getProject: (id: string) => request<{
     id: number; name: string; description: string; status: string; color: string;
     studyType?: string; visibility?: string;
-    datasets: Array<{ id: string; name: string; type: string; samples: number; features: number; created: string; status: string }>;
+    datasets: Array<{ id: string; name: string; type: string; samples: number; features: number; created: string; status: string; sourceFormat?: string }>;
     experiments: Array<{ id: string; name: string; type: string; status: string; created: string }>;
     members: Array<{ id: number; name: string; email: string; role: string; status: string; joined: string }>;
   }>(`/projects/${id}`),
@@ -191,6 +191,26 @@ export const api = {
   getDatasets: () => request<Array<{ id: number; name: string; type: string; samples_count: number; features_count: number; status: string; project_id: number; project_name: string }>>("/datasets"),
 
   deleteDataset: (id: number) => request<{ success: boolean }>(`/datasets/${id}`, { method: "DELETE" }),
+
+  getDatasetRawFiles: (id: number) =>
+    request<{ files: Array<{ filename: string; sizeBytes: number; modifiedAt: string }> }>(`/datasets/${id}/raw-files`),
+
+  deleteDatasetRawFile: (id: number, filename: string) =>
+    request<{ success: boolean; reprocessed: boolean; files: Array<{ filename: string; sizeBytes: number; modifiedAt: string }>; status?: string }>(
+      `/datasets/${id}/raw-files/${encodeURIComponent(filename)}`,
+      { method: "DELETE" }
+    ),
+
+  getMzxmlSessionFiles: (sessionId: string) =>
+    request<{ sessionId: string; files: Array<{ filename: string; sizeBytes: number }> }>(
+      `/datasets/import/mzxml/session/${sessionId}/files`
+    ),
+
+  removeMzxmlSessionFile: (sessionId: string, filename: string) =>
+    request<{ sessionId: string; filename: string; fileCount: number }>(
+      `/datasets/import/mzxml/session/${sessionId}/file/${encodeURIComponent(filename)}`,
+      { method: "DELETE" }
+    ),
 
   getDatasetGroups: (id: number) => request<Array<{ label: string; count: number }>>(`/datasets/${id}/groups`),
 
@@ -422,6 +442,35 @@ export const api = {
       testRecipient?: string;
     }) =>
       request<{ success: boolean; message: string }>("/admin/system/test-email", { method: "POST", body: JSON.stringify(data) }),
+    getMetaboliteTargets: () =>
+      request<{
+        enabled: boolean;
+        mzTolerance: number;
+        rtTolerance: number;
+        targets: Array<{ name: string; mz: number; adduct?: string | null; rt?: number | null }>;
+        updatedAt?: string;
+      }>("/admin/metabolite-targets"),
+    saveMetaboliteTargets: (data: {
+      enabled?: boolean;
+      mzTolerance?: number;
+      rtTolerance?: number;
+      targets?: Array<{ name: string; mz: number; adduct?: string | null; rt?: number | null }>;
+    }) =>
+      request<{
+        enabled: boolean;
+        mzTolerance: number;
+        rtTolerance: number;
+        targets: Array<{ name: string; mz: number; adduct?: string | null; rt?: number | null }>;
+        updatedAt?: string;
+      }>("/admin/metabolite-targets", { method: "PUT", body: JSON.stringify(data) }),
+    uploadMetaboliteTargetCsv: (csv: string) =>
+      request<{
+        enabled: boolean;
+        mzTolerance: number;
+        rtTolerance: number;
+        targets: Array<{ name: string; mz: number; adduct?: string | null; rt?: number | null }>;
+        updatedAt?: string;
+      }>("/admin/metabolite-targets/upload", { method: "POST", body: JSON.stringify({ csv }) }),
   },
 };
 

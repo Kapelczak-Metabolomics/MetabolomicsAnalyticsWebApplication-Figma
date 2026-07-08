@@ -1,7 +1,10 @@
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { query } from "../db/index.js";
 import { deleteS3Prefix, loadS3Config, uploadS3Object, type S3Config } from "./s3.js";
+import { GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { clientFromConfig } from "./s3.js";
 
 const RAW_DIR = process.env.RAW_DATA_DIR || "/data/raw";
 
@@ -90,5 +93,128 @@ export async function deleteRawDatasetFiles(rawFilePath?: string | null) {
   }
   if (parsed.localPath && fs.existsSync(parsed.localPath)) {
     fs.rmSync(parsed.localPath, { recursive: true, force: true });
+  }
+}
+
+export interface RawDatasetFileInfo {
+  filename: string;
+  sizeBytes: number;
+  modifiedAt: string;
+}
+
+function isMzxmlFilename(name: string) {
+  return /\.(mzxml|mzml|xml)$/i.test(name);
+}
+
+export async function listRawDatasetFiles(rawFilePath?: string | null): Promise<RawDatasetFileInfo[]> {
+  if (!rawFilePath) return [];
+  const parsed = parseStoragePath(rawFilePath);
+
+  if (parsed.provider === "s3" && parsed.prefix) {
+    const s3 = await loadS3Config();
+    if (!s3?.bucket) return [];
+    const client = clientFromConfig(s3);
+    const prefix = parsed.prefix.endsWith("/") ? parsed.prefix : `${parsed.prefix}/`;
+    const page = await client.send(new ListObjectsV2Command({ Bucket: s3.bucket, Prefix: prefix }));
+    return (page.Contents ?? [])
+      .filter((obj) => obj.Key && !obj.Key.endsWith("/"))
+      .map((obj) => {
+        const filename = path.basename(obj.Key!);
+        return {
+          filename,
+          sizeBytes: obj.Size ?? 0,
+          modifiedAt: obj.LastModified?.toISOString() ?? new Date().toISOString(),
+        };
+      })
+      .filter((f) => isMzxmlFilename(f.filename))
+      .sort((a, b) => a.filename.localeCompare(b.filename));
+  }
+
+  if (!parsed.localPath || !fs.existsSync(parsed.localPath)) return [];
+  return fs
+    .readdirSync(parsed.localPath)
+    .filter((name) => isMzxmlFilename(name))
+    .map((filename) => {
+      const stat = fs.statSync(path.join(parsed.localPath!, filename));
+      return {
+        filename,
+        sizeBytes: stat.size,
+        modifiedAt: stat.mtime.toISOString(),
+      };
+    })
+    .sort((a, b) => a.filename.localeCompare(b.filename));
+}
+
+export async function deleteRawDatasetFile(rawFilePath: string | null | undefined, filename: string) {
+  if (!rawFilePath) throw new Error("Dataset has no raw files");
+  const safeName = path.basename(filename);
+  const parsed = parseStoragePath(rawFilePath);
+
+  if (parsed.provider === "s3" && parsed.prefix) {
+    const s3 = await loadS3Config();
+    if (!s3?.bucket) throw new Error("S3 storage is not configured");
+    const key = `${parsed.prefix}/${safeName}`;
+    const client = clientFromConfig(s3);
+    await client.send(new DeleteObjectCommand({ Bucket: s3.bucket, Key: key }));
+    return;
+  }
+
+  if (!parsed.localPath) throw new Error("Invalid storage path");
+  const dest = path.join(parsed.localPath, safeName);
+  if (!fs.existsSync(dest)) throw new Error("File not found");
+  fs.rmSync(dest, { force: true });
+}
+
+/** Materialize raw dataset files to a temp directory for Python re-processing. */
+export async function materializeRawDatasetFiles(
+  rawFilePath: string | null | undefined,
+  filenames?: string[]
+): Promise<{ workDir: string; files: RawFileInput[] }> {
+  if (!rawFilePath) throw new Error("Dataset has no raw files");
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "metabo-raw-"));
+  const parsed = parseStoragePath(rawFilePath);
+  const wanted = filenames?.map((f) => path.basename(f));
+
+  if (parsed.provider === "s3" && parsed.prefix) {
+    const s3 = await loadS3Config();
+    if (!s3?.bucket) throw new Error("S3 storage is not configured");
+    const client = clientFromConfig(s3);
+    const prefix = parsed.prefix.endsWith("/") ? parsed.prefix : `${parsed.prefix}/`;
+    const page = await client.send(new ListObjectsV2Command({ Bucket: s3.bucket, Prefix: prefix }));
+    const objects = (page.Contents ?? []).filter((obj) => obj.Key && !obj.Key.endsWith("/"));
+    for (const obj of objects) {
+      const filename = path.basename(obj.Key!);
+      if (!isMzxmlFilename(filename)) continue;
+      if (wanted?.length && !wanted.includes(filename)) continue;
+      const dest = path.join(workDir, filename);
+      const res = await client.send(new GetObjectCommand({ Bucket: s3.bucket, Key: obj.Key! }));
+      const body = await res.Body?.transformToByteArray();
+      if (!body) continue;
+      fs.writeFileSync(dest, Buffer.from(body));
+    }
+  } else if (parsed.localPath && fs.existsSync(parsed.localPath)) {
+    for (const name of fs.readdirSync(parsed.localPath)) {
+      if (!isMzxmlFilename(name)) continue;
+      if (wanted?.length && !wanted.includes(name)) continue;
+      fs.copyFileSync(path.join(parsed.localPath, name), path.join(workDir, name));
+    }
+  }
+
+  const files = fs
+    .readdirSync(workDir)
+    .filter((name) => isMzxmlFilename(name))
+    .map((name) => ({ filename: name, path: path.join(workDir, name) }));
+
+  if (!files.length) {
+    fs.rmSync(workDir, { recursive: true, force: true });
+    throw new Error("No mzXML files found in dataset storage");
+  }
+
+  return { workDir, files };
+}
+
+export function cleanupWorkDir(workDir: string) {
+  if (workDir && fs.existsSync(workDir)) {
+    fs.rmSync(workDir, { recursive: true, force: true });
   }
 }

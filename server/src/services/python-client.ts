@@ -42,7 +42,16 @@ function formatServiceError(body: unknown, fallback: string): string {
   return fallback;
 }
 
-function buildMultipartForm(files: MzxmlFile[], groups?: Record<string, string>): FormData {
+function buildMultipartForm(
+  files: MzxmlFile[],
+  options?: {
+    groups?: Record<string, string>;
+    targets?: Array<{ name: string; mz: number; adduct?: string | null; rt?: number | null }>;
+    targeted?: boolean;
+    mzTolerance?: number;
+    rtTolerance?: number;
+  }
+): FormData {
   const form = new FormData();
   for (const f of files) {
     form.append("files", createReadStream(f.path), {
@@ -50,15 +59,31 @@ function buildMultipartForm(files: MzxmlFile[], groups?: Record<string, string>)
       contentType: "application/octet-stream",
     });
   }
-  if (groups) {
-    form.append("groups", JSON.stringify(groups));
+  if (options?.groups) {
+    form.append("groups", JSON.stringify(options.groups));
+  }
+  if (options?.targets?.length) {
+    form.append("targets", JSON.stringify(options.targets));
+    form.append("targeted", options.targeted === false ? "false" : "true");
+    if (options.mzTolerance != null) form.append("mz_tolerance", String(options.mzTolerance));
+    if (options.rtTolerance != null) form.append("rt_tolerance", String(options.rtTolerance));
   }
   return form;
 }
 
-function postMzxmlForm(path: string, files: MzxmlFile[], groups?: Record<string, string>): Promise<{ status: number; body: string }> {
+function postMzxmlForm(
+  path: string,
+  files: MzxmlFile[],
+  options?: {
+    groups?: Record<string, string>;
+    targets?: Array<{ name: string; mz: number; adduct?: string | null; rt?: number | null }>;
+    targeted?: boolean;
+    mzTolerance?: number;
+    rtTolerance?: number;
+  }
+): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const form = buildMultipartForm(files, groups);
+    const form = buildMultipartForm(files, options);
     const url = new URL(`${PYTHON_URL}${path}`);
     const transport = url.protocol === "https:" ? https : http;
 
@@ -143,10 +168,19 @@ export async function pythonPreviewMzxml(
   return JSON.parse(res.body) as { samples: Array<{ filename: string; sampleId: string }> };
 }
 
-export async function pythonImportMzxml(files: MzxmlFile[], groups?: Record<string, string>): Promise<MzxmlImportResult> {
+export async function pythonImportMzxml(
+  files: MzxmlFile[],
+  groups?: Record<string, string>,
+  targetOptions?: {
+    targets?: Array<{ name: string; mz: number; adduct?: string | null; rt?: number | null }>;
+    targeted?: boolean;
+    mzTolerance?: number;
+    rtTolerance?: number;
+  }
+): Promise<MzxmlImportResult> {
   let res: { status: number; body: string };
   try {
-    res = await postMzxmlForm("/import/mzxml", files, groups);
+    res = await postMzxmlForm("/import/mzxml", files, { groups, ...targetOptions });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(`Python service unreachable at ${PYTHON_URL}: ${msg}`);

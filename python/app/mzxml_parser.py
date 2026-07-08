@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 import zlib
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -24,6 +25,191 @@ except ImportError:  # pragma: no cover
 
 def _round_mz(mz: float, decimals: int = 2) -> float:
     return round(float(mz), decimals)
+
+
+@dataclass
+class Ms1Scan:
+    rt_minutes: float | None
+    mzs: list[float]
+    intensities: list[float]
+
+
+@dataclass
+class MetaboliteTarget:
+    name: str
+    mz: float
+    adduct: str | None = None
+    rt: float | None = None
+
+
+def _retention_minutes_from_element(elem: ET.Element) -> float | None:
+    for attr in ("retentionTime", "retention_time", "retTime"):
+        value = elem.get(attr)
+        if value is not None:
+            try:
+                rt = float(value)
+                # mzXML commonly stores seconds; values > 20 are likely seconds.
+                return rt / 60.0 if rt > 20 else rt
+            except ValueError:
+                continue
+    for child in elem.iter():
+        tag = _local_tag(child.tag)
+        if tag in ("retentionTime", "retention_time") and child.text:
+            try:
+                rt = float(child.text.strip())
+                return rt / 60.0 if rt > 20 else rt
+            except ValueError:
+                continue
+    return None
+
+
+def _peaks_from_spectrum(spectrum: ET.Element) -> tuple[list[float], list[float]]:
+    mzs: list[float] = []
+    intensities: list[float] = []
+
+    peaks_b64 = spectrum.get("peaksBase64")
+    if peaks_b64:
+        precision = spectrum.get("precision", "32")
+        byte_order = spectrum.get("byteOrder", "network")
+        mzs, intensities = _decode_mzxml_peaks(peaks_b64, precision, byte_order)
+        return mzs, intensities
+
+    mz_array: list[float] | None = None
+    intensity_array: list[float] | None = None
+
+    for child in spectrum.iter():
+        tag = _local_tag(child.tag)
+        if tag in ("mzXMLPeaks", "peaks") and child.text and child.text.strip():
+            precision = child.get("precision", "32")
+            byte_order = child.get("byteOrder", child.get("byteorder", "network"))
+            compression = child.get("compressionType", child.get("compression", "none"))
+            mzs, intensities = _decode_mzxml_peaks(child.text, precision, byte_order, compression)
+            return mzs, intensities
+        if tag == "binaryDataArray":
+            kind = _binary_array_kind(child)
+            binary_elem = next((c for c in child if _local_tag(c.tag) == "binary"), None)
+            if kind and binary_elem is not None and binary_elem.text:
+                values = _decode_mzml_binary(binary_elem.text)
+                if kind == "mz":
+                    mz_array = values
+                else:
+                    intensity_array = values
+
+    if mz_array and intensity_array:
+        return mz_array, intensity_array
+    return mzs, intensities
+
+
+def _extract_ms1_scans_xml(path: str) -> list[Ms1Scan]:
+    scans: list[Ms1Scan] = []
+    root = ET.parse(path).getroot()
+    for spectrum in root.iter():
+        tag = _local_tag(spectrum.tag)
+        if tag not in ("spectrum", "scan"):
+            continue
+        if _ms_level_from_element(spectrum) != 1:
+            continue
+        mzs, intensities = _peaks_from_spectrum(spectrum)
+        if not mzs:
+            continue
+        scans.append(Ms1Scan(_retention_minutes_from_element(spectrum), mzs, intensities))
+    return scans
+
+
+def _extract_ms1_scans(path: str) -> list[Ms1Scan]:
+    """Return MS1 scans with optional RT and peak arrays."""
+    _validate_ms_file(path)
+    for extractor in (_extract_ms1_scans_xml,):
+        try:
+            scans = extractor(path)
+            if scans:
+                return scans
+        except Exception:
+            continue
+
+    # Fallback: aggregate bins as a single pseudo-scan (no RT).
+    bins = _extract_ms1_bins(path)
+    if not bins:
+        return []
+    mzs = list(bins.keys())
+    intensities = [bins[m] for m in mzs]
+    return [Ms1Scan(None, mzs, intensities)]
+
+
+def _nearest_peak_intensity(
+    mzs: list[float],
+    intensities: list[float],
+    target_mz: float,
+    mz_tolerance: float,
+) -> float:
+    best = 0.0
+    for mz, intensity in zip(mzs, intensities, strict=False):
+        if intensity and float(intensity) > 0 and abs(float(mz) - target_mz) <= mz_tolerance:
+            best = max(best, float(intensity))
+    return best
+
+
+def _pick_target_intensity(
+    scans: list[Ms1Scan],
+    target: MetaboliteTarget,
+    mz_tolerance: float,
+    rt_tolerance: float,
+) -> float:
+    if not scans:
+        return 0.0
+
+    if target.rt is not None:
+        rt_matches = [
+            scan
+            for scan in scans
+            if scan.rt_minutes is not None and abs(scan.rt_minutes - target.rt) <= rt_tolerance
+        ]
+        search_scans = rt_matches or [scan for scan in scans if scan.rt_minutes is not None]
+        if not search_scans:
+            search_scans = scans
+        elif not rt_matches:
+            search_scans = sorted(
+                search_scans,
+                key=lambda scan: abs((scan.rt_minutes or 0.0) - target.rt),
+            )[:3]
+    else:
+        search_scans = scans
+
+    best = 0.0
+    for scan in search_scans:
+        best = max(best, _nearest_peak_intensity(scan.mzs, scan.intensities, target.mz, mz_tolerance))
+    return best
+
+
+def _slug_feature_id(name: str, mz: float) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", name.strip().lower()).strip("_")
+    return slug or f"mz_{mz:.2f}".replace(".", "_")
+
+
+def parse_target_list(raw: list[dict[str, Any]] | None) -> list[MetaboliteTarget]:
+    if not raw:
+        return []
+    targets: list[MetaboliteTarget] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            mz = float(item.get("mz"))
+        except (TypeError, ValueError):
+            continue
+        name = str(item.get("name") or f"m/z {mz}")
+        adduct = item.get("adduct")
+        rt_raw = item.get("rt")
+        rt = None if rt_raw in (None, "") else float(rt_raw)
+        targets.append(
+            MetaboliteTarget(
+                name=name,
+                mz=mz,
+                adduct=str(adduct) if adduct else None,
+                rt=rt,
+            )
+        )
+    return targets
 
 
 def _sample_id_from_filename(filename: str) -> str:
@@ -378,43 +564,85 @@ def parse_mzxml_files(
     file_paths: list[str],
     groups: dict[str, str] | None = None,
     mz_decimals: int = 2,
+    targets: list[dict[str, Any]] | None = None,
+    mz_tolerance: float = 0.01,
+    rt_tolerance: float = 0.5,
+    targeted: bool = False,
 ) -> dict[str, Any]:
     """Parse one or more mzXML/mzML files into a feature matrix."""
     if not file_paths:
         raise ValueError("No mzXML files provided")
 
+    target_list = parse_target_list(targets)
+    use_targeted = targeted and bool(target_list)
+
     sample_bins: list[tuple[str, str, dict[float, float]]] = []
+    sample_target_values: list[tuple[str, str, list[float]]] = []
+
     for path in file_paths:
         if not os.path.isfile(path):
             raise ValueError(f"File not found: {os.path.basename(path)}")
         sample_id = _sample_id_from_filename(path)
         group = _resolve_group(sample_id, path, groups)
-        bins = _extract_ms1_bins(path, mz_decimals)
-        if not bins:
-            raise ValueError(f"No MS1 data found in {os.path.basename(path)}")
-        sample_bins.append((sample_id, group, bins))
 
-    all_mz = sorted({mz for _, _, bins in sample_bins for mz in bins.keys()})
-    if not all_mz:
-        raise ValueError("No features extracted from mzXML files")
+        if use_targeted:
+            scans = _extract_ms1_scans(path)
+            if not scans:
+                raise ValueError(f"No MS1 data found in {os.path.basename(path)}")
+            values = [
+                _pick_target_intensity(scans, target, mz_tolerance, rt_tolerance)
+                for target in target_list
+            ]
+            sample_target_values.append((sample_id, group, values))
+        else:
+            bins = _extract_ms1_bins(path, mz_decimals)
+            if not bins:
+                raise ValueError(f"No MS1 data found in {os.path.basename(path)}")
+            sample_bins.append((sample_id, group, bins))
 
-    features = []
-    for mz in all_mz:
-        fid = f"mz_{mz:.2f}".replace(".", "_")
-        name = f"m/z {mz:.2f}"
-        values = [bins.get(mz, 0.0) for _, _, bins in sample_bins]
-        features.append({
-            "featureId": fid,
-            "name": name,
-            "featureClass": "MS1",
-            "pathway": None,
-            "values": values,
-        })
+    if use_targeted:
+        features = []
+        for index, target in enumerate(target_list):
+            label = target.name
+            if target.adduct:
+                label = f"{target.name} ({target.adduct})"
+            if target.rt is not None:
+                label = f"{label} @ {target.rt:.2f} min"
+            fid = _slug_feature_id(target.name, target.mz)
+            values = [row[index] for _, _, row in sample_target_values]
+            features.append({
+                "featureId": fid,
+                "name": label,
+                "featureClass": target.adduct or "Targeted MS1",
+                "pathway": None,
+                "values": values,
+            })
+        samples = [
+            {"sampleId": sid, "groupLabel": grp, "values": values}
+            for sid, grp, values in sample_target_values
+        ]
+    else:
+        all_mz = sorted({mz for _, _, bins in sample_bins for mz in bins.keys()})
+        if not all_mz:
+            raise ValueError("No features extracted from mzXML files")
 
-    samples = [
-        {"sampleId": sid, "groupLabel": grp, "values": [bins.get(mz, 0.0) for mz in all_mz]}
-        for sid, grp, bins in sample_bins
-    ]
+        features = []
+        for mz in all_mz:
+            fid = f"mz_{mz:.2f}".replace(".", "_")
+            name = f"m/z {mz:.2f}"
+            values = [bins.get(mz, 0.0) for _, _, bins in sample_bins]
+            features.append({
+                "featureId": fid,
+                "name": name,
+                "featureClass": "MS1",
+                "pathway": None,
+                "values": values,
+            })
+
+        samples = [
+            {"sampleId": sid, "groupLabel": grp, "values": [bins.get(mz, 0.0) for mz in all_mz]}
+            for sid, grp, bins in sample_bins
+        ]
 
     total_cells = len(samples) * len(features)
     missing = sum(1 for f in features for v in f["values"] if v is None or v == 0)
@@ -427,6 +655,8 @@ def parse_mzxml_files(
         "featuresCount": len(features),
         "missingPct": missing_pct,
         "sourceFormat": "mzXML",
+        "targeted": use_targeted,
+        "targetCount": len(target_list) if use_targeted else 0,
     }
 
 

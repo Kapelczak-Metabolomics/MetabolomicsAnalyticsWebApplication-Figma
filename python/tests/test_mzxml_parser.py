@@ -59,6 +59,29 @@ class MzxmlParserTests(unittest.TestCase):
         self.assertEqual(result["samplesCount"], 1)
         self.assertGreaterEqual(result["featuresCount"], 1)
 
+    def test_targeted_mode_matches_known_mz(self):
+        peaks = _encode_peaks([(100.0, 1000.0), (200.0, 500.0)], little=True)
+        xml = f"""<?xml version="1.0"?>
+<mzXML>
+  <msRun scanCount="1">
+    <scan num="1" msLevel="1" peaksCount="2">
+      <peaks precision="32" byteOrder="little" contentType="raw">{peaks}</peaks>
+    </scan>
+  </msRun>
+</mzXML>"""
+        with tempfile.NamedTemporaryFile("w", suffix=".mzXML", delete=False) as f:
+            f.write(xml)
+            path = f.name
+        try:
+            targets = [{"name": "CompoundA", "mz": 100.0, "adduct": "[M+H]+", "rt": None}]
+            result = parse_mzxml_files([path], targets=targets, targeted=True, mz_tolerance=0.05)
+            self.assertTrue(result["targeted"])
+            self.assertEqual(result["featuresCount"], 1)
+            self.assertIn("CompoundA", result["features"][0]["name"])
+            self.assertEqual(result["features"][0]["values"][0], 1000.0)
+        finally:
+            os.unlink(path)
+
 
 if __name__ == "__main__":
     unittest.main()

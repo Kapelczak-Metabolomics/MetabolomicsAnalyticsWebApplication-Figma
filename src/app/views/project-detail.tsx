@@ -41,6 +41,93 @@ function StatusChip({ status }: { status: string }) {
   );
 }
 
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function MzxmlDatasetFiles({ datasetId, datasetName, status, onUpdated }: {
+  datasetId: string;
+  datasetName: string;
+  status: string;
+  onUpdated: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [files, setFiles] = useState<Array<{ filename: string; sizeBytes: number; modifiedAt: string }>>([]);
+  const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    api.getDatasetRawFiles(parseInt(datasetId, 10))
+      .then((res) => setFiles(res.files))
+      .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to load mzXML files"))
+      .finally(() => setLoading(false));
+  }, [open, datasetId, status]);
+
+  async function removeFile(filename: string) {
+    if (!window.confirm(`Remove "${filename}" from ${datasetName}? The dataset will be reprocessed without this sample.`)) return;
+    setDeleting(filename);
+    try {
+      const result = await api.deleteDatasetRawFile(parseInt(datasetId, 10), filename);
+      setFiles(result.files);
+      if (result.reprocessed) {
+        toast.info("Reprocessing dataset without removed file…");
+      } else {
+        toast.success("File removed");
+      }
+      onUpdated();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove file");
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-border pt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-xs font-medium text-primary hover:underline"
+      >
+        {open ? "Hide" : "Show"} mzXML files
+      </button>
+      {open && (
+        <div className="mt-2 rounded-lg border border-border bg-muted/20 overflow-hidden">
+          {loading ? (
+            <p className="p-3 text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading files…</p>
+          ) : files.length === 0 ? (
+            <p className="p-3 text-xs text-muted-foreground">No mzXML files stored for this dataset.</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {files.map((file) => (
+                <li key={file.filename} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{file.filename}</p>
+                    <p className="text-muted-foreground">{formatBytes(file.sizeBytes)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={deleting === file.filename || status === "processing"}
+                    onClick={() => void removeFile(file.filename)}
+                    className="flex items-center gap-1 rounded-md border border-destructive/30 px-2 py-1 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                  >
+                    {deleting === file.filename ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Add Member Dialog ───────────────────────────────────────────────────────
 
 function AddMemberDialog({ open, onClose, projectId, onAdd }: {
@@ -111,7 +198,7 @@ export function ProjectDetailView() {
   const { user, isAdmin } = useAuth();
   const [project, setProject] = useState<Awaited<ReturnType<typeof api.getProject>> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [datasets, setDatasets] = useState<Array<{ id: string; name: string; type: string; samples: number; features: number; created: string; status: string }>>([]);
+  const [datasets, setDatasets] = useState<Array<{ id: string; name: string; type: string; samples: number; features: number; created: string; status: string; sourceFormat?: string }>>([]);
   const [experiments, setExperiments] = useState<Array<{ id: string; name: string; type: string; status: string; created: string; userId?: number | null }>>([]);
   const [members, setMembers] = useState<Array<{ id: number; name: string; email: string; role: string; joined: string; avatar: string }>>([]);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
@@ -158,6 +245,17 @@ export function ProjectDetailView() {
       .catch(() => navigate("/projects"))
       .finally(() => setLoading(false));
   }, [id, navigate]);
+
+  function refreshProject() {
+    if (!id) return;
+    api.getProject(id)
+      .then((p) => {
+        setProject(p);
+        setDatasets(p.datasets);
+        setExperiments(p.experiments);
+      })
+      .catch(() => {});
+  }
 
   async function removeDataset(did: string) {
     try {
@@ -330,6 +428,14 @@ export function ProjectDetailView() {
                     <p className="text-sm font-medium">{ds.name}</p>
                     <p className="text-xs text-muted-foreground">{ds.type} · {ds.samples.toLocaleString()} samples · {ds.features.toLocaleString()} features</p>
                     <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1"><Calendar className="h-3 w-3" />{ds.created}</p>
+                    {(ds.sourceFormat === "mzXML" || ds.type.toLowerCase().includes("mzxml")) && (
+                      <MzxmlDatasetFiles
+                        datasetId={ds.id}
+                        datasetName={ds.name}
+                        status={ds.status}
+                        onUpdated={refreshProject}
+                      />
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-3">

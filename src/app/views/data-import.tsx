@@ -9,6 +9,7 @@ import {
   ArrowRight,
   Loader2,
   Dna,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "../../lib/api";
@@ -280,10 +281,49 @@ export function DataImportView() {
       toast.error("Select mzXML, mzML, XML, or ZIP files");
       return;
     }
-    setMzxmlFiles(files);
-    setFileName(files.length === 1 ? files[0].name : `${files.length} files`);
-    setDatasetName(files[0].name.replace(/\.[^.]+$/, ""));
-    void loadMzxmlPreview(files);
+    setMzxmlFiles((prev) => {
+      const merged = [...prev];
+      for (const file of files) {
+        if (!merged.some((f) => f.name === file.name)) merged.push(file);
+      }
+      return merged;
+    });
+    const merged = [...mzxmlFiles];
+    for (const file of files) {
+      if (!merged.some((f) => f.name === file.name)) merged.push(file);
+    }
+    setFileName(merged.length === 1 ? merged[0].name : `${merged.length} files`);
+    if (!datasetName.trim()) setDatasetName(files[0].name.replace(/\.[^.]+$/, ""));
+    void loadMzxmlPreview(merged);
+  }
+
+  async function removeMzxmlFile(filename: string) {
+    const nextFiles = mzxmlFiles.filter((f) => f.name !== filename);
+    setMzxmlFiles(nextFiles);
+    if (mzxmlSessionId) {
+      try {
+        await api.removeMzxmlSessionFile(mzxmlSessionId, filename);
+      } catch {
+        setMzxmlSessionId(null);
+      }
+    }
+    if (!nextFiles.length) {
+      setFileName(null);
+      setMzxmlSamples([]);
+      setMzxmlSessionId(null);
+      setStep(0);
+      return;
+    }
+    setFileName(nextFiles.length === 1 ? nextFiles[0].name : `${nextFiles.length} files`);
+    const samples = buildMzxmlSamplesFromFiles(nextFiles);
+    setMzxmlSamples(samples);
+    setGroupMappings(buildMzxmlGroupMappings(samples, guessGroupFromSampleId));
+  }
+
+  function formatFileSize(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   function resetFileInput() {
@@ -477,7 +517,9 @@ export function DataImportView() {
                 <>
                   <Dna className="mx-auto h-10 w-10 text-muted-foreground mb-4" />
                   <h3 className="text-sm font-medium">Drop mzXML file(s) or a ZIP archive</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Each file = one sample. MS1 spectra are binned by m/z into features (up to 500 MB per file).</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Each file = one sample. When admin metabolite targets are enabled, only known compounds are reported instead of all m/z features.
+                  </p>
                   {pythonReady === false && (
                     <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
                       Python analysis service is offline — mzXML import will fail until it is running.
@@ -512,6 +554,32 @@ export function DataImportView() {
                 </p>
               )}
             </div>
+            {format === "mzxml" && mzxmlFiles.length > 0 && (
+              <div className="rounded-xl border border-border bg-card overflow-hidden">
+                <div className="border-b border-border bg-muted/30 px-4 py-2">
+                  <p className="text-xs font-medium">Uploaded files ({mzxmlFiles.length})</p>
+                  <p className="text-xs text-muted-foreground">Remove individual files before import if needed.</p>
+                </div>
+                <ul className="divide-y divide-border">
+                  {mzxmlFiles.map((file) => (
+                    <li key={file.name} className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs">
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{file.name}</p>
+                        <p className="text-muted-foreground">{formatFileSize(file.size)}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void removeMzxmlFile(file.name)}
+                        className="flex items-center gap-1 rounded-md border border-destructive/30 px-2 py-1 text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               {format === "csv" ? (
                 <>
@@ -691,7 +759,7 @@ export function DataImportView() {
             )}
             <div className="rounded-xl border border-border bg-card overflow-hidden">
               <table className="w-full text-xs">
-                <thead className="border-b bg-muted/30"><tr><th className="p-3 text-left">File</th><th className="p-3 text-left">Sample ID</th><th className="p-3 text-left">Group</th></tr></thead>
+                <thead className="border-b bg-muted/30"><tr><th className="p-3 text-left">File</th><th className="p-3 text-left">Sample ID</th><th className="p-3 text-left">Group</th><th className="p-3 text-right">Actions</th></tr></thead>
                 <tbody>
                   {mzxmlSamples.map((s) => (
                     <tr key={s.filename} className="border-b border-border">
@@ -707,6 +775,16 @@ export function DataImportView() {
                         <datalist id={`mz-groups-${s.sampleId}`}>
                           {allMzxmlGroups.map((g) => <option key={g} value={g} />)}
                         </datalist>
+                      </td>
+                      <td className="p-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => void removeMzxmlFile(s.filename)}
+                          className="inline-flex items-center gap-1 rounded-md border border-destructive/30 px-2 py-1 text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Remove
+                        </button>
                       </td>
                     </tr>
                   ))}
