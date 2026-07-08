@@ -25,6 +25,13 @@ const router = Router();
 
 router.use(authMiddleware, adminMiddleware);
 
+const ALLOWED_LOG_INTERVALS = new Set(["24 hours", "7 days", "30 days", "90 days"]);
+
+function parseLogInterval(value: string | undefined): string | null {
+  if (!value) return null;
+  return ALLOWED_LOG_INTERVALS.has(value) ? value : null;
+}
+
 router.get("/health", async (_req: Request, res: Response) => {
   res.json(getSystemHealth());
 });
@@ -251,8 +258,7 @@ router.delete("/runs/:id", async (req: Request, res: Response) => {
 });
 
 router.get("/logs", async (req: Request, res: Response) => {
-  const since = req.query.since as string | undefined;
-  const params: unknown[] = [];
+  const since = parseLogInterval(req.query.since as string | undefined);
   let sql = `SELECT id, level, user_email, action, details, ip, created_at FROM system_logs`;
   if (since) {
     sql += ` WHERE created_at > NOW() - INTERVAL '${since}'`;
@@ -261,7 +267,7 @@ router.get("/logs", async (req: Request, res: Response) => {
 
   const result = await query<{
     id: number; level: string; user_email: string; action: string; details: string; ip: string; created_at: Date;
-  }>(sql, params);
+  }>(sql);
 
   const counts = {
     total: result.rows.length,
@@ -276,7 +282,7 @@ router.get("/logs", async (req: Request, res: Response) => {
       id: l.id,
       timestamp: new Date(l.created_at).toISOString().slice(0, 19).replace("T", " "),
       level: l.level,
-      user: l.user_email,
+      user: l.user_email ?? "system",
       action: l.action,
       details: l.details,
       ip: l.ip,
@@ -284,12 +290,33 @@ router.get("/logs", async (req: Request, res: Response) => {
   });
 });
 
+router.delete("/logs", async (req: Request, res: Response) => {
+  const olderThan = parseLogInterval(req.query.olderThan as string | undefined);
+  await logAudit(
+    req.user,
+    "CLEAR_LOGS",
+    "admin",
+    "system_logs",
+    olderThan ? `Cleared activity logs older than ${olderThan}` : "Cleared all activity logs",
+    req,
+    "warning"
+  );
+
+  const result = olderThan
+    ? await query<{ id: number }>(
+        `DELETE FROM system_logs WHERE created_at < NOW() - INTERVAL '${olderThan}' RETURNING id`
+      )
+    : await query<{ id: number }>("DELETE FROM system_logs RETURNING id");
+
+  res.json({ success: true, deleted: result.rowCount ?? 0 });
+});
+
 router.get("/audit", async (_req: Request, res: Response) => {
   const result = await query<{
     id: number; user_name: string; user_email: string; action: string; category: string; severity: string;
     resource: string; details: string; ip: string; user_agent: string; created_at: Date;
   }>(
-    `SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 50`
+    `SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200`
   );
 
   res.json(
@@ -307,6 +334,27 @@ router.get("/audit", async (_req: Request, res: Response) => {
       userAgent: a.user_agent,
     }))
   );
+});
+
+router.delete("/audit", async (req: Request, res: Response) => {
+  const olderThan = parseLogInterval(req.query.olderThan as string | undefined);
+  await logAudit(
+    req.user,
+    "CLEAR_AUDIT",
+    "admin",
+    "audit_logs",
+    olderThan ? `Cleared audit trail older than ${olderThan}` : "Cleared entire audit trail",
+    req,
+    "warning"
+  );
+
+  const result = olderThan
+    ? await query<{ id: number }>(
+        `DELETE FROM audit_logs WHERE created_at < NOW() - INTERVAL '${olderThan}' RETURNING id`
+      )
+    : await query<{ id: number }>("DELETE FROM audit_logs RETURNING id");
+
+  res.json({ success: true, deleted: result.rowCount ?? 0 });
 });
 
 router.get("/system", async (_req: Request, res: Response) => {

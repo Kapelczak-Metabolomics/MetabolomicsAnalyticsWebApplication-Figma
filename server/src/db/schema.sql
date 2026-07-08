@@ -119,6 +119,8 @@ CREATE TABLE IF NOT EXISTS system_logs (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_system_logs_created ON system_logs(created_at DESC);
+
 CREATE TABLE IF NOT EXISTS system_settings (
   key VARCHAR(100) PRIMARY KEY,
   value JSONB NOT NULL,

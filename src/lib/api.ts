@@ -467,8 +467,18 @@ export const api = {
     resetUserPassword: (id: number) => request<{ success: boolean }>(`/admin/users/${id}/reset-password`, { method: "POST" }),
     getRuns: () => request<Array<Record<string, unknown>>>("/admin/runs"),
     deleteRun: (id: number) => request<{ success: boolean }>(`/admin/runs/${id}`, { method: "DELETE" }),
-    getLogs: (since?: string) => request<{ counts: Record<string, number>; logs: Array<Record<string, unknown>> }>(`/admin/logs${since ? `?since=${since}` : ""}`),
+    getLogs: (since?: string) => request<{ counts: Record<string, number>; logs: Array<Record<string, unknown>> }>(`/admin/logs${since ? `?since=${encodeURIComponent(since)}` : ""}`),
+    clearLogs: (olderThan?: string) =>
+      request<{ success: boolean; deleted: number }>(
+        `/admin/logs${olderThan ? `?olderThan=${encodeURIComponent(olderThan)}` : ""}`,
+        { method: "DELETE" }
+      ),
     getAudit: () => request<Array<Record<string, unknown>>>("/admin/audit"),
+    clearAudit: (olderThan?: string) =>
+      request<{ success: boolean; deleted: number }>(
+        `/admin/audit${olderThan ? `?olderThan=${encodeURIComponent(olderThan)}` : ""}`,
+        { method: "DELETE" }
+      ),
     getSystem: () => request<Record<string, unknown>>("/admin/system"),
     getStorage: () => request<{
       local: {

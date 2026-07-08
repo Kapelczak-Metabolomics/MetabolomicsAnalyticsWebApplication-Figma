@@ -1,11 +1,30 @@
-import { useState, useEffect } from "react";
-import { Search, Download, Filter, Info, AlertTriangle, XCircle, Activity } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Search, Download, Info, AlertTriangle, XCircle, Activity, Trash2 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { toast } from "sonner";
 import { api } from "../../../lib/api";
 import { downloadCsv, downloadJson } from "../../../lib/export";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "../../components/ui/alert-dialog";
 
-const logs: Array<{ id: number; timestamp: string; level: string; user: string; action: string; details: string; ip: string }> = [];
+type LogEntry = {
+  id: number;
+  timestamp: string;
+  level: string;
+  user: string;
+  action: string;
+  details: string;
+  ip: string;
+};
 
 const levelConfig: Record<string, { icon: typeof Info; cls: string; dot: string }> = {
   info:    { icon: Info,          cls: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",   dot: "bg-cyan-500" },
@@ -13,14 +32,24 @@ const levelConfig: Record<string, { icon: typeof Info; cls: string; dot: string 
   error:   { icon: XCircle,       cls: "bg-rose-500/10 text-rose-600 dark:text-rose-400",    dot: "bg-rose-500" },
 };
 
+function sinceFromTimeFilter(timeFilter: string): string | undefined {
+  if (timeFilter === "Last 24 hours") return "24 hours";
+  if (timeFilter === "Last 7 days") return "7 days";
+  if (timeFilter === "Last 30 days") return "30 days";
+  return undefined;
+}
+
 export function AdminLogs() {
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState("All Levels");
   const [timeFilter, setTimeFilter] = useState("Last 24 hours");
-  const [logData, setLogData] = useState(logs);
+  const [logData, setLogData] = useState<LogEntry[]>([]);
+  const [clearScope, setClearScope] = useState<"all" | "older">("all");
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
-  useEffect(() => {
-    const since = timeFilter === "Last 24 hours" ? "24 hours" : timeFilter === "Last 7 days" ? "7 days" : "30 days";
+  const loadLogs = useCallback(() => {
+    const since = sinceFromTimeFilter(timeFilter);
     api.admin.getLogs(since)
       .then((data) => {
         const logs = data.logs ?? data;
@@ -38,6 +67,10 @@ export function AdminLogs() {
       .catch(console.error);
   }, [timeFilter]);
 
+  useEffect(() => {
+    loadLogs();
+  }, [loadLogs]);
+
   const filtered = logData.filter((log) => {
     const q = search.toLowerCase();
     const matchSearch = log.action.toLowerCase().includes(q) || log.user.toLowerCase().includes(q) || log.details.toLowerCase().includes(q);
@@ -53,6 +86,21 @@ export function AdminLogs() {
     toast.success(`Logs exported as ${fmt}`);
   };
 
+  async function handleClearLogs() {
+    setClearing(true);
+    try {
+      const olderThan = clearScope === "older" ? sinceFromTimeFilter(timeFilter) ?? "30 days" : undefined;
+      const result = await api.admin.clearLogs(olderThan);
+      toast.success(`Cleared ${result.deleted} log ${result.deleted === 1 ? "entry" : "entries"}`);
+      setClearOpen(false);
+      loadLogs();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to clear logs");
+    } finally {
+      setClearing(false);
+    }
+  }
+
   const infoCount    = logData.filter((l) => l.level === "info").length;
   const warnCount    = logData.filter((l) => l.level === "warning").length;
   const errorCount   = logData.filter((l) => l.level === "error").length;
@@ -61,32 +109,67 @@ export function AdminLogs() {
     <div className="h-full overflow-auto bg-gradient-to-br from-background via-background to-muted/20 p-6">
       <div className="mx-auto max-w-7xl space-y-6">
 
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">Activity Logs</h2>
             <p className="text-sm text-muted-foreground">System and user activity log stream</p>
           </div>
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <button className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium hover:bg-accent">
-                <Download className="h-4 w-4" /> Export Logs
-              </button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content className="z-50 min-w-[150px] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg" sideOffset={4} align="end">
-                {["CSV", "JSON", "Plain text"].map((fmt) => (
-                  <DropdownMenu.Item key={fmt} className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
-                    onSelect={() => exportLogs(fmt)}>
-                    {fmt}
-                  </DropdownMenu.Item>
-                ))}
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
+          <div className="flex items-center gap-2">
+            <AlertDialog open={clearOpen} onOpenChange={setClearOpen}>
+              <AlertDialogTrigger asChild>
+                <button className="flex items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/5 px-4 py-2 text-sm font-medium text-rose-600 hover:bg-rose-500/10 dark:text-rose-400">
+                  <Trash2 className="h-4 w-4" /> Clear Logs
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear activity logs?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This permanently removes system activity log entries. The action itself is recorded in the audit trail.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="space-y-2 text-sm">
+                  <label className="flex items-center gap-2">
+                    <input type="radio" checked={clearScope === "all"} onChange={() => setClearScope("all")} />
+                    Clear all activity logs
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="radio" checked={clearScope === "older"} onChange={() => setClearScope("older")} />
+                    Clear logs older than current time filter ({timeFilter.toLowerCase()})
+                  </label>
+                </div>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={clearing}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={clearing}
+                    onClick={(e) => { e.preventDefault(); void handleClearLogs(); }}
+                    className="bg-rose-600 hover:bg-rose-700"
+                  >
+                    {clearing ? "Clearing…" : "Clear logs"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium hover:bg-accent">
+                  <Download className="h-4 w-4" /> Export Logs
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content className="z-50 min-w-[150px] overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-lg" sideOffset={4} align="end">
+                  {["CSV", "JSON", "Plain text"].map((fmt) => (
+                    <DropdownMenu.Item key={fmt} className="cursor-pointer rounded px-2.5 py-1.5 text-xs outline-none hover:bg-accent"
+                      onSelect={() => exportLogs(fmt)}>
+                      {fmt}
+                    </DropdownMenu.Item>
+                  ))}
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          </div>
         </div>
 
-        {/* Stats — top */}
         <div className="grid grid-cols-4 gap-4 max-sm:grid-cols-2 max-sm:gap-3">
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center gap-2 mb-1">
@@ -118,7 +201,6 @@ export function AdminLogs() {
           </div>
         </div>
 
-        {/* Filters */}
         <div className="flex items-center gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -142,7 +224,6 @@ export function AdminLogs() {
           </select>
         </div>
 
-        {/* Table */}
         <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
           <table className="w-full text-sm">
             <thead className="border-b border-border bg-muted/30">
@@ -159,7 +240,7 @@ export function AdminLogs() {
               {filtered.length === 0 ? (
                 <tr><td colSpan={6} className="p-8 text-center text-sm text-muted-foreground">No logs match your filters</td></tr>
               ) : filtered.map((log) => {
-                const { icon: Icon, cls, dot } = levelConfig[log.level] ?? levelConfig.info;
+                const { cls, dot } = levelConfig[log.level] ?? levelConfig.info;
                 return (
                   <tr key={log.id} className="border-b border-border last:border-0 hover:bg-muted/40">
                     <td className="p-3 font-mono text-xs tabular-nums text-muted-foreground whitespace-nowrap">{log.timestamp}</td>
@@ -179,7 +260,7 @@ export function AdminLogs() {
             </tbody>
           </table>
           <div className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
-            Showing {filtered.length} of {logs.length} entries
+            Showing {filtered.length} of {logData.length} entries
           </div>
         </div>
 

@@ -52,6 +52,36 @@ export async function updateLastActive(userId: number) {
   await query("UPDATE users SET last_active_at = NOW() WHERE id = $1", [userId]);
 }
 
+function severityToLevel(severity: string): "info" | "warning" | "error" {
+  if (severity === "critical" || severity === "error") return "error";
+  if (severity === "warning") return "warning";
+  return "info";
+}
+
+export async function logSystem(
+  level: "info" | "warning" | "error",
+  action: string,
+  details: string,
+  opts?: { user?: AuthUser; req?: Request }
+) {
+  try {
+    await query(
+      `INSERT INTO system_logs (level, user_id, user_email, action, details, ip)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        level,
+        opts?.user?.id ?? null,
+        opts?.user?.email ?? null,
+        action,
+        details,
+        opts?.req?.ip ?? null,
+      ]
+    );
+  } catch (err) {
+    console.error("[logSystem] Failed to write system log:", err);
+  }
+}
+
 export async function logAudit(
   user: AuthUser | undefined,
   action: string,
@@ -77,6 +107,9 @@ export async function logAudit(
       req.headers["user-agent"] ?? null,
     ]
   );
+
+  const systemDetails = resource ? `${resource}: ${details}` : details;
+  await logSystem(severityToLevel(severity), action, systemDetails, { user, req });
 }
 
 export async function createNotification(
