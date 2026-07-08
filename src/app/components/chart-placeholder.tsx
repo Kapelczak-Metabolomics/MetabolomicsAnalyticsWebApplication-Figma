@@ -17,15 +17,24 @@ interface ChartPlaceholderProps {
   pcaScores?: PCAScore[];
   explainedVariance?: number[];
   volcanoFeatures?: VolcanoPoint[];
-  volcanoConfig?: { pThreshold?: number; fcThreshold?: number; showLabels?: boolean; labelTopN?: number };
-  pcaConfig?: { showGroupEllipses?: boolean };
-  plsdaConfig?: { showGroupEllipses?: boolean };
+  plotTitle?: string;
+  pcaConfig?: { showGroupEllipses?: boolean; plotTitle?: string };
+  plsdaConfig?: { showGroupEllipses?: boolean; scorePlotTitle?: string; vipPlotTitle?: string; permutationPlotTitle?: string };
+  volcanoConfig?: { pThreshold?: number; fcThreshold?: number; showLabels?: boolean; labelTopN?: number; plotTitle?: string };
   plsdaScores?: Array<{ comp1: number; comp2: number; group: string; sampleId?: string }>;
   pathways?: Array<{ name: string; genes: number; negLogP?: number; pValue?: number }>;
-  heatmap?: { matrix: (number | null)[][]; sampleLabels: string[]; featureLabels: string[] };
+  heatmap?: { matrix: (number | null)[][]; sampleLabels: string[]; featureLabels: string[]; sampleGroups?: string[] };
   heatmapOrientation?: "samples-y" | "samples-x";
+  heatmapConfig?: {
+    sampleLabelPosition?: "top" | "bottom";
+    showClusterBars?: boolean;
+    clusterBarPosition?: "top" | "left";
+    title?: string;
+    dendrogramTitle?: string;
+  };
   dendrogram?: DendrogramMerge[];
   dendrogramLabels?: string[];
+  dendrogramTitle?: string;
   vipFeatures?: Array<{ name: string; vip: number }>;
   permScores?: Array<{ iteration: number; r2: number; q2: number }>;
   observedR2?: number;
@@ -48,8 +57,11 @@ export function ChartPlaceholder({
   pathways,
   heatmap,
   heatmapOrientation,
+  heatmapConfig,
   dendrogram,
   dendrogramLabels,
+  dendrogramTitle,
+  plotTitle,
   vipFeatures,
   permScores,
   observedR2,
@@ -83,7 +95,16 @@ export function ChartPlaceholder({
   );
 
   if (lower.includes("heatmap") && heatmap) {
-    return wrap(<HeatmapPlot {...heatmap} orientation={heatmapOrientation} />);
+    return wrap(
+      <HeatmapPlot
+        {...heatmap}
+        orientation={heatmapOrientation}
+        sampleLabelPosition={heatmapConfig?.sampleLabelPosition}
+        showClusterBars={heatmapConfig?.showClusterBars}
+        clusterBarPosition={heatmapConfig?.clusterBarPosition}
+        title={heatmapConfig?.title ?? plotTitle}
+      />
+    );
   }
 
   if (lower.includes("volcano")) {
@@ -94,6 +115,7 @@ export function ChartPlaceholder({
         fcThreshold={volcanoConfig?.fcThreshold}
         showLabels={volcanoConfig?.showLabels}
         labelTopN={volcanoConfig?.labelTopN}
+        title={volcanoConfig?.plotTitle ?? plotTitle}
       />
     );
   }
@@ -104,44 +126,55 @@ export function ChartPlaceholder({
         scores={pcaScores}
         explainedVariance={explainedVariance}
         showGroupEllipses={pcaConfig?.showGroupEllipses ?? true}
+        title={pcaConfig?.plotTitle ?? plotTitle}
       />
     );
   }
 
   if (lower.includes("pls-da") || lower.includes("plsda")) {
     if (lower.includes("vip") || lower.includes("importance")) {
-      return wrap(<VIPPlot features={vipFeatures} />);
+      return wrap(<VIPPlot features={vipFeatures} title={plsdaConfig?.vipPlotTitle ?? plotTitle} />);
     }
     if (lower.includes("permutation") || lower.includes("validation")) {
-      return wrap(<PermutationPlot scores={permScores} observedR2={observedR2} observedQ2={observedQ2} />);
+      return wrap(
+        <PermutationPlot
+          scores={permScores}
+          observedR2={observedR2}
+          observedQ2={observedQ2}
+          title={plsdaConfig?.permutationPlotTitle ?? plotTitle}
+        />
+      );
     }
     return wrap(
       <PLSDAPlot
         scores={plsdaScores}
         explainedVariance={explainedVariance}
         showGroupEllipses={plsdaConfig?.showGroupEllipses ?? pcaConfig?.showGroupEllipses ?? true}
+        title={plsdaConfig?.scorePlotTitle ?? plotTitle}
       />
     );
   }
 
   if (lower.includes("dot plot") || lower.includes("enrichment") || lower.includes("pathway")) {
-    return wrap(<PathwayPlot pathways={pathways} />);
+    return wrap(<PathwayPlot pathways={pathways} title={plotTitle} />);
   }
 
   if (lower.includes("dendrogram") || lower.includes("hierarchical tree")) {
-    return wrap(<DendrogramPlot data={dendrogram} labels={dendrogramLabels} />);
+    return wrap(<DendrogramPlot data={dendrogram} labels={dendrogramLabels} title={dendrogramTitle ?? plotTitle} />);
   }
 
   if (lower.includes("vip") || lower.includes("importance")) {
-    return wrap(<VIPPlot features={vipFeatures} />);
+    return wrap(<VIPPlot features={vipFeatures} title={plotTitle} />);
   }
 
   if (lower.includes("permutation") || lower.includes("validation")) {
-    return wrap(<PermutationPlot scores={permScores} observedR2={observedR2} observedQ2={observedQ2} />);
+    return wrap(
+      <PermutationPlot scores={permScores} observedR2={observedR2} observedQ2={observedQ2} title={plotTitle} />
+    );
   }
 
   if (lower.includes("biomarker")) {
-    return wrap(<BiomarkerPlot candidates={biomarkerCandidates} />);
+    return wrap(<BiomarkerPlot candidates={biomarkerCandidates} title={plotTitle} />);
   }
 
   if (lower.includes("silhouette") || lower.includes("cluster quality")) {

@@ -101,11 +101,13 @@ router.get("/dataset-matrix", authMiddleware, async (req: Request, res: Response
     const cached = await latestCompletedExperiment(datasetId, "Clustering", req.user!);
     const c = (cached.rows[0]?.results ?? {}) as ClusteringResults;
     if (cached.rows[0]) {
+      const order = c.sampleOrder ?? samples.map((s) => s.sampleId);
+      const sampleById = new Map(samples.map((s) => [s.sampleId, s]));
       res.json({
-        sampleLabels: c.sampleOrder ?? samples.map((s) => s.sampleId),
+        sampleLabels: order,
         featureLabels: c.featureLabels ?? features.slice(0, 20).map((f) => f.name),
         matrix: c.heatmapMatrix ?? [],
-        groups: samples.map((s) => s.groupLabel),
+        groups: order.map((sid) => sampleById.get(sid)?.groupLabel ?? ""),
         dendrogram: c.dendrogram ?? [],
         silhouette: c.silhouette ?? 0,
       });

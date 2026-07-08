@@ -5,6 +5,7 @@ import { PlotEmpty } from "./plotly-utils";
 
 interface PathwayPlotProps {
   pathways?: Array<{ name: string; genes: number; negLogP?: number; pValue?: number }>;
+  title?: string;
 }
 
 const MAX_PATHWAYS = 25;
@@ -14,7 +15,7 @@ function truncateLabel(name: string, max = LABEL_MAX): string {
   return name.length > max ? `${name.slice(0, max - 1)}…` : name;
 }
 
-export function PathwayPlot({ pathways = [] }: PathwayPlotProps) {
+export function PathwayPlot({ pathways = [], title = "Pathway enrichment" }: PathwayPlotProps) {
   const plot = useMemo(() => {
     if (!pathways.length) return null;
 
@@ -64,7 +65,7 @@ export function PathwayPlot({ pathways = [] }: PathwayPlotProps) {
     ];
 
     const layout: Partial<Layout> = {
-      title: { text: "Pathway enrichment", font: { size: 14 } },
+      title: { text: title, font: { size: 14 } },
       xaxis: {
         title: { text: "Feature count in pathway" },
         rangemode: "tozero",
@@ -93,7 +94,7 @@ export function PathwayPlot({ pathways = [] }: PathwayPlotProps) {
     };
 
     return { traces, layout };
-  }, [pathways]);
+  }, [pathways, title]);
 
   if (!pathways.length) return <PlotEmpty message="Run pathway enrichment to see results" />;
   if (!plot) return <PlotEmpty message="Unable to render pathway plot" />;

@@ -6,12 +6,14 @@ interface PLSDAPlotProps {
   scores?: Array<{ comp1: number; comp2: number; group: string; sampleId?: string }>;
   explainedVariance?: number[];
   showGroupEllipses?: boolean;
+  title?: string;
 }
 
 export function PLSDAPlot({
   scores = [],
   explainedVariance = [],
   showGroupEllipses = true,
+  title = "PLS-DA score plot",
 }: PLSDAPlotProps) {
   const plot = useMemo(() => {
     if (!scores.length) return null;
@@ -25,13 +27,13 @@ export function PLSDAPlot({
         label: s.sampleId ?? `Sample ${i + 1}`,
       })),
       {
-        title: "PLS-DA score plot",
+        title,
         xLabel: `Component 1${c1 != null ? ` (${c1}%)` : ""}`,
         yLabel: `Component 2${c2 != null ? ` (${c2}%)` : ""}`,
         showGroupRegions: showGroupEllipses,
       },
     );
-  }, [scores, explainedVariance, showGroupEllipses]);
+  }, [scores, explainedVariance, showGroupEllipses, title]);
 
   if (!scores.length) return <PlotEmpty message="Run PLS-DA to generate scores" />;
   if (!plot) return <PlotEmpty message="Unable to render PLS-DA plot" />;

@@ -17,6 +17,7 @@ interface VolcanoPlotProps {
   fcThreshold?: number;
   showLabels?: boolean;
   labelTopN?: number;
+  title?: string;
 }
 
 function selectLabeledFeatures(
@@ -37,6 +38,7 @@ export function VolcanoPlot({
   fcThreshold = 0.5,
   showLabels = false,
   labelTopN = 15,
+  title = "Volcano plot",
 }: VolcanoPlotProps) {
   const plot = useMemo(() => {
     if (!features.length) return null;
@@ -136,7 +138,7 @@ export function VolcanoPlot({
         }));
 
     const layout: Partial<Layout> = {
-      title: { text: "Volcano plot", font: { size: 14 } },
+      title: { text: title, font: { size: 14 } },
       xaxis: { title: { text: "log₂ fold change" }, range: [-xMaxAbs, xMaxAbs], zeroline: true },
       yaxis: { title: { text: "−log₁₀ p-value" }, range: [0, plotYMax] },
       shapes,
@@ -158,7 +160,7 @@ export function VolcanoPlot({
     };
 
     return { traces, layout };
-  }, [features, pThreshold, fcThreshold, showLabels, labelTopN]);
+  }, [features, pThreshold, fcThreshold, showLabels, labelTopN, title]);
 
   if (!features.length) return <PlotEmpty message="Run analysis to generate volcano plot from your dataset" />;
   if (!plot) return <PlotEmpty message="Unable to render volcano plot" />;

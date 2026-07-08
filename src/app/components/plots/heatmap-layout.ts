@@ -2,11 +2,21 @@
 export function computeHeatmapLayout(
   featureLabels: string[],
   sampleLabels: string[],
-  sampleCount: number
+  sampleCount: number,
+  options?: {
+    sampleLabelPosition?: "top" | "bottom";
+    showClusterBars?: boolean;
+    clusterBarPosition?: "top" | "left";
+    samplesOnY?: boolean;
+  }
 ) {
   const nFeatures = Math.max(1, featureLabels.length);
   const maxFeatureLen = featureLabels.reduce((m, l) => Math.max(m, l.length), 0);
   const maxSampleLen = sampleLabels.reduce((m, l) => Math.max(m, l.length), 0);
+  const samplesOnY = options?.samplesOnY !== false;
+  const sampleLabelPosition = options?.sampleLabelPosition ?? "top";
+  const showClusterBars = options?.showClusterBars ?? false;
+  const clusterBarPosition = options?.clusterBarPosition ?? "top";
 
   const tickFontSize = Math.max(
     7,
@@ -18,11 +28,35 @@ export function computeHeatmapLayout(
 
   const radians = (Math.abs(tickAngle) * Math.PI) / 180;
   const labelStack = tickFontSize * 1.35 + maxFeatureLen * Math.sin(radians) * (tickFontSize * 0.42);
-  const topMargin = Math.max(100, Math.min(260, Math.ceil(56 + labelStack)));
 
-  const leftMargin = Math.max(72, Math.min(180, Math.ceil(maxSampleLen * 6.5 + 28)));
+  const clusterBarThickness = showClusterBars ? 28 : 0;
+  const clusterBarGap = showClusterBars ? 6 : 0;
+
+  let topMargin = Math.max(100, Math.min(260, Math.ceil(56 + labelStack)));
+  let bottomMargin = 48;
+  let leftMargin = Math.max(72, Math.min(180, Math.ceil(maxSampleLen * 6.5 + 28)));
+
+  if (!samplesOnY) {
+    // Sample names on X axis — respect top vs bottom placement
+    if (sampleLabelPosition === "bottom") {
+      bottomMargin = Math.max(72, Math.min(220, Math.ceil(48 + labelStack)));
+      topMargin = Math.max(72, topMargin - 20);
+    } else {
+      topMargin = Math.max(100, Math.min(260, Math.ceil(56 + labelStack)));
+    }
+    if (showClusterBars && clusterBarPosition === "top") {
+      topMargin += clusterBarThickness + clusterBarGap;
+    }
+  } else {
+    if (showClusterBars && clusterBarPosition === "left") {
+      leftMargin += clusterBarThickness + clusterBarGap;
+    }
+    if (showClusterBars && clusterBarPosition === "top") {
+      topMargin += clusterBarThickness + clusterBarGap;
+    }
+  }
+
   const rightMargin = 96;
-  const bottomMargin = 48;
   const height = Math.max(380, sampleCount * 20 + topMargin + bottomMargin + 40);
   const showEveryNth = nFeatures > 24 ? Math.ceil(nFeatures / 24) : 1;
 
@@ -35,6 +69,10 @@ export function computeHeatmapLayout(
     bottomMargin,
     height,
     showEveryNth,
+    clusterBarThickness,
+    clusterBarGap,
+    sampleLabelPosition,
+    clusterBarPosition,
   };
 }
 

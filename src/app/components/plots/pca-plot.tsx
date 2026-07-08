@@ -13,12 +13,14 @@ interface PCAPlotProps {
   scores?: PCAScore[];
   explainedVariance?: number[];
   showGroupEllipses?: boolean;
+  title?: string;
 }
 
 export function PCAPlot({
   scores = [],
   explainedVariance = [],
   showGroupEllipses = true,
+  title = "PCA score plot",
 }: PCAPlotProps) {
   const plot = useMemo(() => {
     if (!scores.length) return null;
@@ -27,13 +29,13 @@ export function PCAPlot({
     return buildGroupedScatterTraces(
       scores.map((s) => ({ x: s.PC1, y: s.PC2, group: s.group, label: s.sampleId })),
       {
-        title: "PCA score plot",
+        title,
         xLabel: `PC1 (${pc1Var}% variance)`,
         yLabel: `PC2 (${pc2Var}% variance)`,
         showGroupRegions: showGroupEllipses,
       },
     );
-  }, [scores, explainedVariance, showGroupEllipses]);
+  }, [scores, explainedVariance, showGroupEllipses, title]);
 
   if (!scores.length) return <PlotEmpty message="Run analysis to generate PCA scores from your dataset" />;
   if (!plot) return <PlotEmpty message="Unable to render PCA plot" />;

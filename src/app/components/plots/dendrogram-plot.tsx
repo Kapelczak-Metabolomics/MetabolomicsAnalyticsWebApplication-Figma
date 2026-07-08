@@ -13,6 +13,7 @@ interface DendrogramPlotProps {
   data?: DendrogramMerge[];
   labels?: string[];
   height?: number;
+  title?: string;
 }
 
 function asIndices(value: number[] | string): number[] {
@@ -58,7 +59,7 @@ function buildTree(data: DendrogramMerge[], n: number): TreeNode | null {
   return active.reduce((a, b) => (b.leaves.length > a.leaves.length ? b : a));
 }
 
-export function DendrogramPlot({ data = [], labels = [] }: DendrogramPlotProps) {
+export function DendrogramPlot({ data = [], labels = [], title = "Sample dendrogram" }: DendrogramPlotProps) {
   const plot = useMemo(() => {
     if (!data.length) return null;
 
@@ -129,7 +130,7 @@ export function DendrogramPlot({ data = [], labels = [] }: DendrogramPlotProps) 
     });
 
     const layout: Partial<Layout> = {
-      title: { text: "Sample dendrogram", font: { size: 14 } },
+      title: { text: title, font: { size: 14 } },
       xaxis: {
         title: { text: "Samples" },
         tickmode: "array",
@@ -151,7 +152,7 @@ export function DendrogramPlot({ data = [], labels = [] }: DendrogramPlotProps) 
     };
 
     return { traces, layout };
-  }, [data, labels]);
+  }, [data, labels, title]);
 
   if (!data.length) return <PlotEmpty message="Run clustering to generate dendrogram" />;
   if (!plot) return <PlotEmpty message="Need at least two samples for dendrogram" />;

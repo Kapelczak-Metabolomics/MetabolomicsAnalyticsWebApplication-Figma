@@ -5,9 +5,10 @@ import { PlotEmpty } from "./plotly-utils";
 
 interface VIPPlotProps {
   features?: Array<{ name: string; vip: number }>;
+  title?: string;
 }
 
-export function VIPPlot({ features = [] }: VIPPlotProps) {
+export function VIPPlot({ features = [], title = "Variable Importance in Projection" }: VIPPlotProps) {
   const plot = useMemo(() => {
     if (!features.length) return null;
 
@@ -28,7 +29,7 @@ export function VIPPlot({ features = [] }: VIPPlotProps) {
     ];
 
     const layout: Partial<Layout> = {
-      title: { text: "Variable Importance in Projection", font: { size: 14 } },
+      title: { text: title, font: { size: 14 } },
       xaxis: { title: { text: "VIP score" }, zeroline: true },
       yaxis: { automargin: true },
       shapes: [
@@ -50,7 +51,7 @@ export function VIPPlot({ features = [] }: VIPPlotProps) {
     };
 
     return { traces, layout };
-  }, [features]);
+  }, [features, title]);
 
   if (!features.length) return <PlotEmpty message="Run PLS-DA to generate VIP scores" />;
   if (!plot) return <PlotEmpty message="Unable to render VIP plot" />;

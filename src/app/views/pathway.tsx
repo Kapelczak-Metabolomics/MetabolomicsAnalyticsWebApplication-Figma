@@ -7,6 +7,7 @@ import { AnalysisExportMenu } from "../components/analysis-export-menu";
 import { useAnalysisPage } from "../../hooks/use-analysis-page";
 import { useApp } from "../../contexts/app-context";
 import { pathwayConfig } from "../../lib/analysis-config";
+import { resolvePlotTitle } from "../../lib/plot-title";
 
 const pathwayStages = [
   "Loading feature list",
@@ -138,7 +139,13 @@ export function PathwayView() {
             <h3 className="text-sm">Enrichment Overview</h3>
             <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Pathway" filename="pathway-enrichment" plotContainerId="plot-pathway-main" />
           </div>
-          <ChartPlaceholder type="Dot Plot (p-value vs Count)" height="400px" exportId="plot-pathway-main" pathways={pathways} />
+          <ChartPlaceholder
+            type="Dot Plot (p-value vs Count)"
+            height="400px"
+            exportId="plot-pathway-main"
+            pathways={pathways}
+            plotTitle={resolvePlotTitle(config.plotTitle, "Pathway enrichment")}
+          />
         </div>
 
         <div className="rounded-lg border border-border bg-card">

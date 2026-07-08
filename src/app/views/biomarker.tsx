@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useAnalysisPage } from "../../hooks/use-analysis-page";
 import { useApp } from "../../contexts/app-context";
 import { biomarkerConfig } from "../../lib/analysis-config";
+import { resolvePlotTitle } from "../../lib/plot-title";
 import { api } from "../../lib/api";
 
 interface Criterion {
@@ -227,7 +228,13 @@ export function BiomarkerView() {
             <h3 className="text-sm">Candidate Overview</h3>
             <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Biomarker" filename="biomarker-plot" plotContainerId="plot-biomarker-main" />
           </div>
-          <ChartPlaceholder type="Biomarker Discovery Plot" height="400px" exportId="plot-biomarker-main" biomarkerCandidates={candidates} />
+          <ChartPlaceholder
+            type="Biomarker Discovery Plot"
+            height="400px"
+            exportId="plot-biomarker-main"
+            biomarkerCandidates={candidates}
+            plotTitle={resolvePlotTitle(config.plotTitle, "Biomarker discovery")}
+          />
         </div>
 
         <div className="rounded-lg border border-border bg-card">

@@ -7,6 +7,7 @@ import { AnalysisExportMenu } from "../components/analysis-export-menu";
 import { useAnalysisPage } from "../../hooks/use-analysis-page";
 import { useApp } from "../../contexts/app-context";
 import { volcanoConfig } from "../../lib/analysis-config";
+import { resolvePlotTitle } from "../../lib/plot-title";
 import type { VolcanoPoint } from "../components/plots/volcano-plot";
 
 const volcanoStages = ["Loading dataset", "Computing fold changes", "Running statistical tests", "Applying FDR correction", "Generating volcano plot"];
@@ -89,7 +90,13 @@ export function VolcanoView() {
             height="500px"
             exportId="plot-volcano-main"
             volcanoFeatures={features}
-            volcanoConfig={{ pThreshold, fcThreshold, showLabels, labelTopN }}
+            volcanoConfig={{
+              pThreshold,
+              fcThreshold,
+              showLabels,
+              labelTopN,
+              plotTitle: resolvePlotTitle(config.plotTitle, "Volcano plot"),
+            }}
           />
         </div>
 

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 interface ConfigField {
   label: string;
-  type: "select" | "number" | "checkbox" | "radio";
+  type: "select" | "number" | "checkbox" | "radio" | "text";
   value?: string | number | boolean;
   options?: string[];
   unit?: string;
@@ -46,7 +46,7 @@ export function ConfigureDialog({ open, onClose, title, groups, initialValues, o
     try {
       await onSave?.(values);
       onClose();
-      toast.success("Configuration saved", { description: "Settings will apply on next analysis run" });
+      toast.success("Configuration saved", { description: "Display settings apply immediately; analysis parameters apply on the next run" });
     } catch {
       toast.error("Failed to save configuration");
     }
@@ -116,6 +116,14 @@ export function ConfigureDialog({ open, onClose, title, groups, initialValues, o
                               checked={!!values[key]}
                               onChange={(e) => setValues((v) => ({ ...v, [key]: e.target.checked }))}
                               className="h-4 w-4"
+                            />
+                          )}
+                          {field.type === "text" && (
+                            <input
+                              type="text"
+                              value={String(values[key] ?? field.value ?? "")}
+                              onChange={(e) => setValues((v) => ({ ...v, [key]: e.target.value }))}
+                              className="w-44 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs outline-none"
                             />
                           )}
                         </div>

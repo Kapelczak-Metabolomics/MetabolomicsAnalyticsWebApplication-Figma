@@ -5,9 +5,10 @@ import { PlotEmpty } from "./plotly-utils";
 
 interface BiomarkerPlotProps {
   candidates?: Array<{ name: string; score: number; log2fc: number; pValue: number }>;
+  title?: string;
 }
 
-export function BiomarkerPlot({ candidates = [] }: BiomarkerPlotProps) {
+export function BiomarkerPlot({ candidates = [], title = "Biomarker candidates" }: BiomarkerPlotProps) {
   const top = useMemo(() => candidates.slice(0, 30), [candidates]);
 
   const plot = useMemo(() => {
@@ -31,13 +32,13 @@ export function BiomarkerPlot({ candidates = [] }: BiomarkerPlotProps) {
     ];
 
     const layout: Partial<Layout> = {
-      title: { text: "Biomarker candidates", font: { size: 14 } },
+      title: { text: title, font: { size: 14 } },
       xaxis: { title: { text: "log₂ fold change" }, zeroline: true },
       yaxis: { title: { text: "Composite biomarker score" } },
     };
 
     return { traces, layout };
-  }, [top]);
+  }, [top, title]);
 
   if (!top.length) return <PlotEmpty message="Run biomarker discovery to rank candidates" />;
   if (!plot) return <PlotEmpty message="Unable to render biomarker plot" />;

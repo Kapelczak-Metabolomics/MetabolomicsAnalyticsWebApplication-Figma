@@ -1,5 +1,13 @@
 /** Shared analysis configuration field definitions with stable keys for API/engine. */
 
+const displayTitle = (label: string, defaultTitle: string) => ({
+  key: "plotTitle",
+  label,
+  type: "text" as const,
+  value: defaultTitle,
+  description: "Custom title shown on the chart",
+});
+
 export const pcaConfig = [
   {
     title: "Preprocessing",
@@ -14,6 +22,7 @@ export const pcaConfig = [
     title: "Display",
     fields: [
       { key: "showGroupEllipses", label: "Show group confidence circles (95%)", type: "checkbox" as const, value: true, description: "Draw filled circles around each sample group on the score plot" },
+      displayTitle("Score plot title", "PCA score plot"),
     ],
   },
 ];
@@ -33,6 +42,7 @@ export const volcanoConfig = [
     fields: [
       { key: "showLabels", label: "Label significant features", type: "checkbox" as const, value: false, description: "Annotate top significant features on the volcano plot" },
       { key: "labelTopN", label: "Max labels", type: "number" as const, value: 15, description: "Maximum number of feature names to show when labeling is enabled" },
+      displayTitle("Plot title", "Volcano plot"),
     ],
   },
 ];
@@ -64,6 +74,43 @@ export const clusteringConfig = [
         options: ["samples-y", "samples-x"],
         description: "samples-y: samples on rows (Y), compounds on columns (X). samples-x: swap axes.",
       },
+      {
+        key: "sampleLabelPosition",
+        label: "Sample label position",
+        type: "select" as const,
+        value: "top",
+        options: ["top", "bottom"],
+        description: "Place sample names above or below the heatmap when samples are on columns (samples-x). With samples on rows, labels stay on the left.",
+      },
+      {
+        key: "showClusterBars",
+        label: "Show condition color bars",
+        type: "checkbox" as const,
+        value: true,
+        description: "Colored annotation strip for each sample's biological group (MetaboAnalyst style)",
+      },
+      {
+        key: "clusterBarPosition",
+        label: "Condition bar position",
+        type: "select" as const,
+        value: "top",
+        options: ["top", "left"],
+        description: "top: bar above heatmap (samples-x) or as top row. left: bar to the left of heatmap (samples-y).",
+      },
+      {
+        key: "heatmapTitle",
+        label: "Heatmap title",
+        type: "text" as const,
+        value: "Sample × feature expression",
+        description: "Title shown above the heatmap",
+      },
+      {
+        key: "dendrogramTitle",
+        label: "Dendrogram title",
+        type: "text" as const,
+        value: "Sample dendrogram",
+        description: "Title shown on the dendrogram chart",
+      },
     ],
   },
 ];
@@ -94,6 +141,9 @@ export const plsdaConfig = [
     title: "Display",
     fields: [
       { key: "showGroupEllipses", label: "Show group confidence circles (95%)", type: "checkbox" as const, value: true, description: "Draw filled circles around each class on the score plot" },
+      { key: "scorePlotTitle", label: "Score plot title", type: "text" as const, value: "PLS-DA score plot", description: "Title for the score plot" },
+      { key: "vipPlotTitle", label: "VIP plot title", type: "text" as const, value: "Variable importance (VIP)", description: "Title for the VIP bar chart" },
+      { key: "permutationPlotTitle", label: "Permutation plot title", type: "text" as const, value: "Permutation test", description: "Title for the permutation validation plot" },
     ],
   },
 ];
@@ -121,6 +171,12 @@ export const pathwayConfig = [
       { key: "maxPathwaySize", label: "Max pathway size", type: "number" as const, value: 500 },
     ],
   },
+  {
+    title: "Display",
+    fields: [
+      displayTitle("Enrichment plot title", "Pathway enrichment"),
+    ],
+  },
 ];
 
 export const biomarkerConfig = [
@@ -140,6 +196,12 @@ export const biomarkerConfig = [
       { key: "maxPValue", label: "Max p-value", type: "number" as const, value: 0.05 },
       { key: "minVip", label: "Min VIP", type: "number" as const, value: 1.0 },
       { key: "minPriorityScore", label: "Min priority score", type: "number" as const, value: 5.0 },
+    ],
+  },
+  {
+    title: "Display",
+    fields: [
+      displayTitle("Discovery plot title", "Biomarker discovery"),
     ],
   },
 ];

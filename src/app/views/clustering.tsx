@@ -9,6 +9,7 @@ import { api } from "../../lib/api";
 import { useApp } from "../../contexts/app-context";
 import type { DendrogramMerge } from "../components/plots/dendrogram-plot";
 import { clusteringConfig } from "../../lib/analysis-config";
+import { resolvePlotTitle } from "../../lib/plot-title";
 
 const clusteringStages = [
   "Loading & scaling dataset",
@@ -23,8 +24,16 @@ export function ClusteringView() {
   const [configOpen, setConfigOpen] = useState(false);
   const { saveAnalysisConfig, getAnalysisConfig } = useApp();
   const { dataset, results, loading, error, refresh, experimentId } = useAnalysisPage("Clustering");
-  const heatmapOrientation = (getAnalysisConfig("Clustering").heatmapOrientation as "samples-y" | "samples-x") ?? "samples-y";
-  const [heatmap, setHeatmap] = useState<{ matrix: (number | null)[][]; sampleLabels: string[]; featureLabels: string[]; dendrogram?: unknown[]; silhouette?: number } | null>(null);
+  const clusteringDisplay = getAnalysisConfig("Clustering");
+  const heatmapOrientation = (clusteringDisplay.heatmapOrientation as "samples-y" | "samples-x") ?? "samples-y";
+  const [heatmap, setHeatmap] = useState<{
+    matrix: (number | null)[][];
+    sampleLabels: string[];
+    featureLabels: string[];
+    sampleGroups?: string[];
+    dendrogram?: unknown[];
+    silhouette?: number;
+  } | null>(null);
 
   const clusters = (results?.clusters as Array<{ name: string; count: number; color: string }>) ?? [];
   const dendrogram = (results?.dendrogram as DendrogramMerge[]) ?? heatmap?.dendrogram as DendrogramMerge[] ?? [];
@@ -36,23 +45,37 @@ export function ClusteringView() {
   const distanceMetric = (results?.distanceMetric as string) ?? String(getAnalysisConfig("Clustering").distanceMetric ?? "Euclidean");
   const samplesProcessed = (results?.samplesProcessed as number) ?? dataset?.samples_count ?? 0;
 
+  const sampleGroups =
+    (results?.sampleGroups as string[] | undefined) ??
+    heatmap?.sampleGroups ??
+    [];
+
   useEffect(() => {
     if (!dataset) return;
     const matrix = results?.heatmapMatrix as (number | null)[][] | undefined;
     const sampleOrder = results?.sampleOrder as string[] | undefined;
     const featureLabels = results?.featureLabels as string[] | undefined;
+    const resultGroups = results?.sampleGroups as string[] | undefined;
     if (matrix?.length) {
       setHeatmap({
         matrix,
         sampleLabels: sampleOrder ?? [],
         featureLabels: featureLabels ?? [],
+        sampleGroups: resultGroups ?? [],
         dendrogram: results?.dendrogram as unknown[],
         silhouette: results?.silhouette as number | undefined,
       });
       return;
     }
     api.getDatasetMatrix(dataset.id, true)
-      .then(setHeatmap)
+      .then((data) => setHeatmap({
+        matrix: data.matrix,
+        sampleLabels: data.sampleLabels,
+        featureLabels: data.featureLabels,
+        sampleGroups: data.groups,
+        dendrogram: data.dendrogram,
+        silhouette: data.silhouette,
+      }))
       .catch(() => setHeatmap(null));
   }, [dataset?.id, results]);
 
@@ -133,7 +156,25 @@ export function ClusteringView() {
             <h3 className="text-sm">Heatmap with Dendrograms</h3>
             <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Clustering" filename="clustering" plotContainerId="plot-clustering-heatmap" />
           </div>
-          <ChartPlaceholder type="Clustered Heatmap" height="550px" exportId="plot-clustering-heatmap" heatmap={heatmap ? { matrix: heatmap.matrix, sampleLabels: heatmap.sampleLabels, featureLabels: heatmap.featureLabels } : undefined} heatmapOrientation={heatmapOrientation} />
+          <ChartPlaceholder
+            type="Clustered Heatmap"
+            height="550px"
+            exportId="plot-clustering-heatmap"
+            heatmap={heatmap ? {
+              matrix: heatmap.matrix,
+              sampleLabels: heatmap.sampleLabels,
+              featureLabels: heatmap.featureLabels,
+              sampleGroups: sampleGroups.length ? sampleGroups : heatmap.sampleGroups,
+            } : undefined}
+            heatmapOrientation={heatmapOrientation}
+            heatmapConfig={{
+              sampleLabelPosition: (clusteringDisplay.sampleLabelPosition as "top" | "bottom") ?? "top",
+              showClusterBars: clusteringDisplay.showClusterBars !== false,
+              clusterBarPosition: (clusteringDisplay.clusterBarPosition as "top" | "left") ?? "top",
+              title: resolvePlotTitle(clusteringDisplay.heatmapTitle, "Sample × feature expression"),
+              dendrogramTitle: resolvePlotTitle(clusteringDisplay.dendrogramTitle, "Sample dendrogram"),
+            }}
+          />
         </div>
 
         <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
@@ -142,7 +183,14 @@ export function ClusteringView() {
               <h3 className="text-sm">Sample Dendrogram</h3>
               <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="Clustering" filename="clustering-dendrogram" plotContainerId="plot-clustering-dendrogram" />
             </div>
-            <ChartPlaceholder type="Hierarchical Tree" height="280px" exportId="plot-clustering-dendrogram" dendrogram={dendrogram} dendrogramLabels={dendrogramLabels} />
+            <ChartPlaceholder
+              type="Hierarchical Tree"
+              height="280px"
+              exportId="plot-clustering-dendrogram"
+              dendrogram={dendrogram}
+              dendrogramLabels={dendrogramLabels}
+              dendrogramTitle={resolvePlotTitle(clusteringDisplay.dendrogramTitle, "Sample dendrogram")}
+            />
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">

@@ -7,6 +7,7 @@ import { AnalysisExportMenu } from "../components/analysis-export-menu";
 import { useAnalysisPage } from "../../hooks/use-analysis-page";
 import { useApp } from "../../contexts/app-context";
 import { plsdaConfig } from "../../lib/analysis-config";
+import { resolvePlotTitle } from "../../lib/plot-title";
 
 const plsdaStages = [
   "Loading dataset into memory",
@@ -114,7 +115,12 @@ export function PLSDAView() {
             height="450px"
             exportId="plot-plsda-main"
             plsdaScores={scores}
-            plsdaConfig={{ showGroupEllipses }}
+            plsdaConfig={{
+              showGroupEllipses,
+              scorePlotTitle: resolvePlotTitle(plsdaDisplayConfig.scorePlotTitle, "PLS-DA score plot"),
+              vipPlotTitle: resolvePlotTitle(plsdaDisplayConfig.vipPlotTitle, "Variable importance (VIP)"),
+              permutationPlotTitle: resolvePlotTitle(plsdaDisplayConfig.permutationPlotTitle, "Permutation test"),
+            }}
           />
         </div>
 
@@ -124,14 +130,32 @@ export function PLSDAView() {
               <h3 className="text-sm">VIP Scores</h3>
               <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PLS-DA" filename="plsda-vip" plotContainerId="plot-plsda-vip" />
             </div>
-            <ChartPlaceholder type="Variable Importance in Projection" height="280px" exportId="plot-plsda-vip" vipFeatures={vipFeatures} />
+            <ChartPlaceholder
+              type="Variable Importance in Projection"
+              height="280px"
+              exportId="plot-plsda-vip"
+              vipFeatures={vipFeatures}
+              plsdaConfig={{
+                vipPlotTitle: resolvePlotTitle(plsdaDisplayConfig.vipPlotTitle, "Variable importance (VIP)"),
+              }}
+            />
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm">Permutation Test</h3>
               <AnalysisExportMenu experimentId={experimentId} results={results} analysisType="PLS-DA" filename="plsda-permutation" plotContainerId="plot-plsda-permutation" />
             </div>
-            <ChartPlaceholder type="Model Validation" height="280px" exportId="plot-plsda-permutation" permScores={permScores} observedR2={r2} observedQ2={q2} />
+            <ChartPlaceholder
+              type="Model Validation"
+              height="280px"
+              exportId="plot-plsda-permutation"
+              permScores={permScores}
+              observedR2={r2}
+              observedQ2={q2}
+              plsdaConfig={{
+                permutationPlotTitle: resolvePlotTitle(plsdaDisplayConfig.permutationPlotTitle, "Permutation test"),
+              }}
+            />
           </div>
         </div>
       </div>

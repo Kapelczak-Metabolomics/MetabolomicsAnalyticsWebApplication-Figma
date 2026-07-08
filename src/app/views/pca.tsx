@@ -8,6 +8,7 @@ import { AnalysisExportMenu } from "../components/analysis-export-menu";
 import { useAnalysisPage } from "../../hooks/use-analysis-page";
 import { useApp } from "../../contexts/app-context";
 import { pcaConfig } from "../../lib/analysis-config";
+import { resolvePlotTitle } from "../../lib/plot-title";
 import { GROUP_COLORS } from "../components/plots/plot-theme";
 
 const pcaStages = [
@@ -106,7 +107,7 @@ export function PCAView() {
             exportId="plot-pca-main"
             pcaScores={scores}
             explainedVariance={explainedVariance}
-            pcaConfig={{ showGroupEllipses }}
+            pcaConfig={{ showGroupEllipses, plotTitle: resolvePlotTitle(pcaDisplayConfig.plotTitle, "PCA score plot") }}
           />
         </div>
       </div>

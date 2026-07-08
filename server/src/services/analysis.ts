@@ -415,6 +415,7 @@ export function runClustering(samples: SampleRow[], features?: FeatureRow[], con
     silhouette: sil,
     sampleOrder: orderedSamples.map((s) => s.sampleId),
     sampleIds: samples.map((s) => s.sampleId),
+    sampleGroups: orderedSamples.map((s) => s.groupLabel),
     featureLabels: (features ?? []).slice(0, 20).map((f) => f.name),
     heatmapMatrix,
     linkage,

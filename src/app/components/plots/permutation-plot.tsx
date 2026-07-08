@@ -7,9 +7,10 @@ interface PermutationPlotProps {
   scores?: Array<{ iteration: number; r2: number; q2: number }>;
   observedR2?: number;
   observedQ2?: number;
+  title?: string;
 }
 
-export function PermutationPlot({ scores = [], observedR2, observedQ2 }: PermutationPlotProps) {
+export function PermutationPlot({ scores = [], observedR2, observedQ2, title = "Permutation validation" }: PermutationPlotProps) {
   const plot = useMemo(() => {
     if (!scores.length) return null;
 
@@ -46,7 +47,7 @@ export function PermutationPlot({ scores = [], observedR2, observedQ2 }: Permuta
     }
 
     const layout: Partial<Layout> = {
-      title: { text: "Permutation validation", font: { size: 14 } },
+      title: { text: title, font: { size: 14 } },
       xaxis: { title: { text: "Permutation iteration" } },
       yaxis: { title: { text: "R² / Q²" }, range: [0, maxVal] },
       shapes,
@@ -56,7 +57,7 @@ export function PermutationPlot({ scores = [], observedR2, observedQ2 }: Permuta
     };
 
     return { traces, layout };
-  }, [scores, observedR2, observedQ2]);
+  }, [scores, observedR2, observedQ2, title]);
 
   if (!scores.length) return <PlotEmpty message="Run PLS-DA to generate permutation test" />;
   if (!plot) return <PlotEmpty message="Unable to render permutation plot" />;
