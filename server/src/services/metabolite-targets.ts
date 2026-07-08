@@ -132,20 +132,78 @@ export async function saveMetaboliteTargetSettings(settings: MetaboliteTargetSet
 }
 
 /** Targets passed to Python when targeted detection is enabled. */
-export async function getActiveMetaboliteTargetsForImport(): Promise<{
+export async function getActiveMetaboliteTargetsForImport(overrides?: {
+  targets?: MetaboliteTarget[];
+  enabled?: boolean;
+  mzTolerance?: number;
+  rtTolerance?: number;
+}): Promise<{
   enabled: boolean;
   mzTolerance: number;
   rtTolerance: number;
   targets: MetaboliteTarget[];
 }> {
   const settings = await loadMetaboliteTargetSettings();
-  if (!settings.enabled || !settings.targets.length) {
-    return { enabled: false, mzTolerance: settings.mzTolerance, rtTolerance: settings.rtTolerance, targets: [] };
+  const targets = overrides?.targets?.length ? overrides.targets : settings.targets;
+  const enabled =
+    overrides?.enabled != null
+      ? overrides.enabled
+      : settings.enabled && targets.length > 0;
+  if (!enabled || !targets.length) {
+    return {
+      enabled: false,
+      mzTolerance: overrides?.mzTolerance ?? settings.mzTolerance,
+      rtTolerance: overrides?.rtTolerance ?? settings.rtTolerance,
+      targets: [],
+    };
   }
   return {
     enabled: true,
-    mzTolerance: settings.mzTolerance,
-    rtTolerance: settings.rtTolerance,
-    targets: settings.targets,
+    mzTolerance: overrides?.mzTolerance ?? settings.mzTolerance,
+    rtTolerance: overrides?.rtTolerance ?? settings.rtTolerance,
+    targets,
   };
+}
+
+export const DEFAULT_METABOLITE_TARGETS: MetaboliteTarget[] = [
+  { name: "Glucose", mz: 179.055, adduct: "[M+H]+", rt: 5.2 },
+  { name: "Lactate", mz: 89.024, adduct: "[M-H]-", rt: 3.1 },
+  { name: "Glutamate", mz: 148.06, adduct: "[M+H]+", rt: 4.5 },
+  { name: "Citrate", mz: 191.02, adduct: "[M-H]-", rt: 6.0 },
+  { name: "Creatinine", mz: 114.04, adduct: "[M+H]+", rt: 2.8 },
+  { name: "Choline", mz: 104.11, adduct: "[M+H]+", rt: 3.5 },
+  { name: "Taurine", mz: 124.01, adduct: "[M-H]-", rt: 2.2 },
+  { name: "Phenylalanine", mz: 166.086, adduct: "[M+H]+", rt: 7.1 },
+  { name: "Tryptophan", mz: 205.097, adduct: "[M+H]+", rt: 8.4 },
+  { name: "Succinate", mz: 117.02, adduct: "[M-H]-", rt: 4.0 },
+];
+
+/** Seed default targets on existing deployments that have none configured. */
+export async function ensureDefaultMetaboliteTargets() {
+  const settings = await loadMetaboliteTargetSettings();
+  if (settings.targets.length) return settings;
+  return saveMetaboliteTargetSettings({
+    enabled: true,
+    mzTolerance: DEFAULT_SETTINGS.mzTolerance,
+    rtTolerance: DEFAULT_SETTINGS.rtTolerance,
+    targets: DEFAULT_METABOLITE_TARGETS,
+  });
+}
+
+export function parseMetaboliteTargetList(raw: unknown): MetaboliteTarget[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.reduce<MetaboliteTarget[]>((acc, t) => {
+    if (!t || typeof t !== "object") return acc;
+    const row = t as Record<string, unknown>;
+    const mz = typeof row.mz === "number" ? row.mz : Number(row.mz);
+    if (!Number.isFinite(mz)) return acc;
+    const name = typeof row.name === "string" && row.name.trim() ? row.name.trim() : `m/z ${mz}`;
+    acc.push({
+      name,
+      mz,
+      adduct: typeof row.adduct === "string" ? row.adduct : null,
+      rt: row.rt == null || row.rt === "" ? null : Number(row.rt),
+    });
+    return acc;
+  }, []);
 }

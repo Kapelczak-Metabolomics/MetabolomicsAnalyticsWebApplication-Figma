@@ -10,6 +10,7 @@ import {
   Loader2,
   Dna,
   Trash2,
+  Target,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "../../lib/api";
@@ -74,6 +75,12 @@ export function DataImportView() {
   const [columnRoles, setColumnRoles] = useState<Record<string, ColumnRole>>({});
   const [sampleGroups, setSampleGroups] = useState<Record<string, string>>({});
   const [customGroups, setCustomGroups] = useState<string[]>([]);
+  const [metaboliteTargets, setMetaboliteTargets] = useState<Array<{ name: string; mz: number; adduct?: string | null; rt?: number | null }>>([]);
+  const [metaboliteTargetsActive, setMetaboliteTargetsActive] = useState(false);
+  const [metaboliteTargetsEnabled, setMetaboliteTargetsEnabled] = useState(true);
+  const [metaboliteTargetCsv, setMetaboliteTargetCsv] = useState<string | null>(null);
+  const [metaboliteTargetsLoading, setMetaboliteTargetsLoading] = useState(false);
+  const metaboliteTargetFileRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -93,6 +100,17 @@ export function DataImportView() {
     api.getHealth()
       .then((h) => setPythonReady(Boolean(h.python)))
       .catch(() => setPythonReady(false));
+    setMetaboliteTargetsLoading(true);
+    api.getImportMetaboliteTargets()
+      .then((settings) => {
+        setMetaboliteTargets(settings.targets);
+        setMetaboliteTargetsActive(settings.active);
+        setMetaboliteTargetsEnabled(settings.enabled);
+      })
+      .catch(() => {
+        /* optional — admin may not have configured targets yet */
+      })
+      .finally(() => setMetaboliteTargetsLoading(false));
   }, [format]);
 
   const table: ParsedTable = useMemo(() => parseDelimitedTable(csvContent), [csvContent]);
@@ -159,6 +177,7 @@ export function DataImportView() {
     setColumnRoles({});
     setSampleGroups({});
     setCustomGroups([]);
+    setMetaboliteTargetCsv(null);
     setDatasetName("");
     setCsvReading(false);
     resetFileInput();
@@ -442,6 +461,9 @@ export function DataImportView() {
           sessionId: mzxmlSessionId ?? undefined,
           files: mzxmlSessionId ? undefined : mzxmlFiles,
           groups: groupMappings,
+          targets: metaboliteTargetCsv ? undefined : metaboliteTargets,
+          targetCsv: metaboliteTargetCsv ?? undefined,
+          useTargets: metaboliteTargetsEnabled,
         });
         setMzxmlSessionId(null);
         toast.info("mzXML import started", { description: "Processing spectra with Python backend..." });
@@ -578,6 +600,108 @@ export function DataImportView() {
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+            {format === "mzxml" && (
+              <div className="rounded-xl border border-border bg-card overflow-hidden">
+                <div className="border-b border-border bg-muted/30 px-4 py-3 flex items-center gap-2">
+                  <Target className="h-4 w-4 text-violet-500" />
+                  <div>
+                    <p className="text-xs font-medium">Target metabolites for peak detection</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      The parser matches these m/z values (± tolerance) in each spectrum instead of reporting every peak.
+                    </p>
+                  </div>
+                </div>
+                <div className="p-4 space-y-3">
+                  <label className="flex items-center gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={metaboliteTargetsEnabled}
+                      onChange={(e) => setMetaboliteTargetsEnabled(e.target.checked)}
+                    />
+                    Use targeted metabolite list for this import
+                  </label>
+                  {metaboliteTargetsLoading ? (
+                    <p className="text-xs text-muted-foreground flex items-center gap-2">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading metabolite targets…
+                    </p>
+                  ) : metaboliteTargetCsv ? (
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                      Custom target CSV loaded for this import (overrides system list).
+                    </p>
+                  ) : metaboliteTargets.length > 0 ? (
+                    <div className="rounded-lg border border-border overflow-hidden max-h-40 overflow-y-auto">
+                      <table className="w-full text-[11px]">
+                        <thead className="bg-muted/30 border-b border-border sticky top-0">
+                          <tr>
+                            <th className="p-2 text-left">Compound</th>
+                            <th className="p-2 text-left">m/z</th>
+                            <th className="p-2 text-left">Adduct</th>
+                            <th className="p-2 text-left">RT</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {metaboliteTargets.map((t) => (
+                            <tr key={`${t.name}-${t.mz}`} className="border-b border-border last:border-0">
+                              <td className="p-2">{t.name}</td>
+                              <td className="p-2 font-mono">{t.mz}</td>
+                              <td className="p-2 text-muted-foreground">{t.adduct || "—"}</td>
+                              <td className="p-2 text-muted-foreground">{t.rt ?? "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      No metabolite targets configured. An admin can upload a target CSV under Admin → System Settings, or upload one below for this import only.
+                    </p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      ref={metaboliteTargetFileRef}
+                      type="file"
+                      accept=".csv,text/csv"
+                      className="sr-only"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const csv = await file.text();
+                        setMetaboliteTargetCsv(csv);
+                        setMetaboliteTargetsEnabled(true);
+                        toast.success(`Target CSV "${file.name}" will be used for this import`);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => metaboliteTargetFileRef.current?.click()}
+                      className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent"
+                    >
+                      Upload target CSV (this import)
+                    </button>
+                    {metaboliteTargetCsv && (
+                      <button
+                        type="button"
+                        onClick={() => setMetaboliteTargetCsv(null)}
+                        className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+                      >
+                        Clear import CSV
+                      </button>
+                    )}
+                    <a href="/fixtures/metabolite_targets_template.csv" download className="text-xs text-primary hover:underline">
+                      Download template
+                    </a>
+                  </div>
+                  {metaboliteTargetsEnabled && (metaboliteTargets.length > 0 || metaboliteTargetCsv) && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {metaboliteTargetsActive || metaboliteTargetCsv
+                        ? "Import will extract peaks only for the listed metabolites."
+                        : "Targets are loaded but disabled in system settings — this import will still use the list above."}
+                    </p>
+                  )}
+                </div>
               </div>
             )}
             <div className="grid grid-cols-2 gap-2 max-sm:grid-cols-1">

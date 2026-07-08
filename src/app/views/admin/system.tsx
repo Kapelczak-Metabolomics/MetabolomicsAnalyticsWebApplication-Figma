@@ -309,6 +309,11 @@ function MetaboliteTargetsSection() {
           className="rounded-lg bg-gradient-to-r from-violet-500 to-cyan-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
           {saving ? "Saving…" : "Save settings"}
         </button>
+        {enabled && targets.length > 0 && (
+          <span className="text-xs text-emerald-600 dark:text-emerald-400">
+            Active — mzXML imports will use targeted peak picking
+          </span>
+        )}
       </div>
 
       <p className="text-xs text-muted-foreground mb-3">

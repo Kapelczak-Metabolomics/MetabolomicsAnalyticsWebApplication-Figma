@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import { waitForDb, initSchema, isSeeded } from "./db/index.js";
 import { seedDatabase } from "./db/seed.js";
+import { ensureDefaultMetaboliteTargets } from "./services/metabolite-targets.js";
 import authRoutes from "./routes/auth.js";
 import projectRoutes from "./routes/projects.js";
 import datasetRoutes from "./routes/datasets.js";
@@ -62,6 +63,7 @@ async function start() {
     await seedDatabase();
   } else {
     console.log("Database already seeded, skipping.");
+    await ensureDefaultMetaboliteTargets();
   }
 
   app.listen(PORT, "0.0.0.0", () => {

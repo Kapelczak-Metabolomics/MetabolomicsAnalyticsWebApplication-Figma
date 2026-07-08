@@ -346,12 +346,25 @@ export const api = {
       { method: "POST", body: JSON.stringify({ sessionId }) }
     ),
 
+  getImportMetaboliteTargets: () =>
+    request<{
+      enabled: boolean;
+      active: boolean;
+      mzTolerance: number;
+      rtTolerance: number;
+      targets: Array<{ name: string; mz: number; adduct?: string | null; rt?: number | null }>;
+      targetCount: number;
+    }>("/datasets/import/metabolite-targets"),
+
   importMzxml: async (data: {
     projectId: number;
     name: string;
     files?: File[];
     sessionId?: string;
     groups?: Record<string, string>;
+    targets?: Array<{ name: string; mz: number; adduct?: string | null; rt?: number | null }>;
+    useTargets?: boolean;
+    targetCsv?: string;
   }) => {
     if (data.sessionId) {
       return request<{ id: number; status: string; message: string }>("/datasets/import/mzxml", {
@@ -361,6 +374,9 @@ export const api = {
           projectId: data.projectId,
           name: data.name,
           groups: data.groups,
+          targets: data.targets,
+          useTargets: data.useTargets,
+          targetCsv: data.targetCsv,
         }),
       });
     }

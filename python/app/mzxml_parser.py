@@ -116,21 +116,130 @@ def _extract_ms1_scans_xml(path: str) -> list[Ms1Scan]:
     return scans
 
 
+def _extract_ms1_scans_indexed(path: str) -> list[Ms1Scan]:
+    """Read per-scan MS1 peak data from indexed mzXML files (ProteoWizard / msconvert)."""
+    with open(path, "rb") as f:
+        data = f.read()
+
+    index_match = re.search(
+        rb"<index\b[^>]*\bname=[\"'](?:scan|spectrum)[\"'][^>]*>(.*?)</index>",
+        data,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if not index_match:
+        return []
+
+    offsets = re.findall(
+        rb"<offset\b[^>]*\bid=[\"']([^\"']*)[\"'][^>]*>(\d+)</offset>",
+        index_match.group(1),
+        flags=re.IGNORECASE,
+    )
+    if not offsets:
+        return []
+
+    scans: list[Ms1Scan] = []
+    peaks_re = re.compile(
+        rb"<(?:peaks|mzXMLPeaks)\b([^>]*)>([^<]+)</(?:peaks|mzXMLPeaks)>",
+        flags=re.IGNORECASE,
+    )
+
+    with open(path, "rb") as f:
+        for _scan_id, offset_raw in offsets:
+            offset = int(offset_raw)
+            f.seek(offset)
+            chunk = f.read(256 * 1024)
+            if not chunk:
+                continue
+            if b'msLevel="1"' not in chunk and b"msLevel='1'" not in chunk and b"<msLevel>1</msLevel>" not in chunk:
+                continue
+            text = chunk.decode("utf-8", errors="ignore")
+            try:
+                elem = ET.fromstring(text[: text.rfind(">") + 1])
+            except ET.ParseError:
+                continue
+            if _ms_level_from_element(elem) != 1:
+                continue
+            mzs, intensities = _peaks_from_spectrum(elem)
+            if not mzs:
+                for attrs_raw, payload in peaks_re.findall(chunk):
+                    attrs = attrs_raw.decode("utf-8", errors="ignore")
+                    precision = "64" if 'precision="64"' in attrs or "precision='64'" in attrs else "32"
+                    byte_order = "little" if "little" in attrs.lower() else "network"
+                    compression = "zlib" if "zlib" in attrs.lower() else "none"
+                    mzs, intensities = _decode_mzxml_peaks(
+                        payload.decode("utf-8", errors="ignore"),
+                        precision,
+                        byte_order,
+                        compression,
+                    )
+            if mzs:
+                scans.append(Ms1Scan(_retention_minutes_from_element(elem), mzs, intensities))
+
+    return scans
+
+
+def _extract_ms1_scans_raw(path: str) -> list[Ms1Scan]:
+    """Last-resort per-scan extraction from inline scan/spectrum blocks."""
+    with open(path, "rb") as f:
+        data = f.read().decode("utf-8", errors="ignore")
+
+    scans: list[Ms1Scan] = []
+    block_re = re.compile(
+        r"<(?:scan|spectrum)\b[^>]*\bmsLevel=[\"']?1[\"']?[^>]*>.*?</(?:scan|spectrum)>",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    peaks_re = re.compile(
+        r"<(?:peaks|mzXMLPeaks)\b([^>]*)>([^<]+)</(?:peaks|mzXMLPeaks)>",
+        flags=re.IGNORECASE,
+    )
+
+    for block in block_re.findall(data):
+        try:
+            elem = ET.fromstring(block)
+        except ET.ParseError:
+            continue
+        if _ms_level_from_element(elem) != 1:
+            continue
+        mzs, intensities = _peaks_from_spectrum(elem)
+        if not mzs:
+            for attrs, payload in peaks_re.findall(block):
+                precision = "64" if 'precision="64"' in attrs or "precision='64'" in attrs else "32"
+                byte_order = "little" if "little" in attrs.lower() else "network"
+                compression = "zlib" if "zlib" in attrs.lower() else "none"
+                mzs, intensities = _decode_mzxml_peaks(payload, precision, byte_order, compression)
+        if mzs:
+            scans.append(Ms1Scan(_retention_minutes_from_element(elem), mzs, intensities))
+
+    return scans
+
+
 def _extract_ms1_scans(path: str) -> list[Ms1Scan]:
     """Return MS1 scans with optional RT and peak arrays."""
     _validate_ms_file(path)
-    for extractor in (_extract_ms1_scans_xml,):
+    errors: list[str] = []
+
+    for label, extractor in (
+        ("XML", _extract_ms1_scans_xml),
+        ("indexed", _extract_ms1_scans_indexed),
+        ("raw", _extract_ms1_scans_raw),
+    ):
         try:
             scans = extractor(path)
             if scans:
                 return scans
-        except Exception:
-            continue
+            errors.append(f"{label}: no MS1 scans found")
+        except Exception as exc:
+            errors.append(f"{label}: {exc}")
 
     # Fallback: aggregate bins as a single pseudo-scan (no RT).
-    bins = _extract_ms1_bins(path)
+    try:
+        bins = _extract_ms1_bins(path)
+    except ValueError as exc:
+        detail = "; ".join(errors) if errors else str(exc)
+        raise ValueError(f"Could not extract MS1 scans ({detail})") from exc
     if not bins:
-        return []
+        detail = "; ".join(errors) if errors else "no MS1 scans found"
+        raise ValueError(f"Could not extract MS1 scans ({detail})")
     mzs = list(bins.keys())
     intensities = [bins[m] for m in mzs]
     return [Ms1Scan(None, mzs, intensities)]

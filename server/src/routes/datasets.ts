@@ -6,7 +6,7 @@ import { computeFeatureStats } from "../services/analysis.js";
 import { bulkLoadMatrix, clearDatasetMatrix, recalculateDatasetStats } from "../utils/bulk-import.js";
 import { pythonHealth, pythonImportMzxml, pythonPreviewMzxml, pythonExtractXic } from "../services/python-client.js";
 import { saveRawDatasetFiles, deleteRawDatasetFiles, listRawDatasetFiles, deleteRawDatasetFile, materializeRawDatasetFiles, cleanupWorkDir } from "../services/storage.js";
-import { getActiveMetaboliteTargetsForImport, loadMetaboliteTargetSettings } from "../services/metabolite-targets.js";
+import { getActiveMetaboliteTargetsForImport, loadMetaboliteTargetSettings, parseMetaboliteTargetCsv, parseMetaboliteTargetList } from "../services/metabolite-targets.js";
 import fs from "fs";
 import path from "path";
 import {
@@ -103,6 +103,19 @@ async function finalizeDatasetImport(
   await logAudit(req.user, "DATASET_IMPORT", "data", `Dataset: ${name}`, `Imported ${samplesCount} samples, ${featuresCount} features (${sourceFormat}).`, req);
   await createNotification(userId, "success", "Dataset Imported", `${name} imported — ${featuresCount} features, ${samplesCount} samples ready.`, "/data", "View dataset");
 }
+
+router.get("/import/metabolite-targets", authMiddleware, async (_req: Request, res: Response) => {
+  const settings = await loadMetaboliteTargetSettings();
+  const active = await getActiveMetaboliteTargetsForImport();
+  res.json({
+    enabled: settings.enabled,
+    active: active.enabled,
+    mzTolerance: settings.mzTolerance,
+    rtTolerance: settings.rtTolerance,
+    targets: settings.targets,
+    targetCount: settings.targets.length,
+  });
+});
 
 router.post("/import", authMiddleware, async (req: Request, res: Response) => {
   const body = req.body as {
@@ -486,7 +499,38 @@ async function processMzxmlImport(req: Request, res: Response) {
     uploads,
     groups,
     sessionId: sessionId || undefined,
+    targetOverrides: parseImportTargetOverrides(req.body),
   }).catch((err) => console.error("mzXML import launcher failed for dataset", datasetId, err));
+}
+
+function parseImportTargetOverrides(body: Record<string, unknown> | undefined) {
+  if (!body) return undefined;
+  if (body.useTargets === false || body.useTargets === "false") {
+    return { enabled: false, targets: [] as import("../services/metabolite-targets.js").MetaboliteTarget[] };
+  }
+  let targetsRaw: unknown = body.targets;
+  if (typeof targetsRaw === "string" && targetsRaw.trim()) {
+    try {
+      targetsRaw = JSON.parse(targetsRaw);
+    } catch {
+      return undefined;
+    }
+  }
+  const targets = parseMetaboliteTargetList(targetsRaw);
+  if (!targets.length && typeof body.targetCsv === "string" && body.targetCsv.trim()) {
+    try {
+      return { targets: parseMetaboliteTargetCsv(body.targetCsv), enabled: true };
+    } catch {
+      return undefined;
+    }
+  }
+  if (!targets.length) return undefined;
+  return {
+    targets,
+    enabled: body.useTargets === false || body.useTargets === "false" ? false : true,
+    mzTolerance: typeof body.mzTolerance === "number" ? body.mzTolerance : undefined,
+    rtTolerance: typeof body.rtTolerance === "number" ? body.rtTolerance : undefined,
+  };
 }
 
 async function launchMzxmlImport(opts: {
@@ -497,8 +541,14 @@ async function launchMzxmlImport(opts: {
   uploads: MzxmlUploadFile[];
   groups: Record<string, string>;
   sessionId?: string;
+  targetOverrides?: {
+    targets?: import("../services/metabolite-targets.js").MetaboliteTarget[];
+    enabled?: boolean;
+    mzTolerance?: number;
+    rtTolerance?: number;
+  };
 }) {
-  const { datasetId, projectId, name, userId, uploads, groups, sessionId } = opts;
+  const { datasetId, projectId, name, userId, uploads, groups, sessionId, targetOverrides } = opts;
   try {
     const storagePath = await saveRawDatasetFiles(
       datasetId,
@@ -506,7 +556,7 @@ async function launchMzxmlImport(opts: {
     );
     await query(`UPDATE datasets SET raw_file_path = $1 WHERE id = $2`, [storagePath, datasetId]);
 
-    await reprocessMzxmlDataset(datasetId, projectId, name, userId, uploads, groups);
+    await reprocessMzxmlDataset(datasetId, projectId, name, userId, uploads, groups, targetOverrides);
   } catch (err) {
     const message = err instanceof Error && err.message.trim()
       ? err.message
@@ -534,9 +584,15 @@ async function reprocessMzxmlDataset(
   name: string,
   userId: number,
   uploads: MzxmlUploadFile[],
-  groups: Record<string, string>
+  groups: Record<string, string>,
+  targetOverrides?: {
+    targets?: import("../services/metabolite-targets.js").MetaboliteTarget[];
+    enabled?: boolean;
+    mzTolerance?: number;
+    rtTolerance?: number;
+  }
 ) {
-  const targetConfig = await getActiveMetaboliteTargetsForImport();
+  const targetConfig = await getActiveMetaboliteTargetsForImport(targetOverrides);
   const parsed = await pythonImportMzxml(uploads, groups, {
     targets: targetConfig.targets,
     targeted: targetConfig.enabled,

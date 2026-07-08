@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { query } from "./index.js";
+import { saveMetaboliteTargetSettings, DEFAULT_METABOLITE_TARGETS } from "../services/metabolite-targets.js";
 import { loadDatasetMatrix } from "../utils/dataset.js";
 import { computeWithEngine } from "../services/compute-analysis.js";
 
@@ -119,7 +120,18 @@ async function seedMinimal() {
     `INSERT INTO system_settings (key, value) VALUES
      ('general', '{"appName":"MetaboAnalytics","supportEmail":"support@metaboanalytics.io","maintenanceMode":false}'),
      ('storage', '{"provider":"local","maxUploadMb":500}'),
-     ('email', '{"host":"","port":587,"encryption":"TLS","username":"","password":"","fromEmail":"","fromName":"MetaboAnalytics","enabled":false}')`
+     ('email', '{"host":"","port":587,"encryption":"TLS","username":"","password":"","fromEmail":"","fromName":"MetaboAnalytics","enabled":false}'),
+     ('metabolite_targets', $1)`
+    ,
+    [
+      JSON.stringify({
+        enabled: true,
+        mzTolerance: 0.01,
+        rtTolerance: 0.5,
+        targets: DEFAULT_METABOLITE_TARGETS,
+        updatedAt: new Date().toISOString(),
+      }),
+    ]
   );
 
   console.log("Minimal seed complete.");

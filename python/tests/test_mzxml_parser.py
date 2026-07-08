@@ -110,6 +110,28 @@ class MzxmlParserTests(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_targeted_mode_raw_scan_blocks(self):
+        peaks = _encode_peaks([(150.0, 2500.0), (300.0, 100.0)], little=True)
+        xml = f"""<?xml version="1.0"?>
+<mzXML>
+  <msRun scanCount="1">
+    <scan num="1" msLevel="1" retentionTime="120" peaksCount="2">
+      <peaks precision="32" byteOrder="little" contentType="raw">{peaks}</peaks>
+    </scan>
+  </msRun>
+</mzXML>"""
+        with tempfile.NamedTemporaryFile("w", suffix=".mzXML", delete=False) as f:
+            f.write(xml)
+            path = f.name
+        try:
+            targets = [{"name": "TargetCompound", "mz": 150.0, "adduct": "[M+H]+", "rt": 2.0}]
+            result = parse_mzxml_files([path], targets=targets, targeted=True, mz_tolerance=0.05, rt_tolerance=0.5)
+            self.assertTrue(result["targeted"])
+            self.assertEqual(result["featuresCount"], 1)
+            self.assertEqual(result["features"][0]["values"][0], 2500.0)
+        finally:
+            os.unlink(path)
+
 
 if __name__ == "__main__":
     unittest.main()
